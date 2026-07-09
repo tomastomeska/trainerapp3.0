@@ -1642,6 +1642,7 @@ function generateRandomPassword(int $length = 12): string {
 function sendAthleteWelcomeEmail(string $toEmail, string $athleteName, string $password, string $loginUrl): bool {
   $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
   if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
+    error_log('sendAthleteWelcomeEmail: PHPMailer not found at ' . $phpmailerSrc);
     return false;
   }
   require_once $phpmailerSrc . '/Exception.php';
@@ -1679,7 +1680,23 @@ function sendAthleteWelcomeEmail(string $toEmail, string $athleteName, string $p
     $mail->send();
     return true;
   } catch (\Exception $e) {
-    error_log('sendAthleteWelcomeEmail error: ' . $mail->ErrorInfo . ' | ' . $e->getMessage());
+    error_log('sendAthleteWelcomeEmail SMTP error: ' . $mail->ErrorInfo . ' | ' . $e->getMessage());
+  }
+
+  try {
+    $fallback = new PHPMailer\PHPMailer\PHPMailer(true);
+    $fallback->isMail();
+    $fallback->CharSet = 'UTF-8';
+    $fallback->setFrom(SMTP_FROM, SMTP_FROM_NAME);
+    $fallback->addAddress($toEmail);
+    $fallback->isHTML(true);
+    $fallback->Subject = 'Přístup do TrainerApp';
+    $fallback->Body = $htmlBody;
+    $fallback->AltBody = $altBody;
+    $fallback->send();
+    return true;
+  } catch (\Exception $e) {
+    error_log('sendAthleteWelcomeEmail fallback error: ' . $e->getMessage());
     return false;
   }
 }
