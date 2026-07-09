@@ -1,0 +1,5 @@
+# Bezpečnostní opatření – zakáže spouštění PHP skriptů v upload adresáři
+<FilesMatch "\.php$">
+    Require all denied
+</FilesMatch>
+Options -Indexes

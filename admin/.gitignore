@@ -1,0 +1,29 @@
+# TrainerApp – Konfigurační soubory ignorované gitem
+# NIKDY necommitujte config/env.php (obsahuje přihlašovací údaje)!
+
+# Lokální konfigurace s citlivými údaji
+config/env.php
+
+# Uploadované soubory (nepatří do repozitáře)
+uploads/athletes/*
+uploads/exercises/*
+!uploads/athletes/.gitkeep
+!uploads/exercises/.gitkeep
+
+# Temporary a systémové soubory
+*.log
+*.tmp
+_tmp_*
+.DS_Store
+Thumbs.db
+*.swp
+*.bak
+
+# IDE soubory
+.vscode/settings.json
+.idea/
+*.sublime-project
+
+# PHP composer
+vendor/
+composer.lock

@@ -1,0 +1,10 @@
+# /etc/fail2ban/jail.d/trainerapp-auth.local
+[trainerapp-auth]
+enabled = true
+port = http,https
+filter = trainerapp-auth
+logpath = /var/log/apache2/trainerapp_app.log
+maxretry = 8
+findtime = 10m
+bantime = 1h
+backend = auto

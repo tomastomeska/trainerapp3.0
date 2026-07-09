@@ -1,0 +1,922 @@
+/* ============================================================
+   TrainerApp – Globální styly
+   ============================================================ */
+
+/* Zabránění horizontálního scrollu */
+html {
+    overflow-x: hidden;
+}
+
+/* Základní layout */
+body {
+    background-color: #f1f5f9;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+}
+
+.container-fluid {
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+/* Navbar */
+.navbar-brand {
+    font-size: 1.3rem;
+    letter-spacing: 0.5px;
+}
+
+/* Karty */
+.card {
+    border-radius: 12px;
+    transition: box-shadow 0.2s ease;
+}
+
+.card:hover {
+    box-shadow: 0 6px 20px rgba(0,0,0,0.12) !important;
+}
+
+.card-header {
+    border-radius: 12px 12px 0 0 !important;
+    font-weight: 600;
+}
+
+/* Athlete card */
+.athlete-card {
+    border-radius: 14px;
+}
+
+.athlete-card .card-body {
+    padding: 1.25rem;
+}
+
+/* Avatar with initials */
+.avatar-initials {
+    width: 100px;
+    height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 3px solid #ffc107;
+    background: #1f2937;
+    color: white;
+    font-size: 32px;
+    font-weight: bold;
+    margin: 0 auto;
+    flex-shrink: 0;
+}
+
+/* Tlačítka */
+.btn {
+    border-radius: 8px;
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+
+.btn-warning {
+    color: #1a1a1a;
+}
+
+.btn-paired-highlight {
+    background-color: #ffc107 !important;
+    border-color: #ffc107 !important;
+    color: #1a1a1a !important;
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35);
+}
+
+.btn-paired-highlight:hover,
+.btn-paired-highlight:focus {
+    background-color: #ffca2c !important;
+    border-color: #ffc720 !important;
+    color: #1a1a1a !important;
+}
+
+.btn-lg {
+    padding: 0.65rem 1.5rem;
+}
+
+/* Badge */
+.badge {
+    border-radius: 6px;
+    font-weight: 600;
+}
+
+/* Tabulky */
+.table th {
+    font-weight: 600;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #64748b;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+/* Formuláře */
+.form-control, .form-select {
+    border-radius: 8px;
+    border-color: #cbd5e1;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 3px rgba(245,158,11,0.2);
+}
+
+.form-label {
+    color: #374151;
+    font-size: 0.9rem;
+}
+
+/* Golf detail */
+.golf-form-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem 1.1rem;
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+}
+
+.golf-section-card {
+    border-radius: 18px;
+    overflow: hidden;
+}
+
+.treadmill-form-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem 1.1rem;
+    background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
+    border: 1px solid #dbeafe;
+    border-radius: 16px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+}
+
+.run-form-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem 1.1rem;
+    background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
+    border: 1px solid #dbeafe;
+    border-radius: 16px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+}
+
+.treadmill-section-card {
+    border-radius: 18px;
+    overflow: hidden;
+}
+
+.run-section-card {
+    border-radius: 18px;
+    overflow: hidden;
+}
+
+.treadmill-section-kicker {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #1d4ed8;
+    margin-bottom: 0.15rem;
+}
+
+.run-section-kicker {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #1d4ed8;
+    margin-bottom: 0.15rem;
+}
+
+.treadmill-inline-note {
+    padding: 0.85rem 1rem;
+    border-radius: 14px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1d4ed8;
+    font-size: 0.92rem;
+}
+
+.run-inline-note {
+    padding: 0.85rem 1rem;
+    border-radius: 14px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1d4ed8;
+    font-size: 0.92rem;
+}
+
+.treadmill-stat-card {
+    height: 100%;
+    padding: 0.9rem 0.75rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    background: #fff;
+}
+
+.run-stat-card {
+    height: 100%;
+    padding: 0.9rem 0.75rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    background: #fff;
+}
+
+.golf-section-kicker {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #b45309;
+    margin-bottom: 0.15rem;
+}
+
+.golf-inline-note {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.85rem 1rem;
+    border-radius: 14px;
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    color: #9a3412;
+    font-size: 0.92rem;
+}
+
+.golf-holes-table {
+    min-width: 760px;
+    margin-bottom: 0;
+}
+
+.golf-holes-table th,
+.golf-holes-table td {
+    white-space: nowrap;
+}
+
+.golf-holes-table td:last-child,
+.golf-holes-table th:last-child {
+    min-width: 280px;
+}
+
+.golf-holes-table .form-control {
+    min-width: 84px;
+}
+
+.golf-form-actions {
+    padding: 0.25rem 0 0.5rem;
+}
+
+.form-switch-lg .form-check-input {
+    width: 2.9em;
+    height: 1.5em;
+}
+
+.form-switch-lg .form-check-label {
+    margin-top: 0.15rem;
+}
+
+@media (max-width: 767.98px) {
+    .golf-form-topbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .treadmill-form-topbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .run-form-topbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .golf-form-topbar .text-end {
+        text-align: left !important;
+    }
+
+    .treadmill-form-topbar .text-end {
+        text-align: left !important;
+    }
+
+    .run-form-topbar .text-end {
+        text-align: left !important;
+    }
+
+    .golf-section-card .card-body {
+        padding-top: 1rem;
+    }
+
+    .treadmill-section-card .card-body {
+        padding-top: 1rem;
+    }
+
+    .run-section-card .card-body {
+        padding-top: 1rem;
+    }
+
+    .golf-inline-note {
+        padding: 0.75rem 0.85rem;
+    }
+
+    .treadmill-inline-note {
+        padding: 0.75rem 0.85rem;
+    }
+
+    .run-inline-note {
+        padding: 0.75rem 0.85rem;
+    }
+
+    .golf-holes-table {
+        min-width: 680px;
+    }
+}
+
+/* Training session stránka */
+#exercise-card .card-header {
+    border-radius: 12px 12px 0 0;
+}
+
+.previous-exercise-session {
+    background: linear-gradient(135deg, #fff8e8 0%, #ffffff 100%);
+    border: 1px solid #f8d48a;
+    border-left: 5px solid #f59e0b;
+    border-radius: 12px;
+    padding: 0.75rem;
+}
+
+.previous-exercise-session__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.55rem;
+    flex-wrap: wrap;
+}
+
+.previous-exercise-session__title {
+    font-weight: 700;
+    color: #9a3412;
+}
+
+.previous-exercise-session__table thead th {
+    background: #fff1cf;
+    color: #92400e;
+    border-color: #efd9a0;
+}
+
+.previous-exercise-session__table td,
+.previous-exercise-session__table th {
+    border-color: #efd9a0;
+}
+
+.coaches-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1rem;
+    padding: 1rem;
+}
+
+.coach-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    background: #ffffff;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+    overflow: hidden;
+}
+
+.coach-card--inactive {
+    opacity: 0.8;
+    background: #f8fafc;
+}
+
+.coach-card__head {
+    padding: 0.9rem 1rem 0.7rem;
+    border-bottom: 1px solid #f1f5f9;
+    background: #f8fafc;
+}
+
+.coach-card__meta {
+    padding: 0.9rem 1rem;
+}
+
+.coach-stat-row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.45rem;
+    margin-bottom: 0.65rem;
+}
+
+.coach-stat {
+    text-align: center;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 0.35rem 0.25rem;
+    background: #fff;
+}
+
+.coach-stat__value {
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.coach-stat__label {
+    font-size: 0.72rem;
+    color: #64748b;
+}
+
+.coach-card__actions {
+    display: flex;
+    gap: 0.35rem;
+    justify-content: flex-end;
+    padding: 0.85rem 1rem;
+    border-top: 1px solid #f1f5f9;
+    background: #fff;
+}
+
+/* ================================================================
+   PÁROVÝ TRÉNINK – split view
+   ================================================================ */
+
+.paired-athlete-header {
+    padding: 0.65rem 0.75rem;
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    border-radius: 12px;
+    color: #fff;
+}
+
+.paired-athlete-num {
+    font-size: 1.1rem !important;
+}
+
+/* Na mobilní záložkách skrývat neaktivní sloupec (řeší JS) */
+@media (max-width: 767.98px) {
+    #pairedTabs .nav-link {
+        font-size: 0.85rem;
+        padding: 0.4rem 0.7rem;
+    }
+    .paired-athlete-header {
+        border-radius: 10px;
+    }
+}
+
+/* Serie vstupy – výchozí šířka */
+.series-weight { width: 90px; }
+.series-reps   { width: 90px; }
+.series-assist { width: 80px; }
+
+/* Display number statistics */
+.display-6 {
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+/* Login stránka */
+.login-page {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+}
+
+/* Footer */
+footer {
+    margin-top: auto;
+    font-size: 0.8rem;
+}
+
+/* Alert */
+.alert {
+    border-radius: 10px;
+    border: none;
+}
+
+.alert-success { background: #dcfce7; color: #166534; }
+.alert-danger  { background: #fee2e2; color: #991b1b; }
+.alert-warning { background: #fef3c7; color: #92400e; }
+.alert-info    { background: #dbeafe; color: #1e40af; }
+
+/* List group */
+.list-group-item {
+    border-color: #e2e8f0;
+    padding: 0.75rem 1rem;
+    transition: background 0.15s ease;
+}
+
+.list-group-item:hover {
+    background: #f8fafc;
+}
+
+/* Modal */
+.modal-content {
+    border-radius: 14px;
+    border: none;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+
+.modal-header {
+    border-radius: 14px 14px 0 0;
+}
+
+/* Charts */
+canvas {
+    border-radius: 8px;
+}
+
+/* Statistika karty */
+.stat-card {
+    text-align: center;
+    padding: 1.5rem 1rem;
+}
+
+/* ================================================================
+   MOBILE RESPONSIVE
+   ================================================================ */
+
+/* Tablet a níže (< 768 px) */
+@media (max-width: 767.98px) {
+    .container-fluid {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+
+    h2 { font-size: 1.25rem; }
+
+    .display-6 { font-size: 1.5rem; }
+
+    .table { font-size: 0.83rem; }
+
+    .series-weight, .series-reps, .series-assist { width: 75px; }
+}
+
+/* Mobil (< 576 px) */
+@media (max-width: 575.98px) {
+    .container-fluid {
+        padding-left: 0.65rem;
+        padding-right: 0.65rem;
+    }
+
+    /* Hlavička stránky: jméno + akční tlačítka pod sebe */
+    .page-header {
+        flex-wrap: wrap;
+        gap: 0.5rem !important;
+    }
+    .page-header > .ms-auto {
+        margin-left: 0 !important;
+        width: 100%;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+
+    /* Tlačítko Ukončit trénink – přes celou šíři */
+    .training-finish-btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    /* Formulář pro přidání série – grid 3 sloupce + tlačítko přes celou řadu */
+    .add-series-row {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 0.4rem;
+        align-items: end;
+    }
+    .add-series-row .add-series-btn-wrap {
+        grid-column: 1 / -1;
+    }
+    .add-series-row .add-series-btn-wrap .btn {
+        width: 100%;
+    }
+    .series-weight, .series-reps, .series-assist {
+        width: 100% !important;
+    }
+
+    .coaches-grid {
+        grid-template-columns: 1fr;
+        padding: 0.65rem;
+        gap: 0.75rem;
+    }
+
+    .coach-stat-row {
+        gap: 0.35rem;
+    }
+
+    .coach-stat {
+        padding: 0.3rem 0.2rem;
+    }
+
+    /* Hlavička cviku v tréninku */
+    .card-header .fs-5 { font-size: 0.9rem !important; }
+    .card-header .badge.fs-5 { font-size: 0.78rem !important; }
+
+    /* Statistické hodnoty */
+    .display-6 { font-size: 1.3rem; }
+
+    /* Tabulky */
+    .table { font-size: 0.78rem; }
+    .table th, .table td { padding: 0.35rem 0.4rem; }
+
+    /* Tabulka historií sportovce – skrýt sloupec Místo */
+    .table-sessions th:nth-child(3),
+    .table-sessions td:nth-child(3) { display: none; }
+
+    /* Nadpisy */
+    h2 { font-size: 1.1rem; }
+    .fs-6 { font-size: 0.78rem !important; }
+
+    /* Modální okno */
+    .modal-dialog { margin: 0.4rem; }
+
+    /* Edit formulář cviku – vstup přes celou šíři */
+    .exercise-edit-form-input { min-width: 0 !important; width: 100%; }
+
+    /* Akční tlačítka v hlavičce tréninku */
+    .btn-lg {
+        font-size: 0.95rem;
+        padding: 0.5rem 1rem;
+    }
+}
+
+/* Jidelnicky (sportovec + trener) - karty pro mobil a tablet */
+@media (max-width: 991.98px) {
+    .mealplan-table-wrap {
+        overflow-x: visible;
+    }
+
+    .mealplan-items-table {
+        table-layout: auto !important;
+    }
+
+    .mealplan-items-table thead {
+        display: none !important;
+    }
+
+    .mealplan-items-table,
+    .mealplan-items-table tbody,
+    .mealplan-items-table tr,
+    .mealplan-items-table td {
+        display: block !important;
+        width: 100% !important;
+    }
+
+    .mealplan-items-table tr {
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        margin-bottom: 0.75rem;
+        padding: 0.5rem 0.65rem;
+        background: #fff;
+    }
+
+    .mealplan-items-table td {
+        border: 0;
+        border-bottom: 1px dashed #e2e8f0;
+        padding: 0.4rem 0 !important;
+        white-space: normal !important;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+    }
+
+    .mealplan-items-table td:last-child {
+        border-bottom: 0;
+    }
+
+    .mealplan-items-table td::before {
+        content: attr(data-label);
+        display: block;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #64748b;
+        margin-bottom: 0.1rem;
+    }
+
+    .mealplan-items-table td[data-label="#"]::before {
+        content: "Polozka";
+    }
+
+    .mealplan-items-table td[data-label="Akce"] .d-flex {
+        justify-content: flex-start !important;
+        flex-wrap: wrap;
+    }
+
+    .mealplan-items-table img {
+        display: block;
+        margin-top: 0.35rem;
+        max-width: 100%;
+    }
+}
+
+/* Trener - prepnout driv do karet, aby nevznikal horizontalni posuvnik */
+@media (max-width: 1199.98px) {
+    .mealplan-table-wrap {
+        overflow-x: visible;
+    }
+
+    .coach-mealplan-items-table {
+        table-layout: auto !important;
+    }
+
+    .coach-mealplan-items-table thead {
+        display: none !important;
+    }
+
+    .coach-mealplan-items-table,
+    .coach-mealplan-items-table tbody,
+    .coach-mealplan-items-table tr,
+    .coach-mealplan-items-table td {
+        display: block !important;
+        width: 100% !important;
+    }
+
+    .coach-mealplan-items-table tr {
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        margin-bottom: 0.75rem;
+        padding: 0.5rem 0.65rem;
+        background: #fff;
+    }
+
+    .coach-mealplan-items-table td {
+        border: 0;
+        border-bottom: 1px dashed #e2e8f0;
+        padding: 0.4rem 0 !important;
+        white-space: normal !important;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+    }
+
+    .coach-mealplan-items-table td:last-child {
+        border-bottom: 0;
+    }
+
+    .coach-mealplan-items-table td::before {
+        content: attr(data-label);
+        display: block;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #64748b;
+        margin-bottom: 0.1rem;
+    }
+
+    .coach-mealplan-items-table td[data-label="#"]::before {
+        content: "Polozka";
+    }
+
+    .coach-mealplan-items-table td[data-label="Akce"] .d-flex {
+        justify-content: flex-start !important;
+        flex-wrap: wrap;
+    }
+}
+
+/* Globalni citelnost tabulek na mobilu */
+@media (max-width: 991.98px) {
+    .table-responsive {
+        -webkit-overflow-scrolling: touch;
+    }
+}
+
+@media (max-width: 575.98px) {
+    body {
+        font-size: 15px;
+    }
+
+    .table-responsive.mobile-stack-wrap {
+        overflow-x: visible;
+        border: 0;
+    }
+
+    .table-responsive.mobile-stack-wrap > .table.mobile-stack-table {
+        min-width: 0 !important;
+        margin-bottom: 0;
+        table-layout: auto;
+    }
+
+    .table.mobile-stack-table thead {
+        display: none;
+    }
+
+    .table.mobile-stack-table,
+    .table.mobile-stack-table tbody,
+    .table.mobile-stack-table tr,
+    .table.mobile-stack-table td,
+    .table.mobile-stack-table th {
+        display: block;
+        width: 100%;
+    }
+
+    .table.mobile-stack-table tr {
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        margin-bottom: 0.7rem;
+        padding: 0.45rem 0.65rem;
+        background: #fff;
+    }
+
+    .table.mobile-stack-table td,
+    .table.mobile-stack-table th {
+        border: 0;
+        border-bottom: 1px dashed #e2e8f0;
+        white-space: normal !important;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+        text-align: left !important;
+        padding: 0.42rem 0 !important;
+    }
+
+    .table.mobile-stack-table td:last-child,
+    .table.mobile-stack-table th:last-child {
+        border-bottom: 0;
+    }
+
+    .table.mobile-stack-table td::before,
+    .table.mobile-stack-table th::before {
+        content: attr(data-label);
+        display: block;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #64748b;
+        margin-bottom: 0.08rem;
+    }
+
+    .table.mobile-stack-table td[data-label=""]::before,
+    .table.mobile-stack-table th[data-label=""]::before {
+        display: none;
+    }
+
+    .table {
+        font-size: 0.88rem;
+    }
+
+    .table th,
+    .table td {
+        padding: 0.5rem 0.55rem;
+    }
+
+    .btn {
+        font-size: 0.92rem;
+    }
+}
+
+/* Print styly */
+@media print {
+    .navbar, .btn, footer, .modal, form[onsubmit],
+    [data-bs-toggle="modal"], #completeModal {
+        display: none !important;
+    }
+
+    body {
+        background: white;
+        font-size: 12px;
+    }
+
+    .card {
+        break-inside: avoid;
+        box-shadow: none !important;
+        border: 1px solid #ccc !important;
+    }
+
+    .card-header.bg-dark {
+        background: #333 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    .table-striped tbody tr:nth-of-type(odd) {
+        background-color: #f8f8f8 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+}
+
+/* Animace načítání */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.card {
+    animation: fadeIn 0.3s ease;
+}
+
+/* Barevné pruhy pro cviky v sadě */
+.exercise-block:nth-child(odd)  .card-header { background: #1e293b !important; }
+.exercise-block:nth-child(even) .card-header { background: #0f172a !important; }
