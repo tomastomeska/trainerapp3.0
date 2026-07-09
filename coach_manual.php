@@ -177,6 +177,20 @@ renderHeader('Návod pro trenéry', false, true);
             <li>Po zrušení ověřte, že událost zmizela nebo je označená jako zrušená.</li>
             <li>V měsíčním přehledu si průběžně hlídejte také požadavky na schválení, abyste je nemuseli dohledávat v detailu každého dne.</li>
         </ol>
+
+        <h6 class="fw-bold mt-3">Jak propojit kalendář s Apple Kalendářem</h6>
+        <ol>
+            <li>Otevřete Kalendář.</li>
+            <li>Přepněte se do záložky Apple Kalendář.</li>
+            <li>Zapněte volbu Synchronizovat události do Apple Kalendáře.</li>
+            <li>Klikněte na Uložit nastavení.</li>
+            <li>Zkopírujte soukromý Apple kalendář odkaz.</li>
+            <li>Na iPhonu nebo iPadu otevřete Nastavení &gt; Kalendář &gt; Účty &gt; Přidat účet &gt; Jiný &gt; Přidat odebíraný kalendář.</li>
+            <li>Na Macu otevřete Kalendář &gt; Soubor &gt; Nový odběr kalendáře.</li>
+            <li>Vložte soukromý odkaz a potvrďte odběr.</li>
+            <li>Ověřte, že se v Apple Kalendáři zobrazil nový kalendář.</li>
+            <li>Pamatujte, že se synchronizují pouze události, ne uzamčené časy.</li>
+        </ol>
     </div>
 </div>
 

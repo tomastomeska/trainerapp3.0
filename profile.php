@@ -651,28 +651,27 @@ renderHeader('Můj profil', false, true);
 document.addEventListener('DOMContentLoaded', function () {
     const editor = document.getElementById('agreementEditor');
     const hidden = document.getElementById('agreementBodyHtml');
-    if (!editor || !hidden) {
-        return;
+    if (editor && hidden) {
+        const syncAgreementHtml = function () {
+            hidden.value = editor.innerHTML;
+        };
+
+        syncAgreementHtml();
+        editor.addEventListener('input', syncAgreementHtml);
+        editor.closest('form')?.addEventListener('submit', syncAgreementHtml);
+
+        document.querySelectorAll('[data-agreement-cmd]').forEach((btn) => {
+            btn.addEventListener('click', function () {
+                const cmd = this.getAttribute('data-agreement-cmd');
+                if (!cmd) {
+                    return;
+                }
+                editor.focus();
+                document.execCommand(cmd, false);
+                syncAgreementHtml();
+            });
+        });
     }
 
-    const syncAgreementHtml = function () {
-        hidden.value = editor.innerHTML;
-    };
-
-    syncAgreementHtml();
-    editor.addEventListener('input', syncAgreementHtml);
-    editor.closest('form')?.addEventListener('submit', syncAgreementHtml);
-
-    document.querySelectorAll('[data-agreement-cmd]').forEach((btn) => {
-        btn.addEventListener('click', function () {
-            const cmd = this.getAttribute('data-agreement-cmd');
-            if (!cmd) {
-                return;
-            }
-            editor.focus();
-            document.execCommand(cmd, false);
-            syncAgreementHtml();
-        });
-    });
 });
 </script>

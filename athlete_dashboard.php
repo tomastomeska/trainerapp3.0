@@ -235,6 +235,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         redirect(BASE_URL . '/athlete_dashboard.php');
     }
+
 }
 
 $sessionsStmt = $pdo->prepare(

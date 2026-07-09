@@ -580,6 +580,16 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         $pdo->exec('ALTER TABLE athletes ADD COLUMN paired_training_rate DECIMAL(10,2) NULL AFTER training_rate');
     }
 
+    $stmtAthleteAppleSyncEnabled = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'apple_calendar_sync_enabled'");
+    if (!$stmtAthleteAppleSyncEnabled->fetch()) {
+        $pdo->exec('ALTER TABLE athletes ADD COLUMN apple_calendar_sync_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER paired_training_rate');
+    }
+
+    $stmtAthleteAppleToken = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'apple_calendar_token'");
+    if (!$stmtAthleteAppleToken->fetch()) {
+        $pdo->exec('ALTER TABLE athletes ADD COLUMN apple_calendar_token CHAR(64) NULL AFTER apple_calendar_sync_enabled');
+    }
+
     // Poslední přihlášení trenéra
     $stmtLogin = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'last_login'");
     if (!$stmtLogin->fetch()) {
@@ -605,6 +615,17 @@ function ensureSchemaUpgrades(PDO $pdo): void {
     } else {
         $pdo->exec('UPDATE coaches SET makeup_booking_deadline_days = 14 WHERE makeup_booking_deadline_days IS NULL OR makeup_booking_deadline_days <= 0');
         $pdo->exec('ALTER TABLE coaches MODIFY COLUMN makeup_booking_deadline_days INT NOT NULL DEFAULT 14');
+    }
+
+    // Soukromý token pro Apple Calendar odběr kalendáře trenéra
+    $stmtCoachAppleSyncEnabled = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'apple_calendar_sync_enabled'");
+    if (!$stmtCoachAppleSyncEnabled->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN apple_calendar_sync_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER makeup_booking_deadline_days');
+    }
+
+    $stmtCoachAppleToken = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'apple_calendar_token'");
+    if (!$stmtCoachAppleToken->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN apple_calendar_token CHAR(64) NULL AFTER apple_calendar_sync_enabled');
     }
 
     // Tabulka superadminu

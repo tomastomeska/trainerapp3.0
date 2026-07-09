@@ -8,6 +8,78 @@ requireLogin();
 $coachId = (int)getCurrentCoachId();
 $pdo = getDB();
 
+function generateCalendarSubscriptionToken(): string
+{
+    return bin2hex(random_bytes(32));
+}
+
+function buildAbsoluteAppUrl(string $path): string
+{
+    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['SERVER_PORT'] ?? '') === '443');
+    $scheme = $isHttps ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? 'localhost');
+
+    return $scheme . '://' . $host . BASE_URL . $path;
+}
+
+$coachStmt = $pdo->prepare('SELECT id, name, apple_calendar_sync_enabled, apple_calendar_token FROM coaches WHERE id = ? LIMIT 1');
+$coachStmt->execute([$coachId]);
+$coach = $coachStmt->fetch();
+
+if (!$coach) {
+    session_destroy();
+    redirect(BASE_URL . '/login.php');
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
+        flash('danger', 'Neplatný bezpečnostní token.');
+        redirect(BASE_URL . '/calendar.php?tab=apple');
+    }
+
+    $action = (string)($_POST['action'] ?? '');
+    if ($action === 'update_apple_calendar_sync') {
+        $syncEnabled = !empty($_POST['apple_calendar_sync_enabled']) ? 1 : 0;
+        $currentToken = (string)($coach['apple_calendar_token'] ?? '');
+        if ($syncEnabled === 1 && $currentToken === '') {
+            $currentToken = generateCalendarSubscriptionToken();
+        }
+
+        $updateStmt = $pdo->prepare(
+            'UPDATE coaches
+             SET apple_calendar_sync_enabled = ?, apple_calendar_token = ?
+             WHERE id = ?'
+        );
+        $updateStmt->execute([$syncEnabled, $currentToken !== '' ? $currentToken : null, $coachId]);
+
+        flash('success', 'Apple Kalendář synchronizace byla aktualizována.');
+        redirect(BASE_URL . '/calendar.php?tab=apple');
+    }
+
+    if ($action === 'regenerate_apple_calendar_token') {
+        $newToken = generateCalendarSubscriptionToken();
+        $updateStmt = $pdo->prepare(
+            'UPDATE coaches
+             SET apple_calendar_sync_enabled = 1, apple_calendar_token = ?
+             WHERE id = ?'
+        );
+        $updateStmt->execute([$newToken, $coachId]);
+
+        flash('success', 'Soukromý Apple kalendář odkaz byl z bezpečnostních důvodů obnoven.');
+        redirect(BASE_URL . '/calendar.php?tab=apple');
+    }
+}
+
+$appleCalendarUrl = null;
+if (!empty($coach['apple_calendar_sync_enabled']) && !empty($coach['apple_calendar_token'])) {
+    $appleCalendarUrl = buildAbsoluteAppUrl('/apple_calendar_feed.php/' . rawurlencode((string)$coach['apple_calendar_token']) . '/trainerapp-calendar.ics');
+}
+
+$activeTab = (string)($_GET['tab'] ?? 'week');
+if (!in_array($activeTab, ['week', 'month', 'apple'], true)) {
+    $activeTab = 'week';
+}
+
 $athleteStmt = $pdo->prepare(
     'SELECT id, first_name, last_name
      FROM athletes
@@ -295,19 +367,24 @@ renderHeader('Kalendář', false, true);
 
 <ul class="nav nav-tabs mb-3" id="calendarViewTabs" role="tablist">
     <li class="nav-item" role="presentation">
-        <button class="nav-link active" id="week-view-tab" data-bs-toggle="tab" data-bs-target="#week-view-pane" type="button" role="tab" aria-controls="week-view-pane" aria-selected="true">
+        <button class="nav-link <?= $activeTab === 'week' ? 'active' : '' ?>" id="week-view-tab" data-bs-toggle="tab" data-bs-target="#week-view-pane" type="button" role="tab" aria-controls="week-view-pane" aria-selected="<?= $activeTab === 'week' ? 'true' : 'false' ?>">
             Týdenní kalendář
         </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="month-list-tab" data-bs-toggle="tab" data-bs-target="#month-list-pane" type="button" role="tab" aria-controls="month-list-pane" aria-selected="false">
+        <button class="nav-link <?= $activeTab === 'month' ? 'active' : '' ?>" id="month-list-tab" data-bs-toggle="tab" data-bs-target="#month-list-pane" type="button" role="tab" aria-controls="month-list-pane" aria-selected="<?= $activeTab === 'month' ? 'true' : 'false' ?>">
             Měsíční seznam
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link <?= $activeTab === 'apple' ? 'active' : '' ?>" id="apple-calendar-tab" data-bs-toggle="tab" data-bs-target="#apple-calendar-pane" type="button" role="tab" aria-controls="apple-calendar-pane" aria-selected="<?= $activeTab === 'apple' ? 'true' : 'false' ?>">
+            Apple Kalendář
         </button>
     </li>
 </ul>
 
 <div class="tab-content">
-<div class="tab-pane fade show active" id="week-view-pane" role="tabpanel" aria-labelledby="week-view-tab" tabindex="0">
+<div class="tab-pane fade <?= $activeTab === 'week' ? 'show active' : '' ?>" id="week-view-pane" role="tabpanel" aria-labelledby="week-view-tab" tabindex="0">
 
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-body py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -343,7 +420,7 @@ renderHeader('Kalendář', false, true);
 
 </div>
 
-<div class="tab-pane fade" id="month-list-pane" role="tabpanel" aria-labelledby="month-list-tab" tabindex="0">
+<div class="tab-pane fade <?= $activeTab === 'month' ? 'show active' : '' ?>" id="month-list-pane" role="tabpanel" aria-labelledby="month-list-tab" tabindex="0">
     <div class="card border-0 shadow-sm">
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
@@ -375,6 +452,86 @@ renderHeader('Kalendář', false, true);
             </div>
 
             <div class="text-muted small mt-2 d-none" id="monthListEmpty">V tomto měsíci nejsou žádné události.</div>
+        </div>
+    </div>
+</div>
+
+<div class="tab-pane fade <?= $activeTab === 'apple' ? 'show active' : '' ?>" id="apple-calendar-pane" role="tabpanel" aria-labelledby="apple-calendar-tab" tabindex="0">
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <form method="post" class="mb-3">
+                <?= csrfField() ?>
+                <input type="hidden" name="action" value="update_apple_calendar_sync">
+
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" role="switch" id="appleCalendarSyncEnabled" name="apple_calendar_sync_enabled" value="1" <?= !empty($coach['apple_calendar_sync_enabled']) ? 'checked' : '' ?>>
+                    <label class="form-check-label fw-semibold" for="appleCalendarSyncEnabled">Synchronizovat události do Apple Kalendáře</label>
+                </div>
+                <div class="form-text mb-3">
+                    Exportují se pouze události z kalendáře. Uzamčené časy se do Apple Kalendáře neposílají.
+                </div>
+
+                <button type="submit" class="btn btn-warning fw-semibold">
+                    <i class="fas fa-save me-1"></i>Uložit nastavení
+                </button>
+            </form>
+
+            <?php if ($appleCalendarUrl !== null): ?>
+            <div class="alert alert-info py-2 small mb-3">
+                Postup je jednoduchý: 1) zkopírujte odkaz níže, 2) vložte ho do Apple Kalendáře jako odebíraný kalendář, 3) potvrďte odběr. Všechny další změny událostí z TrainerApp se pak budou do Apple Kalendáře průběžně propisovat.
+            </div>
+            <label class="form-label fw-semibold">Soukromý Apple kalendář odkaz</label>
+            <div class="input-group mb-2">
+                <input type="text" id="appleCalendarUrlField" class="form-control" value="<?= h($appleCalendarUrl) ?>" readonly onclick="this.select();">
+                <button type="button" class="btn btn-outline-secondary" id="copyAppleCalendarUrlBtn">Kopírovat odkaz</button>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+                <a href="webcal://<?= h(preg_replace('#^https?://#', '', $appleCalendarUrl) ?? '') ?>" class="btn btn-outline-dark btn-sm">Otevřít přes webcal</a>
+                <span class="small text-muted" id="copyAppleCalendarUrlStatus" aria-live="polite"></span>
+            </div>
+            <div class="small text-muted mb-3">
+                Pokud otevíráte kalendář přímo na iPhonu nebo Macu, můžete zkusit i tlačítko Otevřít přes webcal. Když nebude fungovat, použijte ruční postup níže.
+            </div>
+            <div class="row g-3 small">
+                <div class="col-md-6">
+                    <div class="border rounded-3 bg-light p-3 h-100">
+                        <div class="fw-semibold mb-2">Nastavení na iPhonu nebo iPadu</div>
+                        <ol class="mb-0 ps-3">
+                            <li>Otevřete Nastavení.</li>
+                            <li>Přejděte do Kalendář.</li>
+                            <li>Otevřete Účty.</li>
+                            <li>Zvolte Přidat účet.</li>
+                            <li>Zvolte Jiný.</li>
+                            <li>Klikněte na Přidat odebíraný kalendář.</li>
+                            <li>Vložte soukromý odkaz z pole výše.</li>
+                            <li>Potvrďte tlačítkem Další a Uložit.</li>
+                        </ol>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="border rounded-3 bg-light p-3 h-100">
+                        <div class="fw-semibold mb-2">Nastavení na Macu</div>
+                        <ol class="mb-0 ps-3">
+                            <li>Otevřete aplikaci Kalendář.</li>
+                            <li>V horním menu klikněte na Soubor.</li>
+                            <li>Zvolte Nový odběr kalendáře.</li>
+                            <li>Vložte soukromý odkaz z pole výše.</li>
+                            <li>Potvrďte Odebírat.</li>
+                            <li>Zkontrolujte, že se nový kalendář zobrazil v levém panelu.</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+            <form method="post" class="mt-3">
+                <?= csrfField() ?>
+                <input type="hidden" name="action" value="regenerate_apple_calendar_token">
+                <button type="submit" class="btn btn-outline-secondary btn-sm" onclick="return confirm('Obnovit soukromý odkaz? Původní odběr v Apple Kalendáři přestane fungovat.');">
+                    <i class="fas fa-rotate-right me-1"></i>Obnovit soukromý odkaz
+                </button>
+            </form>
+            <?php else: ?>
+            <div class="small text-muted">Po zapnutí a uložení se zde zobrazí soukromý odkaz pro Apple Kalendář i přesný návod pro iPhone, iPad a Mac.</div>
+            <?php endif; ?>
         </div>
     </div>
 </div>
@@ -1575,6 +1732,33 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         const css = classMap[statusClass] || 'bg-secondary';
         return `<span class="badge ${css}">${escapeHtml(statusLabel)}</span>`;
+    }
+
+    const copyAppleCalendarUrlBtn = document.getElementById('copyAppleCalendarUrlBtn');
+    const appleCalendarUrlField = document.getElementById('appleCalendarUrlField');
+    const copyAppleCalendarUrlStatus = document.getElementById('copyAppleCalendarUrlStatus');
+
+    if (copyAppleCalendarUrlBtn && appleCalendarUrlField) {
+        copyAppleCalendarUrlBtn.addEventListener('click', async () => {
+            appleCalendarUrlField.focus();
+            appleCalendarUrlField.select();
+
+            try {
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(appleCalendarUrlField.value);
+                } else {
+                    document.execCommand('copy');
+                }
+
+                if (copyAppleCalendarUrlStatus) {
+                    copyAppleCalendarUrlStatus.textContent = 'Odkaz zkopírován.';
+                }
+            } catch (error) {
+                if (copyAppleCalendarUrlStatus) {
+                    copyAppleCalendarUrlStatus.textContent = 'Kopírování se nepodařilo, zkopírujte odkaz ručně.';
+                }
+            }
+        });
     }
 
     function renderMonthList(items) {

@@ -73,6 +73,19 @@ renderAthleteHeader('Návod pro sportovce', false, true);
             <li>V historii hmotnosti můžete záznam kdykoliv upravit nebo smazat.</li>
             <li>Zadaná hmotnost se ukládá do vaší historie a trenér ji uvidí při vedení tréninku.</li>
         </ol>
+
+        <h6 class="fw-bold mt-3">Jak propojit moje tréninky s Apple Kalendářem</h6>
+        <ol>
+            <li>V menu otevřete Profil.</li>
+            <li>Najděte kartu Apple Kalendář.</li>
+            <li>Zapněte volbu Synchronizovat moje tréninky do Apple Kalendáře.</li>
+            <li>Klikněte na Uložit nastavení.</li>
+            <li>Zkopírujte soukromý Apple kalendář odkaz.</li>
+            <li>Na iPhonu nebo iPadu otevřete Nastavení &gt; Kalendář &gt; Účty &gt; Přidat účet &gt; Jiný &gt; Přidat odebíraný kalendář.</li>
+            <li>Na Macu otevřete Kalendář &gt; Soubor &gt; Nový odběr kalendáře.</li>
+            <li>Vložte soukromý odkaz a potvrďte odběr.</li>
+            <li>Neschválené termíny se zobrazí jako čekající na schválení a po schválení se automaticky změní na běžnou událost.</li>
+        </ol>
     </div>
 </div>
 
