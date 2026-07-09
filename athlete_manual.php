@@ -86,6 +86,19 @@ renderAthleteHeader('Návod pro sportovce', false, true);
             <li>Vložte soukromý odkaz a potvrďte odběr.</li>
             <li>Neschválené termíny se zobrazí jako čekající na schválení a po schválení se automaticky změní na běžnou událost.</li>
         </ol>
+
+        <h6 class="fw-bold mt-3">Jak propojit moje tréninky s Google Kalendářem</h6>
+        <ol>
+            <li>V menu otevřete Kalendář.</li>
+            <li>Přepněte se do záložky Google Kalendář.</li>
+            <li>Zapněte volbu Synchronizovat moje tréninky do Google Kalendáře.</li>
+            <li>Klikněte na Uložit nastavení.</li>
+            <li>Zkopírujte soukromý Google kalendář odkaz (ICS).</li>
+            <li>Otevřete Google Kalendář v prohlížeči.</li>
+            <li>V levém panelu klikněte na plus u Další kalendáře a zvolte Z URL.</li>
+            <li>Vložte soukromý odkaz a potvrďte Přidat kalendář.</li>
+            <li>Neschválené termíny zůstávají označené jako čekající na schválení.</li>
+        </ol>
     </div>
 </div>
 

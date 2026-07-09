@@ -44,12 +44,15 @@ function buildAbsoluteAppUrl(string $path): string
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = (string)($_POST['action'] ?? '');
+    $googleAction = in_array($action, ['update_google_calendar_sync', 'regenerate_google_calendar_token'], true);
+    $actionTab = $googleAction ? 'google' : 'apple';
+
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
         flash('danger', 'Neplatný bezpečnostní token.');
-        redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
+        redirect(BASE_URL . '/athlete_calendar.php?tab=' . $actionTab);
     }
 
-    $action = (string)($_POST['action'] ?? '');
     if ($action === 'update_apple_calendar_sync') {
         $syncEnabled = !empty($_POST['apple_calendar_sync_enabled']) ? 1 : 0;
         $currentToken = (string)($athlete['apple_calendar_token'] ?? '');
@@ -80,6 +83,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         flash('success', 'Soukromý Apple kalendář odkaz byl obnoven.');
         redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
     }
+
+    if ($action === 'update_google_calendar_sync') {
+        $syncEnabled = !empty($_POST['google_calendar_sync_enabled']) ? 1 : 0;
+        $currentToken = (string)($athlete['apple_calendar_token'] ?? '');
+        if ($syncEnabled === 1 && $currentToken === '') {
+            $currentToken = generateCalendarSubscriptionToken();
+        }
+
+        $updateStmt = $pdo->prepare(
+            'UPDATE athletes
+             SET apple_calendar_sync_enabled = ?, apple_calendar_token = ?
+             WHERE id = ?'
+        );
+        $updateStmt->execute([$syncEnabled, $currentToken !== '' ? $currentToken : null, $athleteId]);
+
+        flash('success', 'Google Kalendář synchronizace byla aktualizována.');
+        redirect(BASE_URL . '/athlete_calendar.php?tab=google');
+    }
+
+    if ($action === 'regenerate_google_calendar_token') {
+        $newToken = generateCalendarSubscriptionToken();
+        $updateStmt = $pdo->prepare(
+            'UPDATE athletes
+             SET apple_calendar_sync_enabled = 1, apple_calendar_token = ?
+             WHERE id = ?'
+        );
+        $updateStmt->execute([$newToken, $athleteId]);
+
+        flash('success', 'Soukromý Google kalendář odkaz byl obnoven.');
+        redirect(BASE_URL . '/athlete_calendar.php?tab=google');
+    }
 }
 
 $athleteAppleCalendarUrl = null;
@@ -87,8 +121,10 @@ if (!empty($athlete['apple_calendar_sync_enabled']) && !empty($athlete['apple_ca
     $athleteAppleCalendarUrl = buildAbsoluteAppUrl('/athlete_calendar_feed.php/' . rawurlencode((string)$athlete['apple_calendar_token']) . '/trainerapp-calendar.ics');
 }
 
+$athleteGoogleCalendarUrl = $athleteAppleCalendarUrl;
+
 $activeTab = (string)($_GET['tab'] ?? 'week');
-if (!in_array($activeTab, ['week', 'month', 'apple'], true)) {
+if (!in_array($activeTab, ['week', 'month', 'apple', 'google'], true)) {
     $activeTab = 'week';
 }
 
@@ -256,6 +292,11 @@ renderAthleteHeader('Můj kalendář', false, true);
             Apple Kalendář
         </button>
     </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link <?= $activeTab === 'google' ? 'active' : '' ?>" id="athlete-google-tab" data-bs-toggle="tab" data-bs-target="#athlete-google-pane" type="button" role="tab" aria-controls="athlete-google-pane" aria-selected="<?= $activeTab === 'google' ? 'true' : 'false' ?>">
+            Google Kalendář
+        </button>
+    </li>
 </ul>
 
 <div class="tab-content">
@@ -394,6 +435,87 @@ renderAthleteHeader('Můj kalendář', false, true);
             </form>
             <?php else: ?>
             <div class="small text-muted">Po zapnutí a uložení se zde zobrazí váš soukromý odkaz pro Apple Kalendář.</div>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+
+<div class="tab-pane fade <?= $activeTab === 'google' ? 'show active' : '' ?>" id="athlete-google-pane" role="tabpanel" aria-labelledby="athlete-google-tab" tabindex="0">
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <form method="post" class="mb-3">
+                <?= csrfField() ?>
+                <input type="hidden" name="action" value="update_google_calendar_sync">
+
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" role="switch" id="athleteGoogleCalendarSyncEnabled" name="google_calendar_sync_enabled" value="1" <?= !empty($athlete['apple_calendar_sync_enabled']) ? 'checked' : '' ?>>
+                    <label class="form-check-label fw-semibold" for="athleteGoogleCalendarSyncEnabled">Synchronizovat moje tréninky do Google Kalendáře</label>
+                </div>
+
+                <div class="form-text mb-3">
+                    Synchronizují se stejné události jako do Apple Kalendáře. Neschválené termíny trenérem se v kalendáři zobrazí jako čekající na schválení.
+                </div>
+
+                <button type="submit" class="btn btn-warning fw-semibold">
+                    <i class="fas fa-save me-1"></i>Uložit nastavení
+                </button>
+            </form>
+
+            <?php if ($athleteGoogleCalendarUrl !== null): ?>
+            <div class="alert alert-info py-2 small mb-3">
+                Postup: 1) zkopírujte odkaz níže, 2) v Google Kalendáři zvolte Přidat kalendář podle URL, 3) potvrďte přidání. Budou se synchronizovat jen vaše tréninky.
+            </div>
+            <label class="form-label fw-semibold">Soukromý Google kalendář odkaz (ICS)</label>
+            <div class="input-group mb-2">
+                <input type="text" id="athleteGoogleCalendarUrlField" class="form-control" value="<?= h($athleteGoogleCalendarUrl) ?>" readonly onclick="this.select();">
+                <button type="button" class="btn btn-outline-secondary" id="copyAthleteGoogleCalendarUrlBtn">Kopírovat odkaz</button>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+                <a href="https://calendar.google.com/calendar/u/0/r/settings/addbyurl?cid=<?= rawurlencode($athleteGoogleCalendarUrl) ?>" target="_blank" rel="noopener" class="btn btn-outline-dark btn-sm">Otevřít Přidat podle URL</a>
+                <span class="small text-muted" id="copyAthleteGoogleCalendarUrlStatus" aria-live="polite"></span>
+            </div>
+            <div class="alert alert-warning py-2 small mb-3">
+                Na mobilu se nový odběr v aplikaci Google Kalendář často projeví se zpožděním. Pokud už kalendář vidíte na počítači, je to v pořádku a na mobil se obvykle doplní automaticky později.
+            </div>
+            <div class="row g-3 small mb-2">
+                <div class="col-md-6">
+                    <div class="border rounded-3 bg-light p-3 h-100">
+                        <div class="fw-semibold mb-2">Postup na webu Google Kalendáře</div>
+                        <ol class="mb-0 ps-3">
+                            <li>Otevřete Google Kalendář v prohlížeči.</li>
+                            <li>V levém panelu klikněte na plus u Další kalendáře.</li>
+                            <li>Zvolte Z URL a vložte soukromý ICS odkaz.</li>
+                            <li>Potvrďte Přidat kalendář.</li>
+                        </ol>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="border rounded-3 bg-light p-3 h-100">
+                        <div class="fw-semibold mb-2">Postup na mobilu (Android/iPhone)</div>
+                        <ol class="mb-0 ps-3">
+                            <li>Otevřete Google Kalendář v mobilním prohlížeči, ne v aplikaci: <a href="https://calendar.google.com/calendar/u/0/r/settings/addbyurl" target="_blank" rel="noopener">https://calendar.google.com/calendar/u/0/r/settings/addbyurl</a>.</li>
+                            <li>Přihlaste se stejným Google účtem jako v aplikaci.</li>
+                            <li>Vložte URL přes Přidat kalendář podle URL.</li>
+                            <li>Počkejte na první synchronizaci a v aplikaci zkontrolujte, že je kalendář zapnutý.</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+            <details class="mt-3">
+                <summary class="small text-muted" style="cursor:pointer;">Pokročilé: bezpečnost soukromého odkazu</summary>
+                <div class="small text-muted mt-2">
+                    Obnovení soukromého odkazu okamžitě zneplatní původní URL. Použijte pouze tehdy, pokud se domníváte, že byl odkaz sdílen nepovolané osobě nebo pokud potřebujete vynutit nový odběr.
+                </div>
+                <form method="post" class="mt-2">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="action" value="regenerate_google_calendar_token">
+                    <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Opravdu obnovit soukromý odkaz? Tímto okamžitě přestanou fungovat všechny stávající Google odběry a bude nutné přidat nový odkaz.');">
+                        <i class="fas fa-rotate-right me-1"></i>Obnovit soukromý odkaz
+                    </button>
+                </form>
+            </details>
+            <?php else: ?>
+            <div class="small text-muted">Po zapnutí a uložení se zde zobrazí váš soukromý odkaz pro Google Kalendář.</div>
             <?php endif; ?>
         </div>
     </div>
@@ -1281,10 +1403,14 @@ document.addEventListener('DOMContentLoaded', () => {
         loadAthleteMonthList();
     });
 
-    const copyButton = document.getElementById('copyAthleteAppleCalendarUrlBtn');
-    const copyInput = document.getElementById('athleteAppleCalendarUrlField');
-    const copyStatus = document.getElementById('copyAthleteAppleCalendarUrlStatus');
-    if (copyButton && copyInput) {
+    function setupCalendarUrlCopy(buttonId, inputId, statusId) {
+        const copyButton = document.getElementById(buttonId);
+        const copyInput = document.getElementById(inputId);
+        const copyStatus = document.getElementById(statusId);
+        if (!copyButton || !copyInput) {
+            return;
+        }
+
         copyButton.addEventListener('click', async () => {
             copyInput.focus();
             copyInput.select();
@@ -1306,6 +1432,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    setupCalendarUrlCopy('copyAthleteAppleCalendarUrlBtn', 'athleteAppleCalendarUrlField', 'copyAthleteAppleCalendarUrlStatus');
+    setupCalendarUrlCopy('copyAthleteGoogleCalendarUrlBtn', 'athleteGoogleCalendarUrlField', 'copyAthleteGoogleCalendarUrlStatus');
 
     populateReserveHourOptions();
     updateReserveLocationHint();

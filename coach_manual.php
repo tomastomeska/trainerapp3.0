@@ -191,6 +191,19 @@ renderHeader('Návod pro trenéry', false, true);
             <li>Ověřte, že se v Apple Kalendáři zobrazil nový kalendář.</li>
             <li>Pamatujte, že se synchronizují pouze události, ne uzamčené časy.</li>
         </ol>
+
+        <h6 class="fw-bold mt-3">Jak propojit kalendář s Google Kalendářem</h6>
+        <ol>
+            <li>Otevřete Kalendář.</li>
+            <li>Přepněte se do záložky Google Kalendář.</li>
+            <li>Zapněte volbu Synchronizovat události do Google Kalendáře.</li>
+            <li>Klikněte na Uložit nastavení.</li>
+            <li>Zkopírujte soukromý Google kalendář odkaz (ICS).</li>
+            <li>Otevřete Google Kalendář v prohlížeči.</li>
+            <li>V levém panelu klikněte na plus u Další kalendáře a zvolte Z URL.</li>
+            <li>Vložte soukromý odkaz a potvrďte Přidat kalendář.</li>
+            <li>Počítejte s tím, že Google změny načítá periodicky a ne vždy okamžitě.</li>
+        </ol>
     </div>
 </div>
 
