@@ -598,4 +598,70 @@ function ensureSchemaUpgrades(PDO $pdo): void {
     } catch (Throwable $e) {
         error_log('gallery_folders migration error (admin): ' . $e->getMessage());
     }
+
+    // Videosekce – slozky trenera
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `video_folders` (
+            `id`          INT AUTO_INCREMENT PRIMARY KEY,
+            `coach_id`    INT NOT NULL,
+            `name`        VARCHAR(200) NOT NULL,
+            `folder_type` ENUM('custom','athlete') NOT NULL DEFAULT 'custom',
+            `athlete_id`  INT NULL,
+            `sort_order`  INT NOT NULL DEFAULT 0,
+            `created_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY `idx_video_folders_coach` (`coach_id`),
+            FOREIGN KEY (`coach_id`) REFERENCES `coaches`(`id`) ON DELETE CASCADE,
+            FOREIGN KEY (`athlete_id`) REFERENCES `athletes`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    // Videosekce – videa trenera
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `video_files` (
+            `id`            INT AUTO_INCREMENT PRIMARY KEY,
+            `coach_id`      INT NOT NULL,
+            `folder_id`     INT NULL,
+            `file_path`     VARCHAR(500) NOT NULL,
+            `original_name` VARCHAR(500) NOT NULL,
+            `file_size`     BIGINT NOT NULL DEFAULT 0,
+            `mime_type`     VARCHAR(200) NULL,
+            `description`   TEXT NULL,
+            `visibility`    ENUM('private','all_athletes','specific_athletes') NOT NULL DEFAULT 'private',
+            `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY `idx_video_files_coach` (`coach_id`),
+            KEY `idx_video_files_folder` (`folder_id`),
+            FOREIGN KEY (`coach_id`) REFERENCES `coaches`(`id`) ON DELETE CASCADE,
+            FOREIGN KEY (`folder_id`) REFERENCES `video_folders`(`id`) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    // Videosekce – viditelnost pro konkretni sportovce
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `video_file_athletes` (
+            `id`         INT AUTO_INCREMENT PRIMARY KEY,
+            `file_id`    INT NOT NULL,
+            `athlete_id` INT NOT NULL,
+            UNIQUE KEY `uq_video_file_athlete` (`file_id`, `athlete_id`),
+            FOREIGN KEY (`file_id`) REFERENCES `video_files`(`id`) ON DELETE CASCADE,
+            FOREIGN KEY (`athlete_id`) REFERENCES `athletes`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    // Migrace: vytvorit chybejici video_folders pro stavajici sportovce
+    try {
+        $pdo->exec(" 
+            INSERT IGNORE INTO `video_folders` (coach_id, name, folder_type, athlete_id)
+            SELECT a.coach_id,
+                   CONCAT(a.first_name, ' ', a.last_name),
+                   'athlete',
+                   a.id
+            FROM `athletes` a
+            WHERE NOT EXISTS (
+                SELECT 1 FROM `video_folders` vf
+                WHERE vf.athlete_id = a.id AND vf.coach_id = a.coach_id
+            )
+        ");
+    } catch (Throwable $e) {
+        error_log('video_folders migration error (admin): ' . $e->getMessage());
+    }
 }

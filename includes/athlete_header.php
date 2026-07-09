@@ -70,6 +70,7 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_mealplans.php"><i class="fas fa-utensils me-1"></i>Jídelníčky</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_graphs.php"><i class="fas fa-chart-line me-1"></i>Grafy</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_gallery.php"><i class="fas fa-images me-1"></i>Galerie</a></li>
+                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_videos.php"><i class="fas fa-video me-1"></i>Videa</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_manual.php"><i class="fas fa-circle-question me-1"></i>Návod</a></li>
                 <li class="nav-item"><a class="nav-link d-inline-flex align-items-center" href="<?= BASE_URL ?>/athlete_terms.php"><i class="fas fa-file-contract me-1"></i>Podmínky
                     <?php if ($hasPendingAgreement): ?>

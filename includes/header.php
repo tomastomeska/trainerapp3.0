@@ -173,6 +173,11 @@ if ($coach) {
                     </a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link" href="<?= BASE_URL ?>/videos.php">
+                        <i class="fas fa-video me-1"></i>Videa
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link" href="<?= BASE_URL ?>/coach_manual.php">
                         <i class="fas fa-circle-question me-1"></i>Návod
                     </a>

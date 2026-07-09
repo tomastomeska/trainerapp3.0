@@ -80,6 +80,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 error_log('gallery_folder auto-create error: ' . $e->getMessage());
             }
 
+            // Automaticky vytvorit slozku sportovce ve videosekci trenera
+            try {
+                $pdo->prepare(
+                    "INSERT INTO video_folders (coach_id, name, folder_type, athlete_id, sort_order)
+                     VALUES (?, ?, 'athlete', ?, 0)"
+                )->execute([$coachId, $firstName . ' ' . $lastName, $newAthleteId]);
+            } catch (Throwable $e) {
+                error_log('video_folder auto-create error: ' . $e->getMessage());
+            }
+
             flash('success', "Sportovec {$firstName} {$lastName} byl přidán.");
             redirect(BASE_URL . '/dashboard.php');
         }
