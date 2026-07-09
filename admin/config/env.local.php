@@ -17,7 +17,9 @@ if (!defined('DB_NAME')) define('DB_NAME', (string)envValue('TRAINERAPP_DB_NAME'
 if (!defined('DB_USER')) define('DB_USER', (string)envValue('TRAINERAPP_DB_USER', 'a391857_tplan'));
 if (!defined('DB_PASS')) define('DB_PASS', (string)envValue('TRAINERAPP_DB_PASS', 'rfea4txM'));
 
-if (!defined('BASE_URL')) define('BASE_URL', (string)envValue('TRAINERAPP_BASE_URL', ''));
+$baseUrl = envValue('TRAINERAPP_BASE_URL', null);
+if (!defined('BASE_URL') && $baseUrl !== null) define('BASE_URL', (string)$baseUrl);
+unset($baseUrl);
 if (!defined('SESSION_NAME')) define('SESSION_NAME', (string)envValue('TRAINERAPP_SESSION_NAME', 'trainerapp_v2_sess'));
 if (!defined('SESSION_SECURE')) define('SESSION_SECURE', envValue('TRAINERAPP_SESSION_SECURE', '0') === '1');
 if (!defined('ENABLE_SETUP_ADMIN')) define('ENABLE_SETUP_ADMIN', envValue('TRAINERAPP_ENABLE_SETUP_ADMIN', '0') === '1');

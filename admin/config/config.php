@@ -35,9 +35,24 @@ if (!defined('SMTP_PASS'))      define('SMTP_PASS',      '');
 if (!defined('SMTP_FROM'))      define('SMTP_FROM',      'noreply@example.com');
 if (!defined('SMTP_FROM_NAME')) define('SMTP_FROM_NAME', 'TrainerApp');
 
-// BASE_URL: env.php muze nastavit vlastni hodnotu; vychozi pro lokalni dev
-if (!defined('BASE_URL')) {
-    define('BASE_URL', '');
+// BASE_URL: env.php muze nastavit vlastni hodnotu; jinak autodetekce s podporou /admin
+if (!defined('BASE_URL') || BASE_URL === '') {
+    $script = str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '');
+    $baseUrl = '';
+
+    if ($script !== '' && preg_match('#^(.*)/admin/[^/]+\\.php$#', $script, $m)) {
+        $baseUrl = rtrim((string)($m[1] ?? ''), '/');
+    }
+
+    if ($baseUrl !== '' && $baseUrl[0] !== '/') {
+        $baseUrl = '/' . $baseUrl;
+    }
+    if ($baseUrl === '/' || $baseUrl === '.') {
+        $baseUrl = '';
+    }
+
+    define('BASE_URL', $baseUrl);
+    unset($script, $baseUrl, $m);
 }
 
 // SESSION_SECURE: true na produkci (HTTPS), false lokalne

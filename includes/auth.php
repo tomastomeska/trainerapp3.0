@@ -56,7 +56,7 @@ function requireLogin(): void {
         if ($adminPrefix !== '') {
             header('Location: ' . $adminPrefix . '/login_admin.php');
         } elseif (strpos($script, '/admin/') === 0) {
-            header('Location: /login_admin.php');
+            header('Location: ' . BASE_URL . '/login_admin.php');
         } else {
             header('Location: ' . BASE_URL . '/login.php');
         }
