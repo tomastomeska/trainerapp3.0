@@ -56,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $allowed = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v'];
 
-    $uploadDir = __DIR__ . '/uploads/videos/coach_' . $coachId . '/';
+    $uploadDir = __DIR__ . '/uploads/movie/coach_' . $coachId . '/';
     if (!is_dir($uploadDir)) {
         mkdir($uploadDir, 0755, true);
     }

@@ -103,9 +103,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $f->execute([$fileId, $coachId]);
             $f = $f->fetch();
             if ($f) {
-                $full = __DIR__ . '/uploads/videos/coach_' . $coachId . '/' . $f['file_path'];
-                if (file_exists($full)) {
+                $relative = (string)($f['file_path'] ?? '');
+                $full = __DIR__ . '/uploads/movie/coach_' . $coachId . '/' . $relative;
+                if (is_file($full)) {
                     @unlink($full);
+                } else {
+                    $legacy = __DIR__ . '/uploads/videos/coach_' . $coachId . '/' . $relative;
+                    if (is_file($legacy)) {
+                        @unlink($legacy);
+                    }
                 }
                 $pdo->prepare('DELETE FROM video_files WHERE id = ? AND coach_id = ?')->execute([$fileId, $coachId]);
                 flash('success', 'Video bylo smazano.');
@@ -151,8 +157,18 @@ if ($mine) {
 }
 
 $files = array_values(array_filter($stmt->fetchAll(), static function (array $f) use ($coachId): bool {
-    $path = __DIR__ . '/uploads/videos/coach_' . $coachId . '/' . ($f['file_path'] ?? '');
-    return is_string($f['file_path'] ?? null) && $f['file_path'] !== '' && is_file($path);
+    $relative = (string)($f['file_path'] ?? '');
+    if ($relative === '') {
+        return false;
+    }
+
+    $path = __DIR__ . '/uploads/movie/coach_' . $coachId . '/' . $relative;
+    if (is_file($path)) {
+        return true;
+    }
+
+    $legacy = __DIR__ . '/uploads/videos/coach_' . $coachId . '/' . $relative;
+    return is_file($legacy);
 }));
 
 renderHeader($folderName);

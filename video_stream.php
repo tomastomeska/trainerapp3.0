@@ -66,10 +66,15 @@ if ($filePath === '' || basename($filePath) !== $filePath) {
     exit;
 }
 
-$fullPath = __DIR__ . '/uploads/videos/coach_' . $coachId . '/' . $filePath;
+$fullPath = __DIR__ . '/uploads/movie/coach_' . $coachId . '/' . $filePath;
 if (!is_file($fullPath)) {
-    http_response_code(404);
-    exit;
+    $legacyPath = __DIR__ . '/uploads/videos/coach_' . $coachId . '/' . $filePath;
+    if (is_file($legacyPath)) {
+        $fullPath = $legacyPath;
+    } else {
+        http_response_code(404);
+        exit;
+    }
 }
 
 $size = filesize($fullPath);

@@ -39,8 +39,18 @@ $files->execute([$coachId, $athleteId]);
 $sharedFiles = $files->fetchAll();
 
 $sharedFiles = array_values(array_filter($sharedFiles, static function (array $f) use ($coachId): bool {
-    $full = __DIR__ . '/uploads/videos/coach_' . $coachId . '/' . ($f['file_path'] ?? '');
-    return is_string($f['file_path'] ?? null) && $f['file_path'] !== '' && is_file($full);
+    $relative = (string)($f['file_path'] ?? '');
+    if ($relative === '') {
+        return false;
+    }
+
+    $full = __DIR__ . '/uploads/movie/coach_' . $coachId . '/' . $relative;
+    if (is_file($full)) {
+        return true;
+    }
+
+    $legacy = __DIR__ . '/uploads/videos/coach_' . $coachId . '/' . $relative;
+    return is_file($legacy);
 }));
 
 function buildVideoSignature(array $files): string
