@@ -25,7 +25,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="alert alert-success shadow-sm border-0">
-    <strong>Novinky v této verzi:</strong> při vedení tréninku se u sportovce zobrazuje <strong>poslední zadaná hmotnost s datem</strong>, notifikace k narozeninám chodí trenérovi <strong>e-mailem i do Zpráv</strong> a platební výzvy se sportovci zobrazují přehledněji i na dashboardu.
+    <strong>Novinky v této verzi:</strong> přibyla kompletní sekce <strong>Videa</strong> (moje videa, vlastní složky a složky sportovců), nové nahrávání až <strong>1 GB na video</strong> a přesnější chybová hlášení při uploadu. U sportovce navíc otevřete jeho videa i přímo přes tlačítko Videa.
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
@@ -273,7 +273,38 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-comments me-2 text-warning"></i>9) Zprávy: komunikace se sportovci</div>
+    <div class="card-header fw-semibold"><i class="fas fa-video me-2 text-warning"></i>9) Videa: nahrání, třídění a sdílení</div>
+    <div class="card-body">
+        <h6 class="fw-bold">Jak pracovat s videosekcí</h6>
+        <ol>
+            <li>V menu otevřete Videa.</li>
+            <li>V části Moje videa vidíte všechny své nahrávky.</li>
+            <li>V části Moje složky si můžete vytvářet vlastní tematické složky, přejmenovávat je a mazat.</li>
+            <li>V části Složky sportovců otevřete konkrétního sportovce a spravujete, co od vás uvidí.</li>
+        </ol>
+
+        <h6 class="fw-bold mt-3">Jak nahrát video a nastavit viditelnost</h6>
+        <ol>
+            <li>Klikněte na Nahrát video.</li>
+            <li>Vyberte jedno nebo více videí (maximálně 1 GB na video).</li>
+            <li>Zvolte viditelnost: Soukromé / Všichni sportovci / Vybraní sportovci.</li>
+            <li>Při volbě Vybraní sportovci označte konkrétní příjemce.</li>
+            <li>Volitelně doplňte popis videa a zvolte vlastní složku.</li>
+            <li>Po uložení ověřte, že se video zobrazilo ve správné složce.</li>
+        </ol>
+
+        <h6 class="fw-bold mt-3">Jak upravit sdílení nebo odebrat video sportovci</h6>
+        <ol>
+            <li>Otevřete video z Moje videa nebo ze složky sportovce.</li>
+            <li>V detailu videa upravte popis, složku a viditelnost.</li>
+            <li>Ve složce konkrétního sportovce použijte tlačítko Vypnout, pokud chcete sdílení odebrat jen jemu.</li>
+            <li>Při úplném smazání videa se záznam odstraní ze všech složek.</li>
+        </ol>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header fw-semibold"><i class="fas fa-comments me-2 text-warning"></i>10) Zprávy: komunikace se sportovci</div>
     <div class="card-body">
         <h6 class="fw-bold">Jak odeslat novou zprávu</h6>
         <ol>
@@ -295,7 +326,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-chart-line me-2 text-warning"></i>10) Grafy a reporty: jak vyhodnocovat</div>
+    <div class="card-header fw-semibold"><i class="fas fa-chart-line me-2 text-warning"></i>11) Grafy a reporty: jak vyhodnocovat</div>
     <div class="card-body">
         <ol>
             <li>Otevřete Grafy nebo Reporty.</li>
@@ -308,7 +339,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-user-cog me-2 text-warning"></i>11) Profil a heslo</div>
+    <div class="card-header fw-semibold"><i class="fas fa-user-cog me-2 text-warning"></i>12) Profil a heslo</div>
     <div class="card-body">
         <ol>
             <li>Otevřete Profil.</li>

@@ -25,7 +25,7 @@ renderAthleteHeader('Návod pro sportovce', false, true);
 </div>
 
 <div class="alert alert-success shadow-sm border-0">
-    <strong>Novinky v této verzi:</strong> na profilu nyní v kartě <strong>Platby</strong> vidíte přehled posledních období podobně jako v sekci Platby, a v profilu můžete průběžně vést <strong>historii hmotnosti</strong>.
+    <strong>Novinky v této verzi:</strong> přibyla samostatná sekce <strong>Videa</strong> (v menu i na dashboardu), kde vidíte videa sdílená trenérem. Přehrávání běží bezpečně přes interní stream a nově se seznam videí průběžně automaticky obnovuje.
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
@@ -205,7 +205,27 @@ renderAthleteHeader('Návod pro sportovce', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-envelope me-2 text-warning"></i>8) Zprávy: komunikace s trenérem</div>
+    <div class="card-header fw-semibold"><i class="fas fa-video me-2 text-warning"></i>8) Videa od trenéra: přehrávání a orientace</div>
+    <div class="card-body">
+        <h6 class="fw-bold">Jak otevřít videa od trenéra</h6>
+        <ol>
+            <li>V menu klikněte na Videa nebo použijte dlaždici Videa na dashboardu.</li>
+            <li>V horní části se otevře hlavní přehrávač.</li>
+            <li>Pod přehrávačem najdete seznam sdílených videí.</li>
+            <li>Kliknutím na vybranou položku ji hned přehrajete v hlavním okně.</li>
+        </ol>
+
+        <h6 class="fw-bold mt-3">Na co si dát pozor</h6>
+        <ol>
+            <li>Videa jsou dostupná jen po přihlášení do vašeho účtu.</li>
+            <li>Pokud trenér přidá nové video, seznam se průběžně sám aktualizuje.</li>
+            <li>Když nějaké video nevidíte nebo nejde přehrát, napište trenérovi přes Zprávy.</li>
+        </ol>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header fw-semibold"><i class="fas fa-envelope me-2 text-warning"></i>9) Zprávy: komunikace s trenérem</div>
     <div class="card-body">
         <h6 class="fw-bold">Jak odeslat zprávu trenérovi</h6>
         <ol>

@@ -28,11 +28,199 @@ if ($prefillFolderId > 0 && !in_array($prefillFolderId, $customFolderIds, true))
 }
 
 $errors = [];
+$maxVideoSizeMb = 1024;
+$maxVideoSizeBytes = $maxVideoSizeMb * 1024 * 1024;
+$compressionMinSizeBytes = 25 * 1024 * 1024;
+
+function videoUploadErrorMessage(int $code): string
+{
+    return match ($code) {
+        UPLOAD_ERR_INI_SIZE => 'Soubor prekrocil limit upload_max_filesize na serveru (php.ini).',
+        UPLOAD_ERR_FORM_SIZE => 'Soubor prekrocil maximalni velikost povolenou formularen.',
+        UPLOAD_ERR_PARTIAL => 'Soubor byl nahran jen castecne.',
+        UPLOAD_ERR_NO_FILE => 'Nebyl vybran zadny soubor.',
+        UPLOAD_ERR_NO_TMP_DIR => 'Na serveru chybi docasna slozka pro upload.',
+        UPLOAD_ERR_CANT_WRITE => 'Server nema pravo zapisovat nahrany soubor na disk.',
+        UPLOAD_ERR_EXTENSION => 'Upload byl zastaven rozsireni PHP.',
+        default => 'Neznama chyba pri nahravani souboru.',
+    };
+}
+
+function iniSizeToBytes(string $value): int
+{
+    $raw = trim($value);
+    if ($raw === '') {
+        return 0;
+    }
+
+    $unit = strtolower(substr($raw, -1));
+    $number = (float)$raw;
+
+    return match ($unit) {
+        'g' => (int)round($number * 1024 * 1024 * 1024),
+        'm' => (int)round($number * 1024 * 1024),
+        'k' => (int)round($number * 1024),
+        default => (int)round($number),
+    };
+}
+
+function formatBytes(int $bytes): string
+{
+    if ($bytes >= 1024 * 1024 * 1024) {
+        return round($bytes / (1024 * 1024 * 1024), 2) . ' GB';
+    }
+    if ($bytes >= 1024 * 1024) {
+        return round($bytes / (1024 * 1024), 2) . ' MB';
+    }
+    if ($bytes >= 1024) {
+        return round($bytes / 1024, 2) . ' KB';
+    }
+    return $bytes . ' B';
+}
+
+function detectFfmpegBinary(): ?string
+{
+    static $resolved = false;
+    static $binary = null;
+
+    if ($resolved) {
+        return $binary;
+    }
+    $resolved = true;
+
+    $envOverride = trim((string)(getenv('FFMPEG_BINARY') ?: ''));
+    if ($envOverride !== '') {
+        $normalized = str_replace('\\', '/', $envOverride);
+        if (is_file($normalized)) {
+            $binary = $normalized;
+            return $binary;
+        }
+    }
+
+    $winUser = getenv('USERNAME') ?: get_current_user();
+    $candidates = [
+        // Winget alias cesta
+        'C:/Users/' . $winUser . '/AppData/Local/Microsoft/WinGet/Links/ffmpeg.exe',
+        // Typicka winget instalace pro Gyan build
+        'C:/Users/' . $winUser . '/AppData/Local/Microsoft/WinGet/Packages/Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe/ffmpeg-8.1.2-full_build/bin/ffmpeg.exe',
+        // Caste systemove umisteni
+        'C:/ffmpeg/bin/ffmpeg.exe',
+        'C:/Program Files/ffmpeg/bin/ffmpeg.exe',
+        'C:/Program Files (x86)/ffmpeg/bin/ffmpeg.exe',
+    ];
+
+    foreach ($candidates as $candidatePath) {
+        $normalized = str_replace('\\', '/', $candidatePath);
+        if (is_file($normalized)) {
+            $binary = $normalized;
+            return $binary;
+        }
+    }
+
+    // Apache casto bezi pod jinym uzivatelem (napr. SYSTEM), proto prohledame vsechny user WinGet slozky.
+    $globPatterns = [
+        'C:/Users/*/AppData/Local/Microsoft/WinGet/Links/ffmpeg.exe',
+        'C:/Users/*/AppData/Local/Microsoft/WinGet/Packages/Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe/ffmpeg-*/bin/ffmpeg.exe',
+    ];
+    foreach ($globPatterns as $pattern) {
+        $matches = glob($pattern) ?: [];
+        foreach ($matches as $match) {
+            $normalized = str_replace('\\', '/', (string)$match);
+            if (is_file($normalized)) {
+                $binary = $normalized;
+                return $binary;
+            }
+        }
+    }
+
+    if (!function_exists('exec')) {
+        return null;
+    }
+
+    $output = [];
+    $code = 1;
+    @exec('where ffmpeg 2>NUL', $output, $code);
+    if ($code === 0 && !empty($output[0])) {
+        $candidate = trim((string)$output[0]);
+        if ($candidate !== '' && is_file($candidate)) {
+            $binary = $candidate;
+        }
+    }
+
+    return $binary;
+}
+
+function tryCompressVideo(string $ffmpegBinary, string $uploadDir, string $sourceName): array
+{
+    $sourcePath = $uploadDir . $sourceName;
+    if (!is_file($sourcePath)) {
+        return ['ok' => false];
+    }
+
+    $sourceSize = filesize($sourcePath);
+    if ($sourceSize === false || $sourceSize <= 0) {
+        return ['ok' => false];
+    }
+
+    $base = pathinfo($sourceName, PATHINFO_FILENAME);
+    $compressedName = $base . '_cmp.mp4';
+    $compressedPath = $uploadDir . $compressedName;
+    if (is_file($compressedPath)) {
+        @unlink($compressedPath);
+    }
+
+    $cmd = escapeshellarg($ffmpegBinary)
+        . ' -y -i ' . escapeshellarg($sourcePath)
+        . ' -movflags +faststart -c:v libx264 -preset veryfast -crf 29 -c:a aac -b:a 128k '
+        . escapeshellarg($compressedPath)
+        . ' 2>&1';
+
+    $output = [];
+    $code = 1;
+    @exec($cmd, $output, $code);
+
+    if ($code !== 0 || !is_file($compressedPath)) {
+        if (is_file($compressedPath)) {
+            @unlink($compressedPath);
+        }
+        return ['ok' => false];
+    }
+
+    $compressedSize = filesize($compressedPath);
+    if ($compressedSize === false || $compressedSize <= 0) {
+        @unlink($compressedPath);
+        return ['ok' => false];
+    }
+
+    // Kompresi ponechame jen pokud usetri aspon 5 % velikosti.
+    if ($compressedSize >= (int)round($sourceSize * 0.95)) {
+        @unlink($compressedPath);
+        return ['ok' => false];
+    }
+
+    @unlink($sourcePath);
+    return [
+        'ok' => true,
+        'file_name' => $compressedName,
+        'file_size' => (int)$compressedSize,
+        'mime_type' => 'video/mp4',
+    ];
+}
+
+$phpUploadBytes = iniSizeToBytes((string)ini_get('upload_max_filesize'));
+$phpPostBytes = iniSizeToBytes((string)ini_get('post_max_size'));
+$serverEffectiveLimit = min($phpUploadBytes > 0 ? $phpUploadBytes : PHP_INT_MAX, $phpPostBytes > 0 ? $phpPostBytes : PHP_INT_MAX);
+$ffmpegBinary = detectFfmpegBinary();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
         flash('danger', 'Neplatny bezpecnostni token.');
         redirect(BASE_URL . '/video_upload.php');
+    }
+
+    $contentLength = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
+    if ($serverEffectiveLimit > 0 && $contentLength > $serverEffectiveLimit) {
+        $errors[] = 'Pozadavek je vetsi nez limit serveru (' . formatBytes($serverEffectiveLimit) . '). Zvyste upload_max_filesize a post_max_size v php.ini.';
     }
 
     $description = trim($_POST['description'] ?? '');
@@ -58,7 +246,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $uploadDir = __DIR__ . '/uploads/movie/coach_' . $coachId . '/';
     if (!is_dir($uploadDir)) {
-        mkdir($uploadDir, 0755, true);
+        if (!mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            $errors[] = 'Nepodarilo se vytvorit slozku pro videa: ' . $uploadDir;
+        }
+    }
+    if (empty($errors) && !is_writable($uploadDir)) {
+        $errors[] = 'Slozka pro videa neni zapisovatelna: ' . $uploadDir;
     }
 
     $uploadedCount = 0;
@@ -76,13 +269,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($errors)) {
         foreach ($files['name'] as $i => $origName) {
-            if (($files['error'][$i] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !$origName) {
+            $uploadError = (int)($files['error'][$i] ?? UPLOAD_ERR_NO_FILE);
+            if ($uploadError !== UPLOAD_ERR_OK) {
+                if ($uploadError !== UPLOAD_ERR_NO_FILE) {
+                    $errors[] = h((string)($origName ?: 'Soubor')) . ': ' . videoUploadErrorMessage($uploadError);
+                }
+                continue;
+            }
+
+            if (!$origName) {
                 continue;
             }
 
             $size = (int)($files['size'][$i] ?? 0);
-            if ($size > 500 * 1024 * 1024) {
-                $errors[] = h($origName) . ': max 500 MB.';
+            if ($size > $maxVideoSizeBytes) {
+                $errors[] = h($origName) . ': max ' . $maxVideoSizeMb . ' MB.';
                 continue;
             }
 
@@ -106,14 +307,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 continue;
             }
 
+            $storedName = $newName;
+            $storedSize = (int)(filesize($uploadDir . $newName) ?: $size);
+            $storedMime = (string)$mime;
+
+            if ($ffmpegBinary !== null && $storedSize >= $compressionMinSizeBytes) {
+                $compressed = tryCompressVideo($ffmpegBinary, $uploadDir, $newName);
+                if (!empty($compressed['ok'])) {
+                    $storedName = (string)$compressed['file_name'];
+                    $storedSize = (int)$compressed['file_size'];
+                    $storedMime = (string)$compressed['mime_type'];
+                }
+            }
+
             $ins = $pdo->prepare('INSERT INTO video_files (coach_id, folder_id, file_path, original_name, file_size, mime_type, description, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
             $ins->execute([
                 $coachId,
                 $folderId > 0 ? $folderId : null,
-                $newName,
+                $storedName,
                 (string)$origName,
-                $size,
-                (string)$mime,
+                $storedSize,
+                $storedMime,
                 $description !== '' ? $description : null,
                 $visibility,
             ]);
@@ -137,6 +351,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $uploadedCount++;
+        }
+
+        if ($uploadedCount === 0 && empty($errors)) {
+            $errors[] = 'Nebylo nahrano zadne video. Zkontrolujte velikost souboru a nastaveni serveru.';
         }
     }
 
@@ -199,7 +417,7 @@ $defaultVisibility = $prefillAthleteId > 0 ? 'specific_athletes' : 'private';
             <div class="mb-3">
                 <label class="form-label fw-semibold fs-6">Vybrat videa</label>
                 <input type="file" name="files[]" id="fileInput" class="form-control" multiple required accept="video/*,.mp4,.mov,.avi,.mkv,.webm,.m4v">
-                <div class="form-text">Povolene formaty: MP4, MOV, AVI, MKV, WEBM, M4V. Max 500 MB na video.</div>
+                <div class="form-text">Povolene formaty: MP4, MOV, AVI, MKV, WEBM, M4V. Max <?= (int)$maxVideoSizeMb ?> MB na video.</div>
             </div>
 
             <div class="d-flex gap-2 mb-4 flex-wrap">
