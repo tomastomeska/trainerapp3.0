@@ -1599,7 +1599,10 @@ function sendMessageNotificationEmail(string $toEmail, string $coachName, string
     require_once $phpmailerSrc . '/PHPMailer.php';
     require_once $phpmailerSrc . '/SMTP.php';
 
-    $link = 'https://reservio.online/zpravy.php';
+    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['SERVER_PORT'] ?? '') === '443');
+    $scheme = $isHttps ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? 'localhost');
+    $link = $scheme . '://' . $host . BASE_URL . '/zpravy.php';
 
     $htmlBody = "<p>Dobrý den, <strong>" . htmlspecialchars($coachName, ENT_QUOTES) . "</strong>,</p>"
         . "<p>obdrželi jste novou zprávu v aplikaci <strong>TrainerApp</strong>.</p>"
@@ -1610,7 +1613,7 @@ function sendMessageNotificationEmail(string $toEmail, string $coachName, string
     $altBody = "Dobrý den, {$coachName},\n\n"
         . "obdrželi jste novou zprávu v aplikaci TrainerApp.\n"
         . "Předmět: {$subject}\n\n"
-        . "Přejít do aplikace: https://reservio.online/zpravy.php\n\n"
+        . "Přejít do aplikace: {$link}\n\n"
         . "TrainerApp – automatické notifikace";
 
     $mail = new PHPMailer\PHPMailer\PHPMailer(true);
@@ -1779,8 +1782,12 @@ function createAthleteToCoachMessage(int $athleteId, int $coachId, string $subje
   return $messageId;
 }
 
+function getAdminNotificationEmail(): string {
+  return 'info@reservio.online';
+}
+
 /**
- * Odešle superadminům e-mailovou notifikaci o novém ticketu podpory.
+ * Odešle e-mailovou notifikaci o novém ticketu podpory na admin adresu.
  * Vrací počet úspěšně odeslaných e-mailů.
  */
 function sendSupportTicketNotificationEmail(int $ticketId, array $ticket, array $extraRecipients = []): int {
@@ -1791,12 +1798,6 @@ function sendSupportTicketNotificationEmail(int $ticketId, array $ticket, array 
   require_once $phpmailerSrc . '/Exception.php';
   require_once $phpmailerSrc . '/PHPMailer.php';
   require_once $phpmailerSrc . '/SMTP.php';
-
-  $pdo = getDB();
-  $admins = $pdo->query("SELECT email FROM superadmins WHERE email IS NOT NULL AND email <> ''")->fetchAll();
-  if (empty($admins)) {
-    return 0;
-  }
 
   $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['SERVER_PORT'] ?? '') === '443');
   $scheme = $isHttps ? 'https' : 'http';
@@ -1838,12 +1839,7 @@ function sendSupportTicketNotificationEmail(int $ticketId, array $ticket, array 
     . "TrainerApp – automatické notifikace";
 
   $recipientMap = [];
-  foreach ($admins as $admin) {
-    $to = trim((string)($admin['email'] ?? ''));
-    if ($to !== '' && filter_var($to, FILTER_VALIDATE_EMAIL)) {
-      $recipientMap[mb_strtolower($to, 'UTF-8')] = $to;
-    }
-  }
+  $recipientMap[mb_strtolower(getAdminNotificationEmail(), 'UTF-8')] = getAdminNotificationEmail();
   foreach ($extraRecipients as $extraRecipient) {
     $to = trim((string)$extraRecipient);
     if ($to !== '' && filter_var($to, FILTER_VALIDATE_EMAIL)) {
@@ -1865,6 +1861,21 @@ function sendSupportTicketNotificationEmail(int $ticketId, array $ticket, array 
       $sent++;
     } catch (\Exception $e) {
       error_log('sendSupportTicketNotificationEmail error: ' . $mail->ErrorInfo . ' | ' . $e->getMessage());
+      try {
+        $fallback = new PHPMailer\PHPMailer\PHPMailer(true);
+        $fallback->isMail();
+        $fallback->CharSet = 'UTF-8';
+        $fallback->setFrom(SMTP_FROM, SMTP_FROM_NAME);
+        $fallback->addAddress($to);
+        $fallback->isHTML(true);
+        $fallback->Subject = 'Nový ticket podpory #' . $ticketId . ': ' . (string)($ticket['subject'] ?? '');
+        $fallback->Body = $htmlBody;
+        $fallback->AltBody = $altBody;
+        $fallback->send();
+        $sent++;
+      } catch (\Exception $fallbackException) {
+        error_log('sendSupportTicketNotificationEmail fallback error: ' . $fallbackException->getMessage());
+      }
     }
   }
 
@@ -1913,6 +1924,22 @@ function sendCoachAccessRequestOwnerEmail(string $ownerEmail, array $request): b
     return true;
   } catch (\Exception $e) {
     error_log('sendCoachAccessRequestOwnerEmail error: ' . $mail->ErrorInfo . ' | ' . $e->getMessage());
+  }
+
+  try {
+    $fallback = new PHPMailer\PHPMailer\PHPMailer(true);
+    $fallback->isMail();
+    $fallback->CharSet = 'UTF-8';
+    $fallback->setFrom(SMTP_FROM, SMTP_FROM_NAME);
+    $fallback->addAddress($ownerEmail);
+    $fallback->isHTML(true);
+    $fallback->Subject = 'Nová žádost o přístup trenéra';
+    $fallback->Body = $htmlBody;
+    $fallback->AltBody = $altBody;
+    $fallback->send();
+    return true;
+  } catch (\Exception $e) {
+    error_log('sendCoachAccessRequestOwnerEmail fallback error: ' . $e->getMessage());
     return false;
   }
 }

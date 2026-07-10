@@ -112,8 +112,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'screenshot_path' => null,
             ];
 
-            sendSupportTicketNotificationEmail($ticketId, $ticketPayload, ['info@reservio.online']);
-            sendCoachAccessRequestOwnerEmail('tomas.tomeska@seznam.cz', [
+            sendSupportTicketNotificationEmail($ticketId, $ticketPayload);
+            sendCoachAccessRequestOwnerEmail(getAdminNotificationEmail(), [
                 'first_name' => $accessRequest['first_name'],
                 'last_name' => $accessRequest['last_name'],
                 'email' => $accessRequest['email'],

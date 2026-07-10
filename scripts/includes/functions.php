@@ -1470,7 +1470,10 @@ function sendMessageNotificationEmail(string $toEmail, string $coachName, string
     require_once $phpmailerSrc . '/PHPMailer.php';
     require_once $phpmailerSrc . '/SMTP.php';
 
-    $link = 'https://reservio.online/zpravy.php';
+    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['SERVER_PORT'] ?? '') === '443');
+    $scheme = $isHttps ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? 'localhost');
+    $link = $scheme . '://' . $host . BASE_URL . '/zpravy.php';
 
     $htmlBody = "<p>Dobrý den, <strong>" . htmlspecialchars($coachName, ENT_QUOTES) . "</strong>,</p>"
         . "<p>obdrželi jste novou zprávu v aplikaci <strong>TrainerApp</strong>.</p>"
@@ -1481,7 +1484,7 @@ function sendMessageNotificationEmail(string $toEmail, string $coachName, string
     $altBody = "Dobrý den, {$coachName},\n\n"
         . "obdrželi jste novou zprávu v aplikaci TrainerApp.\n"
         . "Předmět: {$subject}\n\n"
-        . "Přejít do aplikace: https://reservio.online/zpravy.php\n\n"
+        . "Přejít do aplikace: {$link}\n\n"
         . "TrainerApp – automatické notifikace";
 
     $mail = new PHPMailer\PHPMailer\PHPMailer(true);

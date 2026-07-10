@@ -100,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'rejec
     }
 
     $ticketStmt = $pdo->prepare(
-        'SELECT id, reporter_type, coach_id, athlete_id, reporter_name, subject, admin_note, reporter_email
+        'SELECT id, reporter_type, coach_id, athlete_id, reporter_name, subject, issue_type, admin_note, reporter_email
          FROM support_tickets
          WHERE id = ?
          LIMIT 1'
