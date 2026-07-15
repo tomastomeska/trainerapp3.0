@@ -23,6 +23,34 @@ function athleteCalendarFormatUtc(?string $dateTimeSql): string
     return $date->format('Ymd\THis\Z');
 }
 
+function athleteCalendarEventUnixTime(?string $dateTimeSql): int
+{
+    if (!$dateTimeSql) {
+        return time();
+    }
+
+    try {
+        $date = new DateTime($dateTimeSql, new DateTimeZone(date_default_timezone_get()));
+        return $date->getTimestamp();
+    } catch (Throwable $e) {
+        return time();
+    }
+}
+
+function athleteCalendarFormatLocalLabel(?string $dateTimeSql): string
+{
+    if (!$dateTimeSql) {
+        return '';
+    }
+
+    try {
+        $date = new DateTime($dateTimeSql, new DateTimeZone(date_default_timezone_get()));
+        return $date->format('d.m.Y H:i');
+    } catch (Throwable $e) {
+        return '';
+    }
+}
+
 function athleteCalendarParseToken(): string
 {
     $token = trim((string)($_GET['token'] ?? ''));
@@ -113,10 +141,53 @@ if ($athleteDisplayName === '') {
     $athleteDisplayName = 'Sportovec';
 }
 
+$refreshInterval = 'PT15M';
+$lastModifiedTs = time();
+$etagParts = ['athlete', (string)$athlete['id']];
+foreach ($events as $event) {
+    $eventChangedAt = (string)($event['updated_at'] ?? $event['created_at'] ?? '');
+    $eventChangedTs = athleteCalendarEventUnixTime($eventChangedAt);
+    if ($eventChangedTs > $lastModifiedTs) {
+        $lastModifiedTs = $eventChangedTs;
+    }
+
+    $etagParts[] = implode('|', [
+        (string)($event['id'] ?? ''),
+        $eventChangedAt,
+        (string)($event['starts_at'] ?? ''),
+        (string)($event['ends_at'] ?? ''),
+        (string)($event['approval_status'] ?? ''),
+        (string)($event['custom_title'] ?? ''),
+        (string)($event['location'] ?? ''),
+    ]);
+}
+
+$etag = '"' . sha1(implode('||', $etagParts)) . '"';
+$lastModifiedHeader = gmdate('D, d M Y H:i:s', $lastModifiedTs) . ' GMT';
+
+$ifNoneMatch = trim((string)($_SERVER['HTTP_IF_NONE_MATCH'] ?? ''));
+$ifModifiedSince = trim((string)($_SERVER['HTTP_IF_MODIFIED_SINCE'] ?? ''));
+
+header('ETag: ' . $etag);
+header('Last-Modified: ' . $lastModifiedHeader);
+header('Cache-Control: private, max-age=300, must-revalidate');
+header('Expires: ' . gmdate('D, d M Y H:i:s', $lastModifiedTs + 300) . ' GMT');
+
+if ($ifNoneMatch === $etag) {
+    http_response_code(304);
+    exit;
+}
+
+if ($ifModifiedSince !== '') {
+    $ifModifiedSinceTs = strtotime($ifModifiedSince);
+    if ($ifModifiedSinceTs !== false && $ifModifiedSinceTs >= $lastModifiedTs) {
+        http_response_code(304);
+        exit;
+    }
+}
+
 header('Content-Type: text/calendar; charset=utf-8');
 header('Content-Disposition: inline; filename="trainerapp-athlete-calendar.ics"');
-header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-header('Pragma: no-cache');
 
 echo "BEGIN:VCALENDAR\r\n";
 echo "VERSION:2.0\r\n";
@@ -125,6 +196,8 @@ echo "CALSCALE:GREGORIAN\r\n";
 echo "METHOD:PUBLISH\r\n";
 echo 'X-WR-CALNAME:' . athleteCalendarEscapeText('TrainerApp - ' . $athleteDisplayName) . "\r\n";
 echo "X-WR-TIMEZONE:UTC\r\n";
+echo 'REFRESH-INTERVAL;VALUE=DURATION:' . $refreshInterval . "\r\n";
+echo 'X-PUBLISHED-TTL:' . $refreshInterval . "\r\n";
 
 foreach ($events as $event) {
     $participants = [];
@@ -145,13 +218,22 @@ foreach ($events as $event) {
         $summary = 'Čeká na schválení - ' . $summary;
     }
 
+    $startLabel = athleteCalendarFormatLocalLabel((string)($event['starts_at'] ?? ''));
+    $endLabel = athleteCalendarFormatLocalLabel((string)($event['ends_at'] ?? ''));
     $descriptionParts = [];
+    $descriptionParts[] = 'Název: ' . $summary;
+    if ($startLabel !== '' && $endLabel !== '') {
+        $descriptionParts[] = 'Termín: ' . $startLabel . ' - ' . $endLabel;
+    }
     $coachName = trim((string)($athlete['coach_name'] ?? $athlete['coach_username'] ?? ''));
     if ($coachName !== '') {
         $descriptionParts[] = 'Trenér: ' . $coachName;
     }
     if (!empty($participants)) {
         $descriptionParts[] = 'Účastníci: ' . implode(', ', $participants);
+    }
+    if (!empty($event['location'])) {
+        $descriptionParts[] = 'Místo: ' . (string)$event['location'];
     }
     if (($event['approval_status'] ?? 'approved') === 'pending') {
         $descriptionParts[] = 'Stav: čeká na schválení';
@@ -162,6 +244,10 @@ foreach ($events as $event) {
     echo "BEGIN:VEVENT\r\n";
     echo 'UID:' . athleteCalendarEscapeText('athlete-event-' . (int)$event['id'] . '-athlete-' . (int)$athlete['id'] . '@' . $host) . "\r\n";
     echo 'DTSTAMP:' . athleteCalendarFormatUtc((string)($event['updated_at'] ?? $event['created_at'] ?? '')) . "\r\n";
+    echo 'CREATED:' . athleteCalendarFormatUtc((string)($event['created_at'] ?? $event['updated_at'] ?? '')) . "\r\n";
+    echo 'LAST-MODIFIED:' . athleteCalendarFormatUtc((string)($event['updated_at'] ?? $event['created_at'] ?? '')) . "\r\n";
+    echo 'SEQUENCE:' . max(0, athleteCalendarEventUnixTime((string)($event['updated_at'] ?? $event['created_at'] ?? ''))) . "\r\n";
+    echo 'STATUS:' . (($event['approval_status'] ?? 'approved') === 'pending' ? 'TENTATIVE' : 'CONFIRMED') . "\r\n";
     echo 'DTSTART:' . athleteCalendarFormatUtc((string)$event['starts_at']) . "\r\n";
     echo 'DTEND:' . athleteCalendarFormatUtc((string)$event['ends_at']) . "\r\n";
     echo 'SUMMARY:' . athleteCalendarEscapeText($summary) . "\r\n";
