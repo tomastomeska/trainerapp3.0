@@ -4,20 +4,23 @@ require_once __DIR__ . '/../includes/functions.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
-if (!isLoggedIn()) {
-    echo json_encode(['success' => false, 'error' => 'Nepřihlášen']);
+function respondJson(array $payload, int $status = 200): void {
+    http_response_code($status);
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
 
+if (!isLoggedIn()) {
+    respondJson(['success' => false, 'error' => 'Nepřihlášen'], 401);
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['success' => false, 'error' => 'Neplatná metoda']);
-    exit;
+    respondJson(['success' => false, 'error' => 'Neplatná metoda'], 405);
 }
 
 $input = json_decode(file_get_contents('php://input'), true);
 if (!$input || !verifyCsrf((string)($input['csrf_token'] ?? ''))) {
-    echo json_encode(['success' => false, 'error' => 'Neplatný požadavek']);
-    exit;
+    respondJson(['success' => false, 'error' => 'Neplatný požadavek'], 400);
 }
 
 $coachId = getCurrentCoachId();
@@ -27,21 +30,35 @@ $action = (string)($input['action'] ?? '');
 $newExerciseId = (int)($input['new_exercise_id'] ?? 0);
 
 if (!in_array($action, ['remove', 'replace'], true)) {
-    echo json_encode(['success' => false, 'error' => 'Neplatná akce']);
-    exit;
+    respondJson(['success' => false, 'error' => 'Neplatná akce'], 400);
 }
 
 if ($sessionId <= 0 || $exerciseId <= 0) {
-    echo json_encode(['success' => false, 'error' => 'Neplatná data']);
-    exit;
+    respondJson(['success' => false, 'error' => 'Neplatná data'], 400);
 }
 
 if ($action === 'replace' && $newExerciseId <= 0) {
-    echo json_encode(['success' => false, 'error' => 'Vyberte cvik pro nahrazení']);
-    exit;
+    respondJson(['success' => false, 'error' => 'Vyberte cvik pro nahrazení'], 400);
 }
 
-$pdo = getDB();
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
+
+/** @var PDO|null $pdo */
+$pdo = null;
+try {
+    $pdo = getDB();
+} catch (Throwable $e) {
+    if (function_exists('appLogDbIssue')) {
+        appLogDbIssue('api/update_session_exercise.php', $e);
+    }
+    respondJson(['success' => false, 'error' => 'Dočasný problém serveru. Zkuste to prosím znovu.'], 503);
+}
+
+if (!$pdo instanceof PDO) {
+    respondJson(['success' => false, 'error' => 'Dočasný problém serveru. Zkuste to prosím znovu.'], 503);
+}
 
 try {
     $pdo->beginTransaction();
@@ -146,10 +163,10 @@ try {
     }
 
     $pdo->commit();
-    echo json_encode(['success' => true]);
+    respondJson(['success' => true]);
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    respondJson(['success' => false, 'error' => $e->getMessage()], 400);
 }

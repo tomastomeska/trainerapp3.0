@@ -4,26 +4,46 @@ require_once __DIR__ . '/../includes/functions.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
-if (!isLoggedIn()) {
-    echo json_encode(['success' => false, 'error' => 'Nepřihlášen']);
+function respondJson(array $payload, int $status = 200): void {
+    http_response_code($status);
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
 
+if (!isLoggedIn()) {
+    respondJson(['success' => false, 'error' => 'Nepřihlášen'], 401);
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['success' => false, 'error' => 'Neplatná metoda']);
-    exit;
+    respondJson(['success' => false, 'error' => 'Neplatná metoda'], 405);
 }
 
 $input = json_decode(file_get_contents('php://input'), true);
 if (!$input || !verifyCsrf((string)($input['csrf_token'] ?? ''))) {
-    echo json_encode(['success' => false, 'error' => 'Neplatný požadavek']);
-    exit;
+    respondJson(['success' => false, 'error' => 'Neplatný požadavek'], 400);
 }
 
 $coachId = getCurrentCoachId();
 $sessionId = (int)($input['session_id'] ?? 0);
 $exerciseId = (int)($input['exercise_id'] ?? 0);
-$pdo = getDB();
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
+
+/** @var PDO|null $pdo */
+$pdo = null;
+try {
+    $pdo = getDB();
+} catch (Throwable $e) {
+    if (function_exists('appLogDbIssue')) {
+        appLogDbIssue('api/add_session_exercise.php', $e);
+    }
+    respondJson(['success' => false, 'error' => 'Dočasný problém serveru. Zkuste to prosím znovu.'], 503);
+}
+
+if (!$pdo instanceof PDO) {
+    respondJson(['success' => false, 'error' => 'Dočasný problém serveru. Zkuste to prosím znovu.'], 503);
+}
 
 $stmtSession = $pdo->prepare(
     'SELECT ts.id
@@ -34,8 +54,7 @@ $stmtSession = $pdo->prepare(
 );
 $stmtSession->execute([$sessionId, $coachId]);
 if (!$stmtSession->fetch()) {
-    echo json_encode(['success' => false, 'error' => 'Trénink nenalezen']);
-    exit;
+    respondJson(['success' => false, 'error' => 'Trénink nenalezen'], 404);
 }
 
 $stmtExercise = $pdo->prepare(
@@ -46,8 +65,7 @@ $stmtExercise = $pdo->prepare(
 $stmtExercise->execute([$exerciseId, $coachId]);
 $exercise = $stmtExercise->fetch();
 if (!$exercise) {
-    echo json_encode(['success' => false, 'error' => 'Cvik nenalezen']);
-    exit;
+    respondJson(['success' => false, 'error' => 'Cvik nenalezen'], 404);
 }
 
 $stmtExisting = $pdo->prepare(
@@ -58,8 +76,7 @@ $stmtExisting = $pdo->prepare(
 );
 $stmtExisting->execute([$sessionId, $exerciseId]);
 if ($stmtExisting->fetch()) {
-    echo json_encode(['success' => false, 'error' => 'Tento cvik už v tréninku je']);
-    exit;
+    respondJson(['success' => false, 'error' => 'Tento cvik už v tréninku je'], 409);
 }
 
 $stmtOrder = $pdo->prepare(
@@ -83,4 +100,4 @@ $stmtInsert->execute([
     (int)($exercise['is_timed'] ?? 0),
 ]);
 
-echo json_encode(['success' => true]);
+respondJson(['success' => true]);

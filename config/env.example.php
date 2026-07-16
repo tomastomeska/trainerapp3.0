@@ -10,6 +10,10 @@ define('DB_HOST',    'localhost');
 define('DB_NAME',    'nazev_databaze');
 define('DB_USER',    'uzivatel_db');
 define('DB_PASS',    'heslo_db');
+// Timeout pripojeni k DB v sekundach (snizi dlouhe zaseky pri vypadku DB hostu).
+define('DB_CONNECT_TIMEOUT', 5);
+// Na produkci nechat false: schema migrace nepatri do beznych requestu.
+define('DB_AUTO_SCHEMA_UPGRADE', false);
 
 // BASE_URL standardne NENASTAVUJTE, aby bezela automaticka detekce.
 // Pokud chcete vynutit podslozku, odkomentujte nasledujici radek:

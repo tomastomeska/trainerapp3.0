@@ -23,6 +23,8 @@ if (!defined('DB_NAME'))    define('DB_NAME',    'trainerapp_v2_dev');
 if (!defined('DB_USER'))    define('DB_USER',    'root');
 if (!defined('DB_PASS'))    define('DB_PASS',    '');
 if (!defined('DB_CHARSET')) define('DB_CHARSET', 'utf8mb4');
+if (!defined('DB_CONNECT_TIMEOUT')) define('DB_CONNECT_TIMEOUT', 5);
+if (!defined('DB_AUTO_SCHEMA_UPGRADE')) define('DB_AUTO_SCHEMA_UPGRADE', false);
 
 function getDB(): PDO {
     static $pdo = null;
@@ -31,6 +33,7 @@ function getDB(): PDO {
             PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES   => false,
+            PDO::ATTR_TIMEOUT            => max(1, (int)DB_CONNECT_TIMEOUT),
         ];
 
         $hosts = [];
@@ -73,7 +76,9 @@ function getDB(): PDO {
                 }
                 try {
                     $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
-                    ensureSchemaUpgrades($pdo);
+                    if (DB_AUTO_SCHEMA_UPGRADE) {
+                        ensureSchemaUpgrades($pdo);
+                    }
                     break;
                 } catch (PDOException $e) {
                     $errors[] = $host . ': ' . $e->getMessage();
