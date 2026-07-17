@@ -320,6 +320,26 @@ if ($primaryAthleteId > 0 && $secondAthleteId > 0) {
 }
 
 $coachDisplayName = ($event['coach_name'] ?? '') !== '' ? (string)$event['coach_name'] : (string)($event['coach_username'] ?? 'trenér');
+
+if ($removedFromPairOnly) {
+    enqueueCoachGoogleCalendarSync((int)$event['coach_id'], $eventId, 'upsert');
+    enqueueCoachAppleCaldavSync((int)$event['coach_id'], $eventId, 'upsert');
+    enqueueAthleteAppleCaldavSync($athleteId, $eventId, 'delete');
+    $remainingAthleteId = ((int)($event['athlete_id'] ?? 0) === $athleteId)
+        ? (int)($event['second_athlete_id'] ?? 0)
+        : (int)($event['athlete_id'] ?? 0);
+    if ($remainingAthleteId > 0) {
+        enqueueAthleteAppleCaldavSync($remainingAthleteId, $eventId, 'upsert');
+    }
+} else {
+    enqueueCoachGoogleCalendarSync((int)$event['coach_id'], $eventId, 'delete');
+    enqueueCoachAppleCaldavSync((int)$event['coach_id'], $eventId, 'delete');
+    enqueueAthleteAppleCaldavSync($athleteId, $eventId, 'delete');
+}
+processCoachGoogleCalendarSyncQueue(4);
+processCoachAppleCaldavSyncQueue(4);
+processAthleteAppleCaldavSyncQueue(4);
+
 $subject = $removedFromPairOnly
     ? "Sportovec zrušil účast na párovém termínu - {$athleteName}"
     : "Sportovec zrušil termín - {$athleteName}";

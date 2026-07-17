@@ -2899,3 +2899,1680 @@ function processCalendarSummaryNotifications(?DateTimeImmutable $now = null): ar
 
   return $results;
 }
+
+function isGoogleCalendarApiConfigured(): bool {
+  return defined('GOOGLE_CALENDAR_CLIENT_ID')
+    && defined('GOOGLE_CALENDAR_CLIENT_SECRET')
+    && trim((string)GOOGLE_CALENDAR_CLIENT_ID) !== ''
+    && trim((string)GOOGLE_CALENDAR_CLIENT_SECRET) !== '';
+}
+
+function enqueueCoachGoogleCalendarSync(int $coachId, ?int $eventId, string $syncAction = 'upsert'): void {
+  if (!in_array($syncAction, ['upsert', 'delete'], true)) {
+    $syncAction = 'upsert';
+  }
+
+  if ($coachId <= 0) {
+    return;
+  }
+
+  if (!googleCalendarSyncTablesAvailable()) {
+    return;
+  }
+
+  try {
+    $pdo = getDB();
+
+    $cleanup = $pdo->prepare(
+      'DELETE FROM coach_google_calendar_sync_jobs
+       WHERE coach_id = ?
+         AND ((event_id = ?) OR (event_id IS NULL AND ? IS NULL))
+         AND sync_action = ?
+         AND status IN ("pending", "failed")'
+    );
+    $cleanup->execute([$coachId, $eventId, $eventId, $syncAction]);
+
+    $ins = $pdo->prepare(
+      'INSERT INTO coach_google_calendar_sync_jobs (coach_id, event_id, sync_action, status, attempt_count, next_attempt_at)
+       VALUES (?, ?, ?, "pending", 0, NOW())'
+    );
+    $ins->execute([$coachId, $eventId, $syncAction]);
+  } catch (Throwable $e) {
+    error_log('enqueueCoachGoogleCalendarSync error: ' . $e->getMessage());
+  }
+}
+
+function processCoachGoogleCalendarSyncQueue(int $limit = 8): array {
+  $results = [];
+
+  if (!isGoogleCalendarApiConfigured()) {
+    return $results;
+  }
+
+  if (!googleCalendarSyncTablesAvailable()) {
+    return $results;
+  }
+
+  try {
+    $pdo = getDB();
+    $limit = max(1, min(50, $limit));
+
+    $jobStmt = $pdo->prepare(
+      'SELECT id, coach_id, event_id, sync_action, attempt_count
+       FROM coach_google_calendar_sync_jobs
+       WHERE status IN ("pending", "failed")
+         AND next_attempt_at <= NOW()
+       ORDER BY id ASC
+       LIMIT ' . $limit
+    );
+    $jobStmt->execute();
+    $jobs = $jobStmt->fetchAll();
+  } catch (Throwable $e) {
+    error_log('processCoachGoogleCalendarSyncQueue bootstrap error: ' . $e->getMessage());
+    return $results;
+  }
+
+  foreach ($jobs as $job) {
+    $jobId = (int)($job['id'] ?? 0);
+    $coachId = (int)($job['coach_id'] ?? 0);
+    $eventId = isset($job['event_id']) ? (int)$job['event_id'] : null;
+    $syncAction = (string)($job['sync_action'] ?? 'upsert');
+    $attemptCount = (int)($job['attempt_count'] ?? 0);
+
+    if ($jobId <= 0 || $coachId <= 0) {
+      continue;
+    }
+
+    $markProcessing = $pdo->prepare(
+      'UPDATE coach_google_calendar_sync_jobs
+       SET status = "processing", updated_at = NOW(), attempt_count = attempt_count + 1
+       WHERE id = ?'
+    );
+    $markProcessing->execute([$jobId]);
+
+    try {
+      if ($syncAction === 'delete') {
+        syncCoachEventDeleteToGoogle($coachId, $eventId);
+      } else {
+        syncCoachEventUpsertToGoogle($coachId, $eventId);
+      }
+
+      $markDone = $pdo->prepare(
+        'UPDATE coach_google_calendar_sync_jobs
+         SET status = "done", last_error = NULL, processed_at = NOW(), updated_at = NOW()
+         WHERE id = ?'
+      );
+      $markDone->execute([$jobId]);
+
+      $results[] = ['job_id' => $jobId, 'status' => 'done'];
+    } catch (Throwable $e) {
+      $delayMinutes = min(360, max(2, (int)pow(2, max(0, $attemptCount))));
+      $markFailed = $pdo->prepare(
+        'UPDATE coach_google_calendar_sync_jobs
+         SET status = "failed",
+             last_error = ?,
+             next_attempt_at = DATE_ADD(NOW(), INTERVAL ? MINUTE),
+             updated_at = NOW()
+         WHERE id = ?'
+      );
+      $markFailed->execute([mb_substr($e->getMessage(), 0, 2000, 'UTF-8'), $delayMinutes, $jobId]);
+
+      $results[] = ['job_id' => $jobId, 'status' => 'failed', 'error' => $e->getMessage()];
+    }
+  }
+
+  return $results;
+}
+
+function syncCoachEventUpsertToGoogle(int $coachId, ?int $eventId): void {
+  if ($coachId <= 0 || $eventId === null || $eventId <= 0) {
+    return;
+  }
+
+  if (!googleCalendarSyncTablesAvailable()) {
+    return;
+  }
+
+  $pdo = getDB();
+  $eventStmt = $pdo->prepare(
+    'SELECT e.id,
+            e.coach_id,
+            e.athlete_id,
+            e.second_athlete_id,
+            e.requested_by_athlete_id,
+            e.approval_status,
+            e.custom_title,
+            e.location,
+            e.starts_at,
+            e.ends_at,
+            e.updated_at,
+            e.created_at,
+            a.first_name,
+            a.last_name,
+            a2.first_name AS second_first_name,
+            a2.last_name AS second_last_name
+     FROM coach_calendar_events e
+     LEFT JOIN athletes a ON a.id = e.athlete_id
+     LEFT JOIN athletes a2 ON a2.id = e.second_athlete_id
+     WHERE e.id = ?
+       AND e.coach_id = ?
+     LIMIT 1'
+  );
+  $eventStmt->execute([$eventId, $coachId]);
+  $event = $eventStmt->fetch();
+
+  if (!$event) {
+    syncCoachEventDeleteToGoogle($coachId, $eventId);
+    return;
+  }
+
+  $coach = getCoachGoogleSyncConfig($coachId);
+  if (!$coach || empty($coach['google_calendar_sync_enabled'])) {
+    return;
+  }
+
+  $calendarId = trim((string)($coach['google_calendar_id'] ?? ''));
+  if ($calendarId === '') {
+    throw new RuntimeException('Google sync: chybi google_calendar_id.');
+  }
+
+  $accessToken = getFreshGoogleAccessToken($coach);
+  $payload = buildGoogleCalendarEventPayload($event, $coachId);
+
+  $linkStmt = $pdo->prepare(
+    'SELECT google_event_id
+     FROM coach_google_calendar_event_links
+     WHERE coach_id = ? AND event_id = ?
+     LIMIT 1'
+  );
+  $linkStmt->execute([$coachId, $eventId]);
+  $existingGoogleEventId = (string)($linkStmt->fetchColumn() ?: '');
+
+  $response = null;
+  if ($existingGoogleEventId !== '') {
+    $response = googleCalendarApiJsonRequest(
+      'PUT',
+      'https://www.googleapis.com/calendar/v3/calendars/' . rawurlencode($calendarId) . '/events/' . rawurlencode($existingGoogleEventId),
+      $accessToken,
+      $payload
+    );
+
+    if (($response['status'] ?? 0) === 404) {
+      $delStmt = $pdo->prepare('DELETE FROM coach_google_calendar_event_links WHERE coach_id = ? AND event_id = ?');
+      $delStmt->execute([$coachId, $eventId]);
+      $existingGoogleEventId = '';
+      $response = null;
+    }
+  }
+
+  if ($response === null) {
+    $response = googleCalendarApiJsonRequest(
+      'POST',
+      'https://www.googleapis.com/calendar/v3/calendars/' . rawurlencode($calendarId) . '/events',
+      $accessToken,
+      $payload
+    );
+  }
+
+  $status = (int)($response['status'] ?? 0);
+  if ($status < 200 || $status >= 300) {
+    throw new RuntimeException('Google sync upsert selhal: HTTP ' . $status . ' | ' . (string)($response['raw'] ?? '')); 
+  }
+
+  $googleEventId = trim((string)($response['body']['id'] ?? ''));
+  if ($googleEventId === '') {
+    throw new RuntimeException('Google sync upsert selhal: chybi id udalosti v odpovedi.');
+  }
+
+  $upsertLink = $pdo->prepare(
+    'INSERT INTO coach_google_calendar_event_links (coach_id, event_id, google_event_id, last_synced_at, last_error)
+     VALUES (?, ?, ?, NOW(), NULL)
+     ON DUPLICATE KEY UPDATE google_event_id = VALUES(google_event_id), last_synced_at = NOW(), last_error = NULL'
+  );
+  $upsertLink->execute([$coachId, $eventId, $googleEventId]);
+
+  markCoachGoogleSyncSuccess($coachId);
+}
+
+function syncCoachEventDeleteToGoogle(int $coachId, ?int $eventId): void {
+  if ($coachId <= 0 || $eventId === null || $eventId <= 0) {
+    return;
+  }
+
+  if (!googleCalendarSyncTablesAvailable()) {
+    return;
+  }
+
+  $pdo = getDB();
+  $linkStmt = $pdo->prepare(
+    'SELECT google_event_id
+     FROM coach_google_calendar_event_links
+     WHERE coach_id = ? AND event_id = ?
+     LIMIT 1'
+  );
+  $linkStmt->execute([$coachId, $eventId]);
+  $googleEventId = trim((string)($linkStmt->fetchColumn() ?: ''));
+
+  if ($googleEventId === '') {
+    return;
+  }
+
+  $coach = getCoachGoogleSyncConfig($coachId);
+  if (!$coach || empty($coach['google_calendar_sync_enabled'])) {
+    $deleteLocalLink = $pdo->prepare('DELETE FROM coach_google_calendar_event_links WHERE coach_id = ? AND event_id = ?');
+    $deleteLocalLink->execute([$coachId, $eventId]);
+    return;
+  }
+
+  $calendarId = trim((string)($coach['google_calendar_id'] ?? ''));
+  if ($calendarId === '') {
+    throw new RuntimeException('Google sync delete: chybi google_calendar_id.');
+  }
+
+  $accessToken = getFreshGoogleAccessToken($coach);
+  $response = googleCalendarApiJsonRequest(
+    'DELETE',
+    'https://www.googleapis.com/calendar/v3/calendars/' . rawurlencode($calendarId) . '/events/' . rawurlencode($googleEventId),
+    $accessToken,
+    null
+  );
+
+  $status = (int)($response['status'] ?? 0);
+  if (!in_array($status, [200, 204, 404], true)) {
+    throw new RuntimeException('Google sync delete selhal: HTTP ' . $status . ' | ' . (string)($response['raw'] ?? ''));
+  }
+
+  $deleteLink = $pdo->prepare('DELETE FROM coach_google_calendar_event_links WHERE coach_id = ? AND event_id = ?');
+  $deleteLink->execute([$coachId, $eventId]);
+
+  markCoachGoogleSyncSuccess($coachId);
+}
+
+function getCoachGoogleSyncConfig(int $coachId): ?array {
+  $pdo = getDB();
+  $stmt = $pdo->prepare(
+    'SELECT id,
+            google_calendar_sync_enabled,
+            google_calendar_id,
+            google_oauth_access_token,
+            google_oauth_refresh_token,
+            google_oauth_expires_at
+     FROM coaches
+     WHERE id = ?
+     LIMIT 1'
+  );
+  $stmt->execute([$coachId]);
+  $coach = $stmt->fetch();
+
+  return $coach ?: null;
+}
+
+function getFreshGoogleAccessToken(array $coach): string {
+  $coachId = (int)($coach['id'] ?? 0);
+  if ($coachId <= 0) {
+    throw new RuntimeException('Google sync: chybi coach id.');
+  }
+
+  $accessToken = trim((string)($coach['google_oauth_access_token'] ?? ''));
+  $refreshToken = trim((string)($coach['google_oauth_refresh_token'] ?? ''));
+  $expiresAt = trim((string)($coach['google_oauth_expires_at'] ?? ''));
+  $expiresTs = $expiresAt !== '' ? strtotime($expiresAt) : false;
+
+  if ($accessToken !== '' && $expiresTs !== false && $expiresTs > (time() + 120)) {
+    return $accessToken;
+  }
+
+  if ($refreshToken === '') {
+    throw new RuntimeException('Google sync: chybi refresh token.');
+  }
+
+  $tokenData = googleRefreshAccessToken($refreshToken);
+  $newAccessToken = trim((string)($tokenData['access_token'] ?? ''));
+  if ($newAccessToken === '') {
+    throw new RuntimeException('Google sync: nepodarilo se obnovit access token.');
+  }
+
+  $expiresIn = max(60, (int)($tokenData['expires_in'] ?? 3600));
+  $newExpiresAt = date('Y-m-d H:i:s', time() + $expiresIn);
+
+  $pdo = getDB();
+  $upd = $pdo->prepare(
+    'UPDATE coaches
+     SET google_oauth_access_token = ?,
+         google_oauth_expires_at = ?,
+         google_sync_last_error = NULL
+     WHERE id = ?'
+  );
+  $upd->execute([$newAccessToken, $newExpiresAt, $coachId]);
+
+  return $newAccessToken;
+}
+
+function googleRefreshAccessToken(string $refreshToken): array {
+  if (!isGoogleCalendarApiConfigured()) {
+    throw new RuntimeException('Google API neni nakonfigurovana.');
+  }
+
+  if (!function_exists('curl_init')) {
+    throw new RuntimeException('Na serveru neni dostupne CURL rozsireni.');
+  }
+
+  $postFields = http_build_query([
+    'client_id' => (string)GOOGLE_CALENDAR_CLIENT_ID,
+    'client_secret' => (string)GOOGLE_CALENDAR_CLIENT_SECRET,
+    'refresh_token' => $refreshToken,
+    'grant_type' => 'refresh_token',
+  ]);
+
+  $ch = curl_init('https://oauth2.googleapis.com/token');
+  curl_setopt_array($ch, [
+    CURLOPT_POST => true,
+    CURLOPT_POSTFIELDS => $postFields,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_TIMEOUT => 20,
+    CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded'],
+  ]);
+
+  $raw = curl_exec($ch);
+  $curlErr = curl_error($ch);
+  $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+  curl_close($ch);
+
+  if ($raw === false) {
+    throw new RuntimeException('Google OAuth refresh selhal: ' . $curlErr);
+  }
+
+  $json = json_decode((string)$raw, true);
+  if ($status < 200 || $status >= 300 || !is_array($json)) {
+    throw new RuntimeException('Google OAuth refresh selhal: HTTP ' . $status . ' | ' . mb_substr((string)$raw, 0, 500, 'UTF-8'));
+  }
+
+  return $json;
+}
+
+function googleCalendarApiJsonRequest(string $method, string $url, string $accessToken, ?array $payload): array {
+  if (!function_exists('curl_init')) {
+    throw new RuntimeException('Na serveru neni dostupne CURL rozsireni.');
+  }
+
+  $method = strtoupper(trim($method));
+  $ch = curl_init($url);
+
+  $headers = [
+    'Authorization: Bearer ' . $accessToken,
+    'Accept: application/json',
+  ];
+
+  $jsonPayload = null;
+  if ($payload !== null) {
+    $jsonPayload = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($jsonPayload === false) {
+      throw new RuntimeException('Google sync: nelze serializovat JSON payload.');
+    }
+    $headers[] = 'Content-Type: application/json';
+  }
+
+  curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST => $method,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_TIMEOUT => 20,
+    CURLOPT_HTTPHEADER => $headers,
+  ]);
+
+  if ($jsonPayload !== null) {
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $jsonPayload);
+  }
+
+  $raw = curl_exec($ch);
+  $curlErr = curl_error($ch);
+  $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+  curl_close($ch);
+
+  if ($raw === false) {
+    throw new RuntimeException('Google API request selhal: ' . $curlErr);
+  }
+
+  $body = null;
+  if (trim((string)$raw) !== '') {
+    $decoded = json_decode((string)$raw, true);
+    if (is_array($decoded)) {
+      $body = $decoded;
+    }
+  }
+
+  return [
+    'status' => $status,
+    'raw' => (string)$raw,
+    'body' => $body,
+  ];
+}
+
+function buildGoogleCalendarEventPayload(array $event, int $coachId): array {
+  $participants = [];
+  $primary = trim((string)($event['first_name'] ?? '') . ' ' . (string)($event['last_name'] ?? ''));
+  $secondary = trim((string)($event['second_first_name'] ?? '') . ' ' . (string)($event['second_last_name'] ?? ''));
+  if ($primary !== '') {
+    $participants[] = $primary;
+  }
+  if ($secondary !== '') {
+    $participants[] = $secondary;
+  }
+
+  $summary = trim((string)($event['custom_title'] ?? ''));
+  if ($summary === '') {
+    $summary = !empty($participants) ? ('Trenink - ' . implode(' + ', $participants)) : 'Trenink';
+  }
+  if ((string)($event['approval_status'] ?? 'approved') === 'pending') {
+    $summary = 'Ceka na schvaleni - ' . $summary;
+  }
+
+  $descriptionParts = [
+    'Zdroj: TrainerApp',
+    'Lokalni ID udalosti: ' . (int)($event['id'] ?? 0),
+  ];
+  if (!empty($participants)) {
+    $descriptionParts[] = 'Ucastnici: ' . implode(', ', $participants);
+  }
+  $location = trim((string)($event['location'] ?? ''));
+  if ($location !== '') {
+    $descriptionParts[] = 'Misto: ' . $location;
+  }
+  $descriptionParts[] = ((string)($event['approval_status'] ?? 'approved') === 'pending')
+    ? 'Stav: ceka na schvaleni'
+    : 'Stav: schvaleno';
+
+  $timeZone = date_default_timezone_get() ?: 'UTC';
+
+  return [
+    'summary' => $summary,
+    'description' => implode("\n", $descriptionParts),
+    'location' => $location !== '' ? $location : null,
+    'status' => ((string)($event['approval_status'] ?? 'approved') === 'pending') ? 'tentative' : 'confirmed',
+    'start' => [
+      'dateTime' => date('c', strtotime((string)($event['starts_at'] ?? 'now'))),
+      'timeZone' => $timeZone,
+    ],
+    'end' => [
+      'dateTime' => date('c', strtotime((string)($event['ends_at'] ?? 'now'))),
+      'timeZone' => $timeZone,
+    ],
+    'extendedProperties' => [
+      'private' => [
+        'trainerapp_event_id' => (string)((int)($event['id'] ?? 0)),
+        'trainerapp_coach_id' => (string)$coachId,
+      ],
+    ],
+  ];
+}
+
+function markCoachGoogleSyncSuccess(int $coachId): void {
+  if ($coachId <= 0) {
+    return;
+  }
+
+  $pdo = getDB();
+  $stmt = $pdo->prepare(
+    'UPDATE coaches
+     SET google_sync_last_error = NULL,
+         google_sync_last_success_at = NOW()
+     WHERE id = ?'
+  );
+  $stmt->execute([$coachId]);
+}
+
+function googleCalendarSyncTablesAvailable(): bool {
+  static $available = null;
+  if ($available !== null) {
+    return $available;
+  }
+
+  try {
+    $pdo = getDB();
+    $jobs = $pdo->query("SHOW TABLES LIKE 'coach_google_calendar_sync_jobs'");
+    $links = $pdo->query("SHOW TABLES LIKE 'coach_google_calendar_event_links'");
+    $available = ($jobs !== false && (bool)$jobs->fetchColumn())
+      && ($links !== false && (bool)$links->fetchColumn());
+  } catch (Throwable $e) {
+    $available = false;
+  }
+
+  return $available;
+}
+
+function enqueueCoachAppleCaldavSync(int $coachId, ?int $eventId, string $syncAction = 'upsert'): void {
+  if (!in_array($syncAction, ['upsert', 'delete'], true)) {
+    $syncAction = 'upsert';
+  }
+
+  if ($coachId <= 0 || !appleCaldavSyncTablesAvailable()) {
+    return;
+  }
+
+  try {
+    $pdo = getDB();
+
+    $cleanup = $pdo->prepare(
+      'DELETE FROM coach_apple_caldav_sync_jobs
+       WHERE coach_id = ?
+         AND ((event_id = ?) OR (event_id IS NULL AND ? IS NULL))
+         AND sync_action = ?
+         AND status IN ("pending", "failed")'
+    );
+    $cleanup->execute([$coachId, $eventId, $eventId, $syncAction]);
+
+    $ins = $pdo->prepare(
+      'INSERT INTO coach_apple_caldav_sync_jobs (coach_id, event_id, sync_action, status, attempt_count, next_attempt_at)
+       VALUES (?, ?, ?, "pending", 0, NOW())'
+    );
+    $ins->execute([$coachId, $eventId, $syncAction]);
+  } catch (Throwable $e) {
+    error_log('enqueueCoachAppleCaldavSync error: ' . $e->getMessage());
+  }
+}
+
+function processCoachAppleCaldavSyncQueue(int $limit = 8): array {
+  $results = [];
+  if (!appleCaldavSyncTablesAvailable()) {
+    return $results;
+  }
+
+  $pdo = getDB();
+  $limit = max(1, min(50, $limit));
+
+  $jobStmt = $pdo->prepare(
+    'SELECT id, coach_id, event_id, sync_action, attempt_count
+     FROM coach_apple_caldav_sync_jobs
+     WHERE status IN ("pending", "failed")
+       AND next_attempt_at <= NOW()
+     ORDER BY id ASC
+     LIMIT ' . $limit
+  );
+  $jobStmt->execute();
+  $jobs = $jobStmt->fetchAll();
+
+  foreach ($jobs as $job) {
+    $jobId = (int)($job['id'] ?? 0);
+    $coachId = (int)($job['coach_id'] ?? 0);
+    $eventId = isset($job['event_id']) ? (int)$job['event_id'] : null;
+    $syncAction = (string)($job['sync_action'] ?? 'upsert');
+    $attemptCount = (int)($job['attempt_count'] ?? 0);
+
+    if ($jobId <= 0 || $coachId <= 0) {
+      continue;
+    }
+
+    $markProcessing = $pdo->prepare(
+      'UPDATE coach_apple_caldav_sync_jobs
+       SET status = "processing", updated_at = NOW(), attempt_count = attempt_count + 1
+       WHERE id = ?'
+    );
+    $markProcessing->execute([$jobId]);
+
+    try {
+      if ($syncAction === 'delete') {
+        syncCoachEventDeleteToAppleCaldav($coachId, $eventId);
+      } else {
+        syncCoachEventUpsertToAppleCaldav($coachId, $eventId);
+      }
+
+      $markDone = $pdo->prepare(
+        'UPDATE coach_apple_caldav_sync_jobs
+         SET status = "done", last_error = NULL, processed_at = NOW(), updated_at = NOW()
+         WHERE id = ?'
+      );
+      $markDone->execute([$jobId]);
+
+      $results[] = ['job_id' => $jobId, 'status' => 'done'];
+    } catch (Throwable $e) {
+      $delayMinutes = min(360, max(2, (int)pow(2, max(0, $attemptCount))));
+      $markFailed = $pdo->prepare(
+        'UPDATE coach_apple_caldav_sync_jobs
+         SET status = "failed",
+             last_error = ?,
+             next_attempt_at = DATE_ADD(NOW(), INTERVAL ? MINUTE),
+             updated_at = NOW()
+         WHERE id = ?'
+      );
+      $markFailed->execute([mb_substr($e->getMessage(), 0, 2000, 'UTF-8'), $delayMinutes, $jobId]);
+
+      $results[] = ['job_id' => $jobId, 'status' => 'failed', 'error' => $e->getMessage()];
+    }
+  }
+
+  return $results;
+}
+
+function syncCoachEventUpsertToAppleCaldav(int $coachId, ?int $eventId): void {
+  if ($coachId <= 0 || $eventId === null || $eventId <= 0 || !appleCaldavSyncTablesAvailable()) {
+    return;
+  }
+
+  $pdo = getDB();
+  $eventStmt = $pdo->prepare(
+    'SELECT e.id,
+            e.coach_id,
+            e.athlete_id,
+            e.second_athlete_id,
+            e.approval_status,
+            e.custom_title,
+            e.location,
+            e.starts_at,
+            e.ends_at,
+            e.updated_at,
+            e.created_at,
+            a.first_name,
+            a.last_name,
+            a2.first_name AS second_first_name,
+            a2.last_name AS second_last_name
+     FROM coach_calendar_events e
+     LEFT JOIN athletes a ON a.id = e.athlete_id
+     LEFT JOIN athletes a2 ON a2.id = e.second_athlete_id
+     WHERE e.id = ?
+       AND e.coach_id = ?
+     LIMIT 1'
+  );
+  $eventStmt->execute([$eventId, $coachId]);
+  $event = $eventStmt->fetch();
+
+  if (!$event) {
+    syncCoachEventDeleteToAppleCaldav($coachId, $eventId);
+    return;
+  }
+
+  $coach = getCoachAppleCaldavConfig($coachId);
+  if (!$coach || empty($coach['apple_caldav_sync_enabled'])) {
+    return;
+  }
+
+  $calendarUrl = normalizeAppleCaldavCalendarUrl((string)($coach['apple_caldav_calendar_url'] ?? ''));
+  if ($calendarUrl === '') {
+    throw new RuntimeException('Apple CalDAV: chybi URL kalendare.');
+  }
+
+  $username = trim((string)($coach['apple_caldav_username'] ?? ''));
+  $password = trim((string)($coach['apple_caldav_app_password'] ?? ''));
+  if ($username === '' || $password === '') {
+    throw new RuntimeException('Apple CalDAV: chybi prihlasovaci udaje.');
+  }
+
+  $uid = buildAppleCaldavEventUid($coachId, $event);
+  $remoteHref = buildAppleCaldavRemoteHref($calendarUrl, $uid);
+  $icsPayload = buildAppleCaldavEventIcs($coachId, $event, $uid);
+
+  $response = appleCaldavHttpRequest('PUT', $remoteHref, $username, $password, $icsPayload, [
+    'Content-Type: text/calendar; charset=utf-8',
+  ]);
+  $status = (int)($response['status'] ?? 0);
+  if (!in_array($status, [200, 201, 204], true)) {
+    throw new RuntimeException('Apple CalDAV upsert selhal: HTTP ' . $status . ' | ' . (string)($response['body'] ?? ''));
+  }
+
+  $etag = trim((string)($response['headers']['etag'] ?? ''));
+  $upsertLink = $pdo->prepare(
+    'INSERT INTO coach_apple_caldav_event_links (coach_id, event_id, remote_href, remote_etag, last_synced_at, last_error)
+     VALUES (?, ?, ?, ?, NOW(), NULL)
+     ON DUPLICATE KEY UPDATE remote_href = VALUES(remote_href), remote_etag = VALUES(remote_etag), last_synced_at = NOW(), last_error = NULL'
+  );
+  $upsertLink->execute([$coachId, $eventId, $remoteHref, $etag !== '' ? $etag : null]);
+
+  markCoachAppleCaldavSyncSuccess($coachId);
+}
+
+function syncCoachEventDeleteToAppleCaldav(int $coachId, ?int $eventId): void {
+  if ($coachId <= 0 || $eventId === null || $eventId <= 0 || !appleCaldavSyncTablesAvailable()) {
+    return;
+  }
+
+  $pdo = getDB();
+  $linkStmt = $pdo->prepare(
+    'SELECT remote_href
+     FROM coach_apple_caldav_event_links
+     WHERE coach_id = ? AND event_id = ?
+     LIMIT 1'
+  );
+  $linkStmt->execute([$coachId, $eventId]);
+  $remoteHref = trim((string)($linkStmt->fetchColumn() ?: ''));
+
+  $coach = getCoachAppleCaldavConfig($coachId);
+  if (!$coach || empty($coach['apple_caldav_sync_enabled'])) {
+    $deleteLocal = $pdo->prepare('DELETE FROM coach_apple_caldav_event_links WHERE coach_id = ? AND event_id = ?');
+    $deleteLocal->execute([$coachId, $eventId]);
+    return;
+  }
+
+  $calendarUrl = normalizeAppleCaldavCalendarUrl((string)($coach['apple_caldav_calendar_url'] ?? ''));
+  $candidateDeleteHrefs = [];
+  if ($remoteHref !== '') {
+    $candidateDeleteHrefs[] = $remoteHref;
+  }
+  if ($calendarUrl !== '') {
+    $uid = 'trainerapp-coach-' . $coachId . '-event-' . $eventId . '@reservio.online';
+    foreach ([
+      buildAppleCaldavRemoteHref($calendarUrl, $uid),
+      buildAppleCaldavLegacyRemoteHref($calendarUrl, $uid),
+    ] as $href) {
+      if (!in_array($href, $candidateDeleteHrefs, true)) {
+        $candidateDeleteHrefs[] = $href;
+      }
+    }
+  }
+  if (empty($candidateDeleteHrefs)) {
+    return;
+  }
+
+  $username = trim((string)($coach['apple_caldav_username'] ?? ''));
+  $password = trim((string)($coach['apple_caldav_app_password'] ?? ''));
+  if ($username === '' || $password === '') {
+    throw new RuntimeException('Apple CalDAV delete: chybi prihlasovaci udaje.');
+  }
+
+  $lastDeleteError = null;
+  foreach ($candidateDeleteHrefs as $candidateHref) {
+    $response = appleCaldavHttpRequest('DELETE', $candidateHref, $username, $password, null, []);
+    $status = (int)($response['status'] ?? 0);
+    if (in_array($status, [200, 202, 204, 404], true)) {
+      $lastDeleteError = null;
+      break;
+    }
+    $lastDeleteError = 'Apple CalDAV delete selhal: HTTP ' . $status . ' | ' . (string)($response['body'] ?? '');
+  }
+  if ($lastDeleteError !== null) {
+    throw new RuntimeException($lastDeleteError);
+  }
+
+  $deleteLink = $pdo->prepare('DELETE FROM coach_apple_caldav_event_links WHERE coach_id = ? AND event_id = ?');
+  $deleteLink->execute([$coachId, $eventId]);
+
+  markCoachAppleCaldavSyncSuccess($coachId);
+}
+
+function getCoachAppleCaldavConfig(int $coachId): ?array {
+  $pdo = getDB();
+  $stmt = $pdo->prepare(
+    'SELECT id,
+            apple_caldav_sync_enabled,
+            apple_caldav_calendar_url,
+            apple_caldav_username,
+            apple_caldav_app_password
+     FROM coaches
+     WHERE id = ?
+     LIMIT 1'
+  );
+  $stmt->execute([$coachId]);
+  $row = $stmt->fetch();
+
+  return $row ?: null;
+}
+
+function buildAppleCaldavEventUid(int $coachId, array $event): string {
+  $domain = 'reservio.online';
+  $eventId = (int)($event['id'] ?? 0);
+  return 'trainerapp-coach-' . $coachId . '-event-' . $eventId . '@' . $domain;
+}
+
+function buildAppleCaldavRemoteHref(string $calendarUrl, string $uid): string {
+  $base = rtrim($calendarUrl, '/') . '/';
+
+  // Nazev souboru musi byt URL-safe; nektere CalDAV servery odmitaji %40 a podobne znaky.
+  $fileBase = strtolower(preg_replace('/[^a-z0-9._-]+/i', '-', (string)$uid));
+  $fileBase = trim((string)$fileBase, '-._');
+  if ($fileBase === '') {
+    $fileBase = 'event-' . substr(sha1((string)$uid), 0, 24);
+  }
+  if (!str_ends_with($fileBase, '.ics')) {
+    $fileBase .= '.ics';
+  }
+
+  return $base . $fileBase;
+}
+
+function buildAppleCaldavLegacyRemoteHref(string $calendarUrl, string $uid): string {
+  $base = rtrim($calendarUrl, '/') . '/';
+  return $base . rawurlencode($uid) . '.ics';
+}
+
+function normalizeAppleCaldavCalendarUrl(string $url): string {
+  $url = trim($url);
+  if ($url === '') {
+    return '';
+  }
+
+  if (!preg_match('#^https://#i', $url)) {
+    return '';
+  }
+
+  return rtrim($url, '/') . '/';
+}
+
+function discoverAppleCaldavCalendarUrl(string $username, string $password): string {
+  $baseUrl = 'https://caldav.icloud.com';
+  $debug = [];
+
+  $principalBody = '<?xml version="1.0" encoding="UTF-8"?>'
+    . '<d:propfind xmlns:d="DAV:">'
+    . '<d:prop><d:current-user-principal /></d:prop>'
+    . '</d:propfind>';
+  $principalResponse = appleCaldavHttpRequest('PROPFIND', $baseUrl . '/', $username, $password, $principalBody, [
+    'Depth: 0',
+    'Content-Type: application/xml; charset=utf-8',
+  ]);
+  $principalStatus = (int)($principalResponse['status'] ?? 0);
+  $debug[] = 'principal=' . $principalStatus;
+  if (!in_array($principalStatus, [200, 207], true)) {
+    throw new RuntimeException('Apple CalDAV discovery selhal v kroku principal (HTTP ' . $principalStatus . ').');
+  }
+
+  $principalXml = @simplexml_load_string((string)($principalResponse['body'] ?? ''));
+  if (!$principalXml) {
+    throw new RuntimeException('Apple CalDAV discovery: principal XML nelze nacist.');
+  }
+  $principalXml->registerXPathNamespace('d', 'DAV:');
+  $principalHrefs = $principalXml->xpath('//d:current-user-principal/d:href');
+  $principalHref = isset($principalHrefs[0]) ? trim((string)$principalHrefs[0]) : '';
+  if ($principalHref === '') {
+    throw new RuntimeException('Apple CalDAV discovery: current-user-principal nebyl nalezen.');
+  }
+
+  $principalUrl = appleCaldavAbsoluteHref($baseUrl, $principalHref);
+
+  $homeBody = '<?xml version="1.0" encoding="UTF-8"?>'
+    . '<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+    . '<d:prop><c:calendar-home-set /></d:prop>'
+    . '</d:propfind>';
+  $homeResponse = appleCaldavHttpRequest('PROPFIND', $principalUrl, $username, $password, $homeBody, [
+    'Depth: 0',
+    'Content-Type: application/xml; charset=utf-8',
+  ]);
+  $homeStatus = (int)($homeResponse['status'] ?? 0);
+  $debug[] = 'home=' . $homeStatus;
+  if (!in_array($homeStatus, [200, 207], true)) {
+    throw new RuntimeException('Apple CalDAV discovery selhal v kroku home-set (HTTP ' . $homeStatus . ').');
+  }
+
+  $homeXml = @simplexml_load_string((string)($homeResponse['body'] ?? ''));
+  if (!$homeXml) {
+    throw new RuntimeException('Apple CalDAV discovery: home-set XML nelze nacist.');
+  }
+  $homeXml->registerXPathNamespace('d', 'DAV:');
+  $homeXml->registerXPathNamespace('c', 'urn:ietf:params:xml:ns:caldav');
+  $homeHrefs = $homeXml->xpath('//c:calendar-home-set/d:href');
+  $homeHref = isset($homeHrefs[0]) ? trim((string)$homeHrefs[0]) : '';
+  if ($homeHref === '') {
+    throw new RuntimeException('Apple CalDAV discovery: calendar-home-set nebyl nalezen.');
+  }
+
+  $homeUrl = appleCaldavAbsoluteHref($baseUrl, $homeHref);
+
+  $listBody = '<?xml version="1.0" encoding="UTF-8"?>'
+    . '<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+    . '<d:prop><d:resourcetype /><d:displayname /></d:prop>'
+    . '</d:propfind>';
+  $listResponse = appleCaldavHttpRequest('PROPFIND', $homeUrl, $username, $password, $listBody, [
+    'Depth: 1',
+    'Content-Type: application/xml; charset=utf-8',
+  ]);
+  $listStatus = (int)($listResponse['status'] ?? 0);
+  $debug[] = 'list=' . $listStatus;
+  if (!in_array($listStatus, [200, 207], true)) {
+    throw new RuntimeException('Apple CalDAV discovery selhal v kroku seznamu kalendaru (HTTP ' . $listStatus . ').');
+  }
+
+  $listXml = @simplexml_load_string((string)($listResponse['body'] ?? ''));
+  if (!$listXml) {
+    throw new RuntimeException('Apple CalDAV discovery: seznam kalendaru XML nelze nacist.');
+  }
+  $listXml->registerXPathNamespace('d', 'DAV:');
+  $listXml->registerXPathNamespace('c', 'urn:ietf:params:xml:ns:caldav');
+
+  $responses = $listXml->xpath('//d:response');
+  if (!is_array($responses)) {
+    throw new RuntimeException('Apple CalDAV discovery: odpoved neobsahuje zadne kalendare.');
+  }
+
+  $preferredCandidates = [];
+  $fallbackCandidates = [];
+  $normalizedHomeUrl = rtrim($homeUrl, '/') . '/';
+
+  foreach ($responses as $responseNode) {
+    $hrefNodes = $responseNode->xpath('./d:href');
+    $href = isset($hrefNodes[0]) ? trim((string)$hrefNodes[0]) : '';
+    if ($href === '') {
+      continue;
+    }
+
+    $candidate = rtrim(appleCaldavAbsoluteHref($baseUrl, $href), '/') . '/';
+    $candidatePath = (string)parse_url($candidate, PHP_URL_PATH);
+    $pathLower = strtolower($candidatePath);
+    if (str_contains($pathLower, '/inbox/') || str_contains($pathLower, '/outbox/') || str_contains($pathLower, '/notification/')) {
+      continue;
+    }
+
+    $resourcetype = $responseNode->xpath('.//d:resourcetype');
+    if (is_array($resourcetype) && isset($resourcetype[0])) {
+      $rt = $resourcetype[0];
+      $rt->registerXPathNamespace('d', 'DAV:');
+      $rt->registerXPathNamespace('c', 'urn:ietf:params:xml:ns:caldav');
+      $isCollection = !empty($rt->xpath('./d:collection'));
+      $isCalendar = !empty($rt->xpath('./c:calendar'));
+      if ($isCollection && $isCalendar) {
+        $preferredCandidates[] = $candidate;
+        continue;
+      }
+    }
+
+    // Fallback: nektere iCloud odpovedi nevraci c:calendar konzistentne,
+    // ale href je i tak validni cilova kolekce.
+    $fallbackCandidates[] = $candidate;
+  }
+
+  // Dalsi fallback: vytahnout href i z raw XML (bez ohledu na namespace).
+  $rawHrefCandidates = extractAppleCaldavHrefCandidatesFromXml((string)($listResponse['body'] ?? ''), $baseUrl);
+  foreach ($rawHrefCandidates as $candidate) {
+    $candidate = rtrim((string)$candidate, '/') . '/';
+    $candidatePath = strtolower((string)parse_url($candidate, PHP_URL_PATH));
+    if ($candidate === $normalizedHomeUrl) {
+      continue;
+    }
+    if (str_contains($candidatePath, '/inbox/') || str_contains($candidatePath, '/outbox/') || str_contains($candidatePath, '/notification/')) {
+      continue;
+    }
+
+    if (!in_array($candidate, $fallbackCandidates, true) && !in_array($candidate, $preferredCandidates, true)) {
+      $fallbackCandidates[] = $candidate;
+    }
+  }
+
+  $probeCandidates = [];
+  foreach ([$preferredCandidates, $fallbackCandidates, [$normalizedHomeUrl]] as $group) {
+    foreach ($group as $candidate) {
+      $candidate = rtrim((string)$candidate, '/') . '/';
+      if ($candidate === '') {
+        continue;
+      }
+      if (!in_array($candidate, $probeCandidates, true)) {
+        $probeCandidates[] = $candidate;
+      }
+    }
+  }
+
+  // iCloud casto vraci jen /calendars/ root, ale zapis je povolen az do podkolekce (typicky /home/).
+  $heuristicCandidates = [];
+  foreach ($probeCandidates as $candidate) {
+    $candidatePath = strtolower((string)parse_url($candidate, PHP_URL_PATH));
+    if (str_ends_with($candidatePath, '/calendars/')) {
+      $heuristicCandidates[] = rtrim($candidate, '/') . '/home/';
+      $heuristicCandidates[] = rtrim($candidate, '/') . '/default/';
+      $heuristicCandidates[] = rtrim($candidate, '/') . '/calendar/';
+    }
+  }
+  foreach ($heuristicCandidates as $candidate) {
+    $candidate = rtrim((string)$candidate, '/') . '/';
+    if (!in_array($candidate, $probeCandidates, true)) {
+      $probeCandidates[] = $candidate;
+    }
+  }
+
+  foreach ($probeCandidates as $candidate) {
+    $probe = appleCaldavProbeCollectionWritable($candidate, $username, $password);
+    $debug[] = 'probe(' . $candidate . ')=' . ($probe['detail'] ?? 'unknown');
+    if (!empty($probe['ok'])) {
+      return $candidate;
+    }
+  }
+
+  throw new RuntimeException(
+    'Apple CalDAV discovery: nenasel jsem zadny zapisovatelny kalendar. Zadejte prosim CalDAV URL rucne. [' . implode('; ', $debug) . ']'
+  );
+}
+
+function extractAppleCaldavHrefCandidatesFromXml(string $xml, string $baseUrl): array {
+  $xml = trim($xml);
+  if ($xml === '') {
+    return [];
+  }
+
+  $candidates = [];
+
+  if (preg_match_all('#<[^>]*href[^>]*>\s*([^<]+)\s*</[^>]*href>#i', $xml, $hrefMatches)) {
+    foreach (($hrefMatches[1] ?? []) as $href) {
+      $href = trim(html_entity_decode((string)$href, ENT_QUOTES | ENT_XML1, 'UTF-8'));
+      if ($href === '') {
+        continue;
+      }
+      $absolute = rtrim(appleCaldavAbsoluteHref($baseUrl, $href), '/') . '/';
+      if (!in_array($absolute, $candidates, true)) {
+        $candidates[] = $absolute;
+      }
+    }
+  }
+
+  if (preg_match_all('#https?://[^\s"\'\<]+/calendars/[^\s"\'\<]*/?#i', $xml, $urlMatches)) {
+    foreach (($urlMatches[0] ?? []) as $url) {
+      $url = rtrim((string)$url, '/') . '/';
+      if (!in_array($url, $candidates, true)) {
+        $candidates[] = $url;
+      }
+    }
+  }
+
+  return $candidates;
+}
+
+function appleCaldavProbeCollectionWritable(string $calendarUrl, string $username, string $password): array {
+  $calendarUrl = rtrim(trim($calendarUrl), '/') . '/';
+  if ($calendarUrl === '' || !preg_match('#^https://#i', $calendarUrl)) {
+    return ['ok' => false, 'detail' => 'invalid-url'];
+  }
+
+  $propfindBody = '<?xml version="1.0" encoding="UTF-8"?>'
+    . '<d:propfind xmlns:d="DAV:">'
+    . '<d:prop><d:resourcetype /></d:prop>'
+    . '</d:propfind>';
+
+  $probeUid = 'trainerapp-probe-' . bin2hex(random_bytes(8)) . '@reservio.online';
+  $probeHref = buildAppleCaldavRemoteHref($calendarUrl, $probeUid);
+  $now = gmdate('Ymd\\THis\\Z');
+  $later = gmdate('Ymd\\THis\\Z', time() + 300);
+  $ics = "BEGIN:VCALENDAR\r\n"
+    . "VERSION:2.0\r\n"
+    . "PRODID:-//TrainerApp//Apple CalDAV Probe//CS\r\n"
+    . "CALSCALE:GREGORIAN\r\n"
+    . "BEGIN:VEVENT\r\n"
+    . 'UID:' . appleCaldavEscapeText($probeUid) . "\r\n"
+    . 'DTSTAMP:' . $now . "\r\n"
+    . 'DTSTART:' . $now . "\r\n"
+    . 'DTEND:' . $later . "\r\n"
+    . "SUMMARY:TrainerApp Probe\r\n"
+    . "DESCRIPTION:Temporary write test\r\n"
+    . "END:VEVENT\r\n"
+    . "END:VCALENDAR\r\n";
+
+  try {
+    $pf = appleCaldavHttpRequest('PROPFIND', $calendarUrl, $username, $password, $propfindBody, [
+      'Depth: 0',
+      'Content-Type: application/xml; charset=utf-8',
+    ]);
+    $pfStatus = (int)($pf['status'] ?? 0);
+    if (!in_array($pfStatus, [200, 207], true)) {
+      return ['ok' => false, 'detail' => 'pf:' . $pfStatus];
+    }
+
+    $put = appleCaldavHttpRequest('PUT', $probeHref, $username, $password, $ics, [
+      'Content-Type: text/calendar; charset=utf-8',
+    ]);
+    $putStatus = (int)($put['status'] ?? 0);
+    if (!in_array($putStatus, [200, 201, 204], true)) {
+      $putBodySnippet = trim((string)($put['body'] ?? ''));
+      if ($putBodySnippet !== '') {
+        $putBodySnippet = preg_replace('/\s+/', ' ', $putBodySnippet);
+        $putBodySnippet = mb_substr((string)$putBodySnippet, 0, 180, 'UTF-8');
+      }
+      return ['ok' => false, 'detail' => 'pf:' . $pfStatus . ',put:' . $putStatus . ($putBodySnippet !== '' ? ',body:' . $putBodySnippet : '')];
+    }
+
+    $del = appleCaldavHttpRequest('DELETE', $probeHref, $username, $password, null, []);
+    $delStatus = (int)($del['status'] ?? 0);
+    if (!in_array($delStatus, [200, 202, 204, 404], true)) {
+      return ['ok' => false, 'detail' => 'pf:' . $pfStatus . ',put:' . $putStatus . ',del:' . $delStatus];
+    }
+
+    return ['ok' => true, 'detail' => 'pf:' . $pfStatus . ',put:' . $putStatus . ',del:' . $delStatus];
+  } catch (Throwable $e) {
+    return ['ok' => false, 'detail' => 'err:' . preg_replace('/\s+/', ' ', trim($e->getMessage()))];
+  }
+}
+
+function appleCaldavAbsoluteHref(string $baseUrl, string $href): string {
+  $href = trim($href);
+  if ($href === '') {
+    return rtrim($baseUrl, '/') . '/';
+  }
+
+  if (preg_match('#^https?://#i', $href)) {
+    return $href;
+  }
+
+  return rtrim($baseUrl, '/') . '/' . ltrim($href, '/');
+}
+
+function buildAppleCaldavEventIcs(int $coachId, array $event, string $uid): string {
+  $participants = [];
+  $primary = trim((string)($event['first_name'] ?? '') . ' ' . (string)($event['last_name'] ?? ''));
+  $secondary = trim((string)($event['second_first_name'] ?? '') . ' ' . (string)($event['second_last_name'] ?? ''));
+  if ($primary !== '') {
+    $participants[] = $primary;
+  }
+  if ($secondary !== '') {
+    $participants[] = $secondary;
+  }
+
+  $summary = trim((string)($event['custom_title'] ?? ''));
+  if ($summary === '') {
+    $summary = !empty($participants) ? ('Trenink - ' . implode(' + ', $participants)) : 'Trenink';
+  }
+  if ((string)($event['approval_status'] ?? 'approved') === 'pending') {
+    $summary = 'Ceka na schvaleni - ' . $summary;
+  }
+
+  $descriptionParts = [
+    'Zdroj: TrainerApp',
+    'Lokalni ID udalosti: ' . (int)($event['id'] ?? 0),
+  ];
+  if (!empty($participants)) {
+    $descriptionParts[] = 'Ucastnici: ' . implode(', ', $participants);
+  }
+  $location = trim((string)($event['location'] ?? ''));
+  if ($location !== '') {
+    $descriptionParts[] = 'Misto: ' . $location;
+  }
+
+  $dtStart = gmdate('Ymd\\THis\\Z', strtotime((string)($event['starts_at'] ?? 'now')));
+  $dtEnd = gmdate('Ymd\\THis\\Z', strtotime((string)($event['ends_at'] ?? 'now')));
+  $dtStamp = gmdate('Ymd\\THis\\Z');
+  $created = gmdate('Ymd\\THis\\Z', strtotime((string)($event['created_at'] ?? 'now')));
+  $lastModified = gmdate('Ymd\\THis\\Z', strtotime((string)($event['updated_at'] ?? ($event['created_at'] ?? 'now'))));
+  $sequence = max(0, strtotime((string)($event['updated_at'] ?? ($event['created_at'] ?? 'now'))));
+
+  $lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//TrainerApp//Apple CalDAV//CS',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    'UID:' . appleCaldavEscapeText($uid),
+    'DTSTAMP:' . $dtStamp,
+    'CREATED:' . $created,
+    'LAST-MODIFIED:' . $lastModified,
+    'SEQUENCE:' . $sequence,
+    'STATUS:' . (((string)($event['approval_status'] ?? 'approved') === 'pending') ? 'TENTATIVE' : 'CONFIRMED'),
+    'DTSTART:' . $dtStart,
+    'DTEND:' . $dtEnd,
+    'SUMMARY:' . appleCaldavEscapeText($summary),
+  ];
+
+  if ($location !== '') {
+    $lines[] = 'LOCATION:' . appleCaldavEscapeText($location);
+  }
+  if (!empty($descriptionParts)) {
+    $lines[] = 'DESCRIPTION:' . appleCaldavEscapeText(implode("\n", $descriptionParts));
+  }
+
+  $lines[] = 'END:VEVENT';
+  $lines[] = 'END:VCALENDAR';
+
+  return implode("\r\n", $lines) . "\r\n";
+}
+
+function appleCaldavEscapeText(string $value): string {
+  return str_replace(
+    ["\\", ";", ",", "\r\n", "\r", "\n"],
+    ["\\\\", "\\;", "\\,", "\\n", "\\n", "\\n"],
+    $value
+  );
+}
+
+function appleCaldavHttpRequest(string $method, string $url, string $username, string $password, ?string $body, array $extraHeaders): array {
+  if (!function_exists('curl_init')) {
+    throw new RuntimeException('Na serveru neni dostupne CURL rozsireni.');
+  }
+
+  $method = strtoupper(trim($method));
+  $ch = curl_init($url);
+
+  $headers = array_merge([
+    'User-Agent: TrainerApp-AppleCalDAV/1.0',
+  ], $extraHeaders);
+
+  curl_setopt_array($ch, [
+    CURLOPT_CUSTOMREQUEST => $method,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_TIMEOUT => 25,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_MAXREDIRS => 5,
+    CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
+    CURLOPT_USERPWD => $username . ':' . $password,
+    CURLOPT_HTTPHEADER => $headers,
+    CURLOPT_HEADER => true,
+  ]);
+
+  if ($body !== null) {
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+  }
+
+  $raw = curl_exec($ch);
+  $curlErr = curl_error($ch);
+  $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+  $headerSize = (int)curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+  curl_close($ch);
+
+  if ($raw === false) {
+    throw new RuntimeException('Apple CalDAV request selhal: ' . $curlErr);
+  }
+
+  $rawHeaders = substr((string)$raw, 0, $headerSize);
+  $rawBody = substr((string)$raw, $headerSize);
+
+  $parsedHeaders = [];
+  foreach (preg_split('/\r\n|\n|\r/', (string)$rawHeaders) as $line) {
+    if (strpos($line, ':') === false) {
+      continue;
+    }
+    [$name, $value] = explode(':', $line, 2);
+    $name = strtolower(trim($name));
+    if ($name === '') {
+      continue;
+    }
+    $parsedHeaders[$name] = trim($value);
+  }
+
+  return [
+    'status' => $status,
+    'headers' => $parsedHeaders,
+    'body' => (string)$rawBody,
+  ];
+}
+
+function markCoachAppleCaldavSyncSuccess(int $coachId): void {
+  if ($coachId <= 0) {
+    return;
+  }
+
+  $pdo = getDB();
+  $stmt = $pdo->prepare(
+    'UPDATE coaches
+     SET apple_caldav_last_error = NULL,
+         apple_caldav_last_success_at = NOW()
+     WHERE id = ?'
+  );
+  $stmt->execute([$coachId]);
+}
+
+function appleCaldavSyncTablesAvailable(): bool {
+  static $available = null;
+  if ($available !== null) {
+    return $available;
+  }
+
+  try {
+    $pdo = getDB();
+    $jobs = $pdo->query("SHOW TABLES LIKE 'coach_apple_caldav_sync_jobs'");
+    $links = $pdo->query("SHOW TABLES LIKE 'coach_apple_caldav_event_links'");
+    $available = ($jobs !== false && (bool)$jobs->fetchColumn())
+      && ($links !== false && (bool)$links->fetchColumn());
+  } catch (Throwable $e) {
+    $available = false;
+  }
+
+  return $available;
+}
+
+function enqueueAthleteAppleCaldavSync(int $athleteId, ?int $eventId, string $syncAction = 'upsert'): void {
+  if (!in_array($syncAction, ['upsert', 'delete'], true)) {
+    $syncAction = 'upsert';
+  }
+
+  if ($athleteId <= 0 || !athleteAppleCaldavSyncTablesAvailable()) {
+    return;
+  }
+
+  try {
+    $pdo = getDB();
+    $cleanup = $pdo->prepare(
+      'DELETE FROM athlete_apple_caldav_sync_jobs
+       WHERE athlete_id = ?
+         AND ((event_id = ?) OR (event_id IS NULL AND ? IS NULL))
+         AND sync_action = ?
+         AND status IN ("pending", "failed")'
+    );
+    $cleanup->execute([$athleteId, $eventId, $eventId, $syncAction]);
+
+    $ins = $pdo->prepare(
+      'INSERT INTO athlete_apple_caldav_sync_jobs (athlete_id, event_id, sync_action, status, attempt_count, next_attempt_at)
+       VALUES (?, ?, ?, "pending", 0, NOW())'
+    );
+    $ins->execute([$athleteId, $eventId, $syncAction]);
+  } catch (Throwable $e) {
+    error_log('enqueueAthleteAppleCaldavSync error: ' . $e->getMessage());
+  }
+}
+
+function processAthleteAppleCaldavSyncQueue(int $limit = 8): array {
+  $results = [];
+  if (!athleteAppleCaldavSyncTablesAvailable()) {
+    return $results;
+  }
+
+  $pdo = getDB();
+  $limit = max(1, min(50, $limit));
+  $jobStmt = $pdo->prepare(
+    'SELECT id, athlete_id, event_id, sync_action, attempt_count
+     FROM athlete_apple_caldav_sync_jobs
+     WHERE status IN ("pending", "failed")
+       AND next_attempt_at <= NOW()
+     ORDER BY id ASC
+     LIMIT ' . $limit
+  );
+  $jobStmt->execute();
+  $jobs = $jobStmt->fetchAll();
+
+  foreach ($jobs as $job) {
+    $jobId = (int)($job['id'] ?? 0);
+    $athleteId = (int)($job['athlete_id'] ?? 0);
+    $eventId = isset($job['event_id']) ? (int)$job['event_id'] : null;
+    $syncAction = (string)($job['sync_action'] ?? 'upsert');
+    $attemptCount = (int)($job['attempt_count'] ?? 0);
+
+    if ($jobId <= 0 || $athleteId <= 0) {
+      continue;
+    }
+
+    $markProcessing = $pdo->prepare(
+      'UPDATE athlete_apple_caldav_sync_jobs
+       SET status = "processing", updated_at = NOW(), attempt_count = attempt_count + 1
+       WHERE id = ?'
+    );
+    $markProcessing->execute([$jobId]);
+
+    try {
+      if ($syncAction === 'delete') {
+        syncAthleteEventDeleteToAppleCaldav($athleteId, $eventId);
+      } else {
+        syncAthleteEventUpsertToAppleCaldav($athleteId, $eventId);
+      }
+
+      $markDone = $pdo->prepare(
+        'UPDATE athlete_apple_caldav_sync_jobs
+         SET status = "done", last_error = NULL, processed_at = NOW(), updated_at = NOW()
+         WHERE id = ?'
+      );
+      $markDone->execute([$jobId]);
+      $results[] = ['job_id' => $jobId, 'status' => 'done'];
+    } catch (Throwable $e) {
+      $delayMinutes = min(360, max(2, (int)pow(2, max(0, $attemptCount))));
+      $markFailed = $pdo->prepare(
+        'UPDATE athlete_apple_caldav_sync_jobs
+         SET status = "failed",
+             last_error = ?,
+             next_attempt_at = DATE_ADD(NOW(), INTERVAL ? MINUTE),
+             updated_at = NOW()
+         WHERE id = ?'
+      );
+      $markFailed->execute([mb_substr($e->getMessage(), 0, 2000, 'UTF-8'), $delayMinutes, $jobId]);
+      $results[] = ['job_id' => $jobId, 'status' => 'failed', 'error' => $e->getMessage()];
+    }
+  }
+
+  return $results;
+}
+
+function syncAthleteEventUpsertToAppleCaldav(int $athleteId, ?int $eventId): void {
+  if ($athleteId <= 0 || $eventId === null || $eventId <= 0 || !athleteAppleCaldavSyncTablesAvailable()) {
+    return;
+  }
+
+  $pdo = getDB();
+  $eventStmt = $pdo->prepare(
+    'SELECT e.id,
+            e.coach_id,
+            e.athlete_id,
+            e.second_athlete_id,
+            e.approval_status,
+            e.custom_title,
+            e.location,
+            e.starts_at,
+            e.ends_at,
+            e.updated_at,
+            e.created_at,
+            c.name AS coach_name,
+            a.first_name,
+            a.last_name,
+            a2.first_name AS second_first_name,
+            a2.last_name AS second_last_name
+     FROM coach_calendar_events e
+     JOIN coaches c ON c.id = e.coach_id
+     LEFT JOIN athletes a ON a.id = e.athlete_id
+     LEFT JOIN athletes a2 ON a2.id = e.second_athlete_id
+     WHERE e.id = ?
+       AND (e.athlete_id = ? OR e.second_athlete_id = ?)
+     LIMIT 1'
+  );
+  $eventStmt->execute([$eventId, $athleteId, $athleteId]);
+  $event = $eventStmt->fetch();
+
+  if (!$event) {
+    syncAthleteEventDeleteToAppleCaldav($athleteId, $eventId);
+    return;
+  }
+
+  $athlete = getAthleteAppleCaldavConfig($athleteId);
+  if (!$athlete || empty($athlete['apple_caldav_sync_enabled'])) {
+    return;
+  }
+
+  $calendarUrl = normalizeAppleCaldavCalendarUrl((string)($athlete['apple_caldav_calendar_url'] ?? ''));
+  if ($calendarUrl === '') {
+    throw new RuntimeException('Athlete Apple CalDAV: chybi URL kalendare.');
+  }
+
+  $username = trim((string)($athlete['apple_caldav_username'] ?? ''));
+  $password = trim((string)($athlete['apple_caldav_app_password'] ?? ''));
+  if ($username === '' || $password === '') {
+    throw new RuntimeException('Athlete Apple CalDAV: chybi prihlasovaci udaje.');
+  }
+
+  $uid = 'trainerapp-athlete-' . $athleteId . '-event-' . (int)($event['id'] ?? 0) . '@reservio.online';
+  $remoteHref = buildAppleCaldavRemoteHref($calendarUrl, $uid);
+  $icsPayload = buildAthleteAppleCaldavEventIcs($athleteId, $event, $uid);
+
+  $response = appleCaldavHttpRequest('PUT', $remoteHref, $username, $password, $icsPayload, [
+    'Content-Type: text/calendar; charset=utf-8',
+  ]);
+  $status = (int)($response['status'] ?? 0);
+  if (!in_array($status, [200, 201, 204], true)) {
+    throw new RuntimeException('Athlete Apple CalDAV upsert selhal: HTTP ' . $status . ' | ' . (string)($response['body'] ?? ''));
+  }
+
+  $etag = trim((string)($response['headers']['etag'] ?? ''));
+  $upsertLink = $pdo->prepare(
+    'INSERT INTO athlete_apple_caldav_event_links (athlete_id, event_id, remote_href, remote_etag, last_synced_at, last_error)
+     VALUES (?, ?, ?, ?, NOW(), NULL)
+     ON DUPLICATE KEY UPDATE remote_href = VALUES(remote_href), remote_etag = VALUES(remote_etag), last_synced_at = NOW(), last_error = NULL'
+  );
+  $upsertLink->execute([$athleteId, $eventId, $remoteHref, $etag !== '' ? $etag : null]);
+
+  markAthleteAppleCaldavSyncSuccess($athleteId);
+}
+
+function syncAthleteEventDeleteToAppleCaldav(int $athleteId, ?int $eventId): void {
+  if ($athleteId <= 0 || $eventId === null || $eventId <= 0 || !athleteAppleCaldavSyncTablesAvailable()) {
+    return;
+  }
+
+  $pdo = getDB();
+  $linkStmt = $pdo->prepare(
+    'SELECT remote_href
+     FROM athlete_apple_caldav_event_links
+     WHERE athlete_id = ? AND event_id = ?
+     LIMIT 1'
+  );
+  $linkStmt->execute([$athleteId, $eventId]);
+  $remoteHref = trim((string)($linkStmt->fetchColumn() ?: ''));
+
+  $athlete = getAthleteAppleCaldavConfig($athleteId);
+  if (!$athlete || empty($athlete['apple_caldav_sync_enabled'])) {
+    $deleteLocal = $pdo->prepare('DELETE FROM athlete_apple_caldav_event_links WHERE athlete_id = ? AND event_id = ?');
+    $deleteLocal->execute([$athleteId, $eventId]);
+    return;
+  }
+
+  $calendarUrl = normalizeAppleCaldavCalendarUrl((string)($athlete['apple_caldav_calendar_url'] ?? ''));
+  $candidateDeleteHrefs = [];
+  if ($remoteHref !== '') {
+    $candidateDeleteHrefs[] = $remoteHref;
+  }
+  if ($calendarUrl !== '') {
+    $uid = 'trainerapp-athlete-' . $athleteId . '-event-' . $eventId . '@reservio.online';
+    foreach ([
+      buildAppleCaldavRemoteHref($calendarUrl, $uid),
+      buildAppleCaldavLegacyRemoteHref($calendarUrl, $uid),
+    ] as $href) {
+      if (!in_array($href, $candidateDeleteHrefs, true)) {
+        $candidateDeleteHrefs[] = $href;
+      }
+    }
+  }
+  if (empty($candidateDeleteHrefs)) {
+    return;
+  }
+
+  $username = trim((string)($athlete['apple_caldav_username'] ?? ''));
+  $password = trim((string)($athlete['apple_caldav_app_password'] ?? ''));
+  if ($username === '' || $password === '') {
+    throw new RuntimeException('Athlete Apple CalDAV delete: chybi prihlasovaci udaje.');
+  }
+
+  $lastDeleteError = null;
+  foreach ($candidateDeleteHrefs as $candidateHref) {
+    $response = appleCaldavHttpRequest('DELETE', $candidateHref, $username, $password, null, []);
+    $status = (int)($response['status'] ?? 0);
+    if (in_array($status, [200, 202, 204, 404], true)) {
+      $lastDeleteError = null;
+      break;
+    }
+    $lastDeleteError = 'Athlete Apple CalDAV delete selhal: HTTP ' . $status . ' | ' . (string)($response['body'] ?? '');
+  }
+  if ($lastDeleteError !== null) {
+    throw new RuntimeException($lastDeleteError);
+  }
+
+  $deleteLink = $pdo->prepare('DELETE FROM athlete_apple_caldav_event_links WHERE athlete_id = ? AND event_id = ?');
+  $deleteLink->execute([$athleteId, $eventId]);
+
+  markAthleteAppleCaldavSyncSuccess($athleteId);
+}
+
+function getAthleteAppleCaldavConfig(int $athleteId): ?array {
+  $pdo = getDB();
+  $stmt = $pdo->prepare(
+    'SELECT id,
+            apple_caldav_sync_enabled,
+            apple_caldav_calendar_url,
+            apple_caldav_username,
+            apple_caldav_app_password
+     FROM athletes
+     WHERE id = ?
+     LIMIT 1'
+  );
+  $stmt->execute([$athleteId]);
+  $row = $stmt->fetch();
+
+  return $row ?: null;
+}
+
+function buildAthleteAppleCaldavEventIcs(int $athleteId, array $event, string $uid): string {
+  $participants = [];
+  $primary = trim((string)($event['first_name'] ?? '') . ' ' . (string)($event['last_name'] ?? ''));
+  $secondary = trim((string)($event['second_first_name'] ?? '') . ' ' . (string)($event['second_last_name'] ?? ''));
+  if ($primary !== '') {
+    $participants[] = $primary;
+  }
+  if ($secondary !== '') {
+    $participants[] = $secondary;
+  }
+
+  $summary = trim((string)($event['custom_title'] ?? ''));
+  if ($summary === '') {
+    $summary = 'Trenink';
+  }
+  if ((string)($event['approval_status'] ?? 'approved') === 'pending') {
+    $summary = 'Ceka na schvaleni - ' . $summary;
+  }
+
+  $descriptionParts = [
+    'Zdroj: TrainerApp',
+    'Lokalni ID udalosti: ' . (int)($event['id'] ?? 0),
+  ];
+  $coachName = trim((string)($event['coach_name'] ?? ''));
+  if ($coachName !== '') {
+    $descriptionParts[] = 'Trener: ' . $coachName;
+  }
+  if (!empty($participants)) {
+    $descriptionParts[] = 'Ucastnici: ' . implode(', ', $participants);
+  }
+  $location = trim((string)($event['location'] ?? ''));
+  if ($location !== '') {
+    $descriptionParts[] = 'Misto: ' . $location;
+  }
+
+  $dtStart = gmdate('Ymd\\THis\\Z', strtotime((string)($event['starts_at'] ?? 'now')));
+  $dtEnd = gmdate('Ymd\\THis\\Z', strtotime((string)($event['ends_at'] ?? 'now')));
+  $dtStamp = gmdate('Ymd\\THis\\Z');
+  $created = gmdate('Ymd\\THis\\Z', strtotime((string)($event['created_at'] ?? 'now')));
+  $lastModified = gmdate('Ymd\\THis\\Z', strtotime((string)($event['updated_at'] ?? ($event['created_at'] ?? 'now'))));
+  $sequence = max(0, strtotime((string)($event['updated_at'] ?? ($event['created_at'] ?? 'now'))));
+
+  $lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//TrainerApp//Athlete Apple CalDAV//CS',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    'UID:' . appleCaldavEscapeText($uid),
+    'DTSTAMP:' . $dtStamp,
+    'CREATED:' . $created,
+    'LAST-MODIFIED:' . $lastModified,
+    'SEQUENCE:' . $sequence,
+    'STATUS:' . (((string)($event['approval_status'] ?? 'approved') === 'pending') ? 'TENTATIVE' : 'CONFIRMED'),
+    'DTSTART:' . $dtStart,
+    'DTEND:' . $dtEnd,
+    'SUMMARY:' . appleCaldavEscapeText($summary),
+  ];
+
+  if ($location !== '') {
+    $lines[] = 'LOCATION:' . appleCaldavEscapeText($location);
+  }
+  if (!empty($descriptionParts)) {
+    $lines[] = 'DESCRIPTION:' . appleCaldavEscapeText(implode("\n", $descriptionParts));
+  }
+
+  $lines[] = 'END:VEVENT';
+  $lines[] = 'END:VCALENDAR';
+
+  return implode("\r\n", $lines) . "\r\n";
+}
+
+function markAthleteAppleCaldavSyncSuccess(int $athleteId): void {
+  if ($athleteId <= 0) {
+    return;
+  }
+
+  $pdo = getDB();
+  $stmt = $pdo->prepare(
+    'UPDATE athletes
+     SET apple_caldav_last_error = NULL,
+         apple_caldav_last_success_at = NOW()
+     WHERE id = ?'
+  );
+  $stmt->execute([$athleteId]);
+}
+
+function athleteAppleCaldavSyncTablesAvailable(): bool {
+  static $available = null;
+  if ($available !== null) {
+    return $available;
+  }
+
+  try {
+    $pdo = getDB();
+    $jobs = $pdo->query("SHOW TABLES LIKE 'athlete_apple_caldav_sync_jobs'");
+    $links = $pdo->query("SHOW TABLES LIKE 'athlete_apple_caldav_event_links'");
+    $available = ($jobs !== false && (bool)$jobs->fetchColumn())
+      && ($links !== false && (bool)$links->fetchColumn());
+  } catch (Throwable $e) {
+    $available = false;
+  }
+
+  return $available;
+}

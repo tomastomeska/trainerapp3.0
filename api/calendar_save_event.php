@@ -524,6 +524,13 @@ if ($eventId > 0) {
     $isPendingRequest = (($existingEvent['approval_status'] ?? 'approved') === 'pending') && !empty($existingEvent['requested_by_athlete_id']);
     $nextApprovalStatus = ($approvalAction === 'approve' || $isPendingRequest) ? 'approved' : (string)($existingEvent['approval_status'] ?? 'approved');
     $coachModifiedAt = $changed ? date('Y-m-d H:i:s') : ($existingEvent['coach_modified_at'] ?: null);
+    $syncedEventIds = [$eventId];
+    $athleteSyncIds = [
+        (int)($existingEvent['athlete_id'] ?? 0),
+        (int)($existingEvent['second_athlete_id'] ?? 0),
+        (int)($athleteId ?? 0),
+        (int)($secondAthleteId ?? 0),
+    ];
 
     try {
         $pdo->beginTransaction();
@@ -595,6 +602,7 @@ if ($eventId > 0) {
                     $occurrenceStartSql,
                     $occurrenceEndSql,
                 ]);
+                $syncedEventIds[] = (int)$pdo->lastInsertId();
             }
         }
 
@@ -635,6 +643,17 @@ if ($eventId > 0) {
             }
         }
     }
+
+    foreach (array_values(array_unique(array_filter(array_map('intval', $syncedEventIds)))) as $syncEventId) {
+        enqueueCoachGoogleCalendarSync($coachId, $syncEventId, 'upsert');
+        enqueueCoachAppleCaldavSync($coachId, $syncEventId, 'upsert');
+        foreach (array_values(array_unique(array_filter(array_map('intval', $athleteSyncIds)))) as $athleteSyncId) {
+            enqueueAthleteAppleCaldavSync($athleteSyncId, $syncEventId, 'upsert');
+        }
+    }
+    processCoachGoogleCalendarSyncQueue(6);
+    processCoachAppleCaldavSyncQueue(6);
+    processAthleteAppleCaldavSyncQueue(6);
 
     echo json_encode(['success' => true, 'id' => $eventId, 'mode' => 'updated', 'approval_status' => $nextApprovalStatus]);
     exit;
@@ -743,6 +762,20 @@ try {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
     exit;
 }
+
+foreach ($createdIds as $syncEventId) {
+    enqueueCoachGoogleCalendarSync($coachId, (int)$syncEventId, 'upsert');
+    enqueueCoachAppleCaldavSync($coachId, (int)$syncEventId, 'upsert');
+    if ((int)($athleteId ?? 0) > 0) {
+        enqueueAthleteAppleCaldavSync((int)$athleteId, (int)$syncEventId, 'upsert');
+    }
+    if ((int)($secondAthleteId ?? 0) > 0) {
+        enqueueAthleteAppleCaldavSync((int)$secondAthleteId, (int)$syncEventId, 'upsert');
+    }
+}
+processCoachGoogleCalendarSyncQueue(6);
+processCoachAppleCaldavSyncQueue(6);
+processAthleteAppleCaldavSyncQueue(6);
 
 echo json_encode([
     'success' => true,

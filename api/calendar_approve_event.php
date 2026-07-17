@@ -37,6 +37,7 @@ $pdo = getDB();
 $eventStmt = $pdo->prepare(
     'SELECT e.id,
             e.athlete_id,
+            e.second_athlete_id,
             e.requested_by_athlete_id,
             e.approval_status,
             e.starts_at,
@@ -71,6 +72,18 @@ $updateStmt = $pdo->prepare(
      WHERE id = ? AND coach_id = ?'
 );
 $updateStmt->execute([$eventId, $coachId]);
+
+enqueueCoachGoogleCalendarSync($coachId, $eventId, 'upsert');
+enqueueCoachAppleCaldavSync($coachId, $eventId, 'upsert');
+if ((int)($event['athlete_id'] ?? 0) > 0) {
+    enqueueAthleteAppleCaldavSync((int)$event['athlete_id'], $eventId, 'upsert');
+}
+if ((int)($event['second_athlete_id'] ?? 0) > 0) {
+    enqueueAthleteAppleCaldavSync((int)$event['second_athlete_id'], $eventId, 'upsert');
+}
+processCoachGoogleCalendarSyncQueue(4);
+processCoachAppleCaldavSyncQueue(4);
+processAthleteAppleCaldavSyncQueue(4);
 
 $athleteId = (int)($event['athlete_id'] ?? 0);
 if ($athleteId > 0) {

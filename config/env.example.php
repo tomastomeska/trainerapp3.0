@@ -36,3 +36,10 @@ define('SMTP_USER',      '');
 define('SMTP_PASS',      '');
 define('SMTP_FROM',      'noreply@example.com');
 define('SMTP_FROM_NAME', 'TrainerApp');
+
+// Google Calendar API (OAuth2)
+// Client ID / secret z Google Cloud projektu.
+define('GOOGLE_CALENDAR_CLIENT_ID', '');
+define('GOOGLE_CALENDAR_CLIENT_SECRET', '');
+// Redirect URI musi presne odpovidat adrese nastavene v Google Cloud Console.
+define('GOOGLE_CALENDAR_REDIRECT_URI', 'https://example.com/google_calendar_oauth_callback.php');

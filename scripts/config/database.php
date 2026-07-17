@@ -18,6 +18,13 @@ foreach ($_envCandidates as $_envFile) {
 }
 unset($_envCandidates, $_envFile);
 
+if (file_exists(__DIR__ . '/config.php')) {
+    require_once __DIR__ . '/config.php';
+}
+if (!defined('APP_VERSION')) {
+    define('APP_VERSION', '1.1.01');
+}
+
 if (!defined('DB_HOST'))    define('DB_HOST',    'localhost');
 if (!defined('DB_NAME'))    define('DB_NAME',    'trainerapp_v2_dev');
 if (!defined('DB_USER'))    define('DB_USER',    'root');

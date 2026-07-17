@@ -573,4 +573,11 @@ createCoachSystemMessage((int)$athlete['coach_id'], $subject, $body, true);
 
 createAthleteNotification($athleteId, 'Požadavek odeslán ke schválení', "Tvůj požadavek na termín {$timeLabel} čeká na schválení trenérem.");
 
+enqueueCoachGoogleCalendarSync((int)$athlete['coach_id'], $newEventId, 'upsert');
+enqueueCoachAppleCaldavSync((int)$athlete['coach_id'], $newEventId, 'upsert');
+enqueueAthleteAppleCaldavSync($athleteId, $newEventId, 'upsert');
+processCoachGoogleCalendarSyncQueue(4);
+processCoachAppleCaldavSyncQueue(4);
+processAthleteAppleCaldavSyncQueue(4);
+
 echo json_encode(['success' => true, 'message' => 'Požadavek byl odeslán ke schválení.']);

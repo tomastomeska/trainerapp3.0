@@ -18,6 +18,13 @@ foreach ($_envCandidates as $_envFile) {
 }
 unset($_envCandidates, $_envFile);
 
+if (file_exists(__DIR__ . '/config.php')) {
+    require_once __DIR__ . '/config.php';
+}
+if (!defined('APP_VERSION')) {
+    define('APP_VERSION', '1.1.01');
+}
+
 if (!defined('DB_HOST'))    define('DB_HOST',    'localhost');
 if (!defined('DB_NAME'))    define('DB_NAME',    'trainerapp_v2_dev');
 if (!defined('DB_USER'))    define('DB_USER',    'root');
@@ -578,6 +585,36 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         $pdo->exec('ALTER TABLE athletes ADD COLUMN apple_calendar_token CHAR(64) NULL AFTER apple_calendar_sync_enabled');
     }
 
+    $stmtAthleteAppleCaldavSyncEnabled = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'apple_caldav_sync_enabled'");
+    if (!$stmtAthleteAppleCaldavSyncEnabled->fetch()) {
+        $pdo->exec('ALTER TABLE athletes ADD COLUMN apple_caldav_sync_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER apple_calendar_token');
+    }
+
+    $stmtAthleteAppleCaldavCalendarUrl = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'apple_caldav_calendar_url'");
+    if (!$stmtAthleteAppleCaldavCalendarUrl->fetch()) {
+        $pdo->exec('ALTER TABLE athletes ADD COLUMN apple_caldav_calendar_url VARCHAR(500) NULL AFTER apple_caldav_sync_enabled');
+    }
+
+    $stmtAthleteAppleCaldavUsername = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'apple_caldav_username'");
+    if (!$stmtAthleteAppleCaldavUsername->fetch()) {
+        $pdo->exec('ALTER TABLE athletes ADD COLUMN apple_caldav_username VARCHAR(190) NULL AFTER apple_caldav_calendar_url');
+    }
+
+    $stmtAthleteAppleCaldavPassword = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'apple_caldav_app_password'");
+    if (!$stmtAthleteAppleCaldavPassword->fetch()) {
+        $pdo->exec('ALTER TABLE athletes ADD COLUMN apple_caldav_app_password VARCHAR(255) NULL AFTER apple_caldav_username');
+    }
+
+    $stmtAthleteAppleCaldavError = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'apple_caldav_last_error'");
+    if (!$stmtAthleteAppleCaldavError->fetch()) {
+        $pdo->exec('ALTER TABLE athletes ADD COLUMN apple_caldav_last_error TEXT NULL AFTER apple_caldav_app_password');
+    }
+
+    $stmtAthleteAppleCaldavSuccess = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'apple_caldav_last_success_at'");
+    if (!$stmtAthleteAppleCaldavSuccess->fetch()) {
+        $pdo->exec('ALTER TABLE athletes ADD COLUMN apple_caldav_last_success_at DATETIME NULL AFTER apple_caldav_last_error');
+    }
+
     // Poslední přihlášení trenéra
     $stmtLogin = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'last_login'");
     if (!$stmtLogin->fetch()) {
@@ -614,6 +651,76 @@ function ensureSchemaUpgrades(PDO $pdo): void {
     $stmtCoachAppleToken = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'apple_calendar_token'");
     if (!$stmtCoachAppleToken->fetch()) {
         $pdo->exec('ALTER TABLE coaches ADD COLUMN apple_calendar_token CHAR(64) NULL AFTER apple_calendar_sync_enabled');
+    }
+
+    $stmtCoachAppleCaldavSyncEnabled = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'apple_caldav_sync_enabled'");
+    if (!$stmtCoachAppleCaldavSyncEnabled->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN apple_caldav_sync_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER apple_calendar_token');
+    }
+
+    $stmtCoachAppleCaldavCalendarUrl = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'apple_caldav_calendar_url'");
+    if (!$stmtCoachAppleCaldavCalendarUrl->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN apple_caldav_calendar_url VARCHAR(500) NULL AFTER apple_caldav_sync_enabled');
+    }
+
+    $stmtCoachAppleCaldavUsername = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'apple_caldav_username'");
+    if (!$stmtCoachAppleCaldavUsername->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN apple_caldav_username VARCHAR(190) NULL AFTER apple_caldav_calendar_url');
+    }
+
+    $stmtCoachAppleCaldavPassword = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'apple_caldav_app_password'");
+    if (!$stmtCoachAppleCaldavPassword->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN apple_caldav_app_password VARCHAR(255) NULL AFTER apple_caldav_username');
+    }
+
+    $stmtCoachAppleCaldavError = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'apple_caldav_last_error'");
+    if (!$stmtCoachAppleCaldavError->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN apple_caldav_last_error TEXT NULL AFTER apple_caldav_app_password');
+    }
+
+    $stmtCoachAppleCaldavSuccess = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'apple_caldav_last_success_at'");
+    if (!$stmtCoachAppleCaldavSuccess->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN apple_caldav_last_success_at DATETIME NULL AFTER apple_caldav_last_error');
+    }
+
+    $stmtCoachGoogleSyncEnabled = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'google_calendar_sync_enabled'");
+    if (!$stmtCoachGoogleSyncEnabled->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN google_calendar_sync_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER apple_calendar_token');
+    }
+
+    $stmtCoachGoogleCalendarId = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'google_calendar_id'");
+    if (!$stmtCoachGoogleCalendarId->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN google_calendar_id VARCHAR(190) NULL AFTER google_calendar_sync_enabled');
+    }
+
+    $stmtCoachGoogleRefreshToken = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'google_oauth_refresh_token'");
+    if (!$stmtCoachGoogleRefreshToken->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN google_oauth_refresh_token TEXT NULL AFTER google_calendar_id');
+    }
+
+    $stmtCoachGoogleAccessToken = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'google_oauth_access_token'");
+    if (!$stmtCoachGoogleAccessToken->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN google_oauth_access_token TEXT NULL AFTER google_oauth_refresh_token');
+    }
+
+    $stmtCoachGoogleTokenExpires = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'google_oauth_expires_at'");
+    if (!$stmtCoachGoogleTokenExpires->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN google_oauth_expires_at DATETIME NULL AFTER google_oauth_access_token');
+    }
+
+    $stmtCoachGoogleScope = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'google_oauth_scope'");
+    if (!$stmtCoachGoogleScope->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN google_oauth_scope TEXT NULL AFTER google_oauth_expires_at');
+    }
+
+    $stmtCoachGoogleSyncError = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'google_sync_last_error'");
+    if (!$stmtCoachGoogleSyncError->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN google_sync_last_error TEXT NULL AFTER google_oauth_scope');
+    }
+
+    $stmtCoachGoogleSyncSuccess = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'google_sync_last_success_at'");
+    if (!$stmtCoachGoogleSyncSuccess->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN google_sync_last_success_at DATETIME NULL AFTER google_sync_last_error');
     }
 
     // Tabulka superadminu
@@ -730,6 +837,113 @@ function ensureSchemaUpgrades(PDO $pdo): void {
             KEY `idx_calendar_locks_coach_end` (`coach_id`, `ends_at`),
             CONSTRAINT `fk_calendar_locks_coach`
                 FOREIGN KEY (`coach_id`) REFERENCES `coaches`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `coach_google_calendar_event_links` (
+            `id`              INT AUTO_INCREMENT PRIMARY KEY,
+            `coach_id`        INT NOT NULL,
+            `event_id`        INT NOT NULL,
+            `google_event_id` VARCHAR(255) NOT NULL,
+            `last_synced_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `last_error`      TEXT NULL,
+            UNIQUE KEY `uq_coach_google_event_local` (`coach_id`, `event_id`),
+            UNIQUE KEY `uq_coach_google_event_remote` (`coach_id`, `google_event_id`),
+            KEY `idx_coach_google_event_sync` (`coach_id`, `last_synced_at`),
+            CONSTRAINT `fk_cgcel_coach` FOREIGN KEY (`coach_id`) REFERENCES `coaches`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_cgcel_event` FOREIGN KEY (`event_id`) REFERENCES `coach_calendar_events`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `coach_google_calendar_sync_jobs` (
+            `id`               BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `coach_id`         INT NOT NULL,
+            `event_id`         INT NULL,
+            `sync_action`      ENUM('upsert','delete') NOT NULL,
+            `status`           ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'pending',
+            `attempt_count`    INT NOT NULL DEFAULT 0,
+            `next_attempt_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `last_error`       TEXT NULL,
+            `created_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            `processed_at`     DATETIME NULL,
+            KEY `idx_cgcsj_queue` (`status`, `next_attempt_at`),
+            KEY `idx_cgcsj_coach_status` (`coach_id`, `status`, `next_attempt_at`),
+            KEY `idx_cgcsj_event` (`event_id`),
+            CONSTRAINT `fk_cgcsj_coach` FOREIGN KEY (`coach_id`) REFERENCES `coaches`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `coach_apple_caldav_event_links` (
+            `id`           INT AUTO_INCREMENT PRIMARY KEY,
+            `coach_id`     INT NOT NULL,
+            `event_id`     INT NOT NULL,
+            `remote_href`  VARCHAR(1000) NOT NULL,
+            `remote_etag`  VARCHAR(255) NULL,
+            `last_synced_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `last_error`   TEXT NULL,
+            UNIQUE KEY `uq_cacel_local_event` (`coach_id`, `event_id`),
+            KEY `idx_cacel_coach_sync` (`coach_id`, `last_synced_at`),
+            CONSTRAINT `fk_cacel_coach` FOREIGN KEY (`coach_id`) REFERENCES `coaches`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_cacel_event` FOREIGN KEY (`event_id`) REFERENCES `coach_calendar_events`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `coach_apple_caldav_sync_jobs` (
+            `id`               BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `coach_id`         INT NOT NULL,
+            `event_id`         INT NULL,
+            `sync_action`      ENUM('upsert','delete') NOT NULL,
+            `status`           ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'pending',
+            `attempt_count`    INT NOT NULL DEFAULT 0,
+            `next_attempt_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `last_error`       TEXT NULL,
+            `created_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            `processed_at`     DATETIME NULL,
+            KEY `idx_cacsj_queue` (`status`, `next_attempt_at`),
+            KEY `idx_cacsj_coach_status` (`coach_id`, `status`, `next_attempt_at`),
+            KEY `idx_cacsj_event` (`event_id`),
+            CONSTRAINT `fk_cacsj_coach` FOREIGN KEY (`coach_id`) REFERENCES `coaches`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `athlete_apple_caldav_event_links` (
+            `id`           INT AUTO_INCREMENT PRIMARY KEY,
+            `athlete_id`   INT NOT NULL,
+            `event_id`     INT NOT NULL,
+            `remote_href`  VARCHAR(1000) NOT NULL,
+            `remote_etag`  VARCHAR(255) NULL,
+            `last_synced_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `last_error`   TEXT NULL,
+            UNIQUE KEY `uq_aacel_local_event` (`athlete_id`, `event_id`),
+            KEY `idx_aacel_athlete_sync` (`athlete_id`, `last_synced_at`),
+            CONSTRAINT `fk_aacel_athlete` FOREIGN KEY (`athlete_id`) REFERENCES `athletes`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `athlete_apple_caldav_sync_jobs` (
+            `id`               BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `athlete_id`       INT NOT NULL,
+            `event_id`         INT NULL,
+            `sync_action`      ENUM('upsert','delete') NOT NULL,
+            `status`           ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'pending',
+            `attempt_count`    INT NOT NULL DEFAULT 0,
+            `next_attempt_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `last_error`       TEXT NULL,
+            `created_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            `processed_at`     DATETIME NULL,
+            KEY `idx_aacsj_queue` (`status`, `next_attempt_at`),
+            KEY `idx_aacsj_athlete_status` (`athlete_id`, `status`, `next_attempt_at`),
+            KEY `idx_aacsj_event` (`event_id`),
+            CONSTRAINT `fk_aacsj_athlete` FOREIGN KEY (`athlete_id`) REFERENCES `athletes`(`id`) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
 
