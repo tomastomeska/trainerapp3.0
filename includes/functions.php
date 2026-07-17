@@ -3744,6 +3744,403 @@ function normalizeAppleCaldavCalendarUrl(string $url): string {
   return rtrim($url, '/') . '/';
 }
 
+function ensureAppleCaldavTrainerAppCalendarUrl(string $username, string $password, string $displayName = 'TrainerApp', ?bool &$created = null): string {
+  $created = false;
+  $displayName = trim($displayName);
+  if ($displayName === '') {
+    $displayName = 'TrainerApp';
+  }
+
+  $diagnostics = [];
+  $existing = discoverAppleCaldavTrainerAppCalendarUrl($username, $password, $displayName, $diagnostics);
+  if (is_string($existing) && trim($existing) !== '') {
+    return normalizeAppleCaldavCalendarUrl($existing);
+  }
+
+  $availableNames = array_values(array_unique(array_filter((array)($diagnostics['available_names'] ?? []), fn($value) => trim((string)$value) !== '')));
+  $availableUrls = array_values(array_unique(array_filter((array)($diagnostics['available_urls'] ?? []), fn($value) => trim((string)$value) !== '')));
+  $detail = trim((string)($diagnostics['detail'] ?? ''));
+
+  $hint = '';
+  if (!empty($availableNames)) {
+    $hint .= ' Nalezene kalendare: ' . implode(', ', array_slice($availableNames, 0, 10)) . '.';
+  }
+  if (!empty($availableUrls)) {
+    $hint .= ' Kandidatni URL: ' . implode(' | ', array_slice($availableUrls, 0, 6)) . '.';
+  }
+  if ($detail !== '') {
+    $hint .= ' Detail: ' . mb_substr(preg_replace('/\s+/', ' ', $detail), 0, 260, 'UTF-8') . '.';
+  }
+
+  throw new RuntimeException('Apple CalDAV: existujici kalendar "' . $displayName . '" se nepodarilo dohledat.' . $hint);
+}
+
+function discoverAppleCaldavHomeUrl(string $username, string $password): array {
+  $baseUrl = 'https://caldav.icloud.com';
+
+  $principalBody = '<?xml version="1.0" encoding="UTF-8"?>'
+    . '<d:propfind xmlns:d="DAV:">'
+    . '<d:prop><d:current-user-principal /></d:prop>'
+    . '</d:propfind>';
+  $principalResponse = appleCaldavHttpRequest('PROPFIND', $baseUrl . '/', $username, $password, $principalBody, [
+    'Depth: 0',
+    'Content-Type: application/xml; charset=utf-8',
+  ]);
+  $principalStatus = (int)($principalResponse['status'] ?? 0);
+  if (!in_array($principalStatus, [200, 207], true)) {
+    throw new RuntimeException('Apple CalDAV discovery selhal v kroku principal (HTTP ' . $principalStatus . ').');
+  }
+
+  $principalXml = @simplexml_load_string((string)($principalResponse['body'] ?? ''));
+  if (!$principalXml) {
+    throw new RuntimeException('Apple CalDAV discovery: principal XML nelze nacist.');
+  }
+  $principalXml->registerXPathNamespace('d', 'DAV:');
+  $principalHrefs = $principalXml->xpath('//d:current-user-principal/d:href');
+  $principalHref = isset($principalHrefs[0]) ? trim((string)$principalHrefs[0]) : '';
+  if ($principalHref === '') {
+    throw new RuntimeException('Apple CalDAV discovery: current-user-principal nebyl nalezen.');
+  }
+
+  $principalUrl = appleCaldavAbsoluteHref($baseUrl, $principalHref);
+
+  $homeBody = '<?xml version="1.0" encoding="UTF-8"?>'
+    . '<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+    . '<d:prop><c:calendar-home-set /></d:prop>'
+    . '</d:propfind>';
+  $homeResponse = appleCaldavHttpRequest('PROPFIND', $principalUrl, $username, $password, $homeBody, [
+    'Depth: 0',
+    'Content-Type: application/xml; charset=utf-8',
+  ]);
+  $homeStatus = (int)($homeResponse['status'] ?? 0);
+  if (!in_array($homeStatus, [200, 207], true)) {
+    throw new RuntimeException('Apple CalDAV discovery selhal v kroku home-set (HTTP ' . $homeStatus . ').');
+  }
+
+  $homeXml = @simplexml_load_string((string)($homeResponse['body'] ?? ''));
+  if (!$homeXml) {
+    throw new RuntimeException('Apple CalDAV discovery: home-set XML nelze nacist.');
+  }
+  $homeXml->registerXPathNamespace('d', 'DAV:');
+  $homeXml->registerXPathNamespace('c', 'urn:ietf:params:xml:ns:caldav');
+  $homeHrefs = $homeXml->xpath('//c:calendar-home-set/d:href');
+  $homeHref = isset($homeHrefs[0]) ? trim((string)$homeHrefs[0]) : '';
+  if ($homeHref === '') {
+    throw new RuntimeException('Apple CalDAV discovery: calendar-home-set nebyl nalezen.');
+  }
+
+  $homeUrl = appleCaldavAbsoluteHref($baseUrl, $homeHref);
+
+  return [$baseUrl, rtrim($homeUrl, '/') . '/'];
+}
+
+function appleCaldavDisplayNameLooksLike(string $candidateDisplayName, string $expectedDisplayName): bool {
+  $candidateDisplayName = trim($candidateDisplayName);
+  $expectedDisplayName = trim($expectedDisplayName);
+  if ($candidateDisplayName === '' || $expectedDisplayName === '') {
+    return false;
+  }
+
+  $candidateNorm = mb_strtolower($candidateDisplayName, 'UTF-8');
+  $expectedNorm = mb_strtolower($expectedDisplayName, 'UTF-8');
+  $candidateCompact = preg_replace('/[\s\p{P}\p{S}_-]+/u', '', $candidateNorm) ?? $candidateNorm;
+  $expectedCompact = preg_replace('/[\s\p{P}\p{S}_-]+/u', '', $expectedNorm) ?? $expectedNorm;
+
+  return $candidateNorm === $expectedNorm
+    || $candidateCompact === $expectedCompact
+    || str_contains($candidateNorm, $expectedNorm)
+    || str_contains($candidateCompact, $expectedCompact);
+}
+
+function findAppleCaldavCalendarByDisplayName(string $baseUrl, string $homeUrl, string $username, string $password, string $displayName): ?string {
+  $calendars = listAppleCaldavCalendars($baseUrl, $homeUrl, $username, $password);
+  $displayName = trim($displayName);
+  if ($displayName === '') {
+    return null;
+  }
+  $remoteCheckCandidates = [];
+
+  foreach ($calendars as $calendar) {
+    $candidateDisplay = (string)($calendar['display_name'] ?? '');
+    if (appleCaldavDisplayNameLooksLike($candidateDisplay, $displayName)) {
+      return (string)$calendar['url'];
+    }
+
+    $candidateUrl = (string)($calendar['url'] ?? '');
+    if ($candidateUrl !== '' && (appleCaldavUrlLikelyTrainerAppCalendar($candidateUrl) || trim($candidateDisplay) === '')) {
+      $remoteCheckCandidates[] = $candidateUrl;
+    }
+  }
+
+  $remoteCheckCandidates = array_values(array_unique($remoteCheckCandidates));
+  foreach (array_slice($remoteCheckCandidates, 0, 4) as $candidateUrl) {
+    if (appleCaldavCalendarDisplayNameMatches($candidateUrl, $username, $password, $displayName)) {
+      return $candidateUrl;
+    }
+  }
+
+  return null;
+}
+
+function appleCaldavCalendarDisplayNameMatches(string $calendarUrl, string $username, string $password, string $expectedDisplayName): bool {
+  $calendarUrl = normalizeAppleCaldavCalendarUrl($calendarUrl);
+  $expectedDisplayName = trim($expectedDisplayName);
+  if ($calendarUrl === '' || $expectedDisplayName === '') {
+    return false;
+  }
+
+  $body = '<?xml version="1.0" encoding="UTF-8"?>'
+    . '<d:propfind xmlns:d="DAV:\"><d:prop><d:displayname /></d:prop></d:propfind>';
+  $response = appleCaldavHttpRequest('PROPFIND', $calendarUrl, $username, $password, $body, [
+    'Depth: 0',
+    'Content-Type: application/xml; charset=utf-8',
+  ]);
+  $status = (int)($response['status'] ?? 0);
+  if (!in_array($status, [200, 207], true)) {
+    return false;
+  }
+
+  $xml = @simplexml_load_string((string)($response['body'] ?? ''));
+  if (!$xml) {
+    return false;
+  }
+
+  $xml->registerXPathNamespace('d', 'DAV:');
+  $nodes = $xml->xpath('//d:displayname|//*[local-name()="displayname"]');
+  $display = isset($nodes[0]) ? trim((string)$nodes[0]) : '';
+  if ($display === '') {
+    return false;
+  }
+
+  $displayNorm = mb_strtolower($display, 'UTF-8');
+  $expectedNorm = mb_strtolower($expectedDisplayName, 'UTF-8');
+  $displayCompact = preg_replace('/[\s\p{P}\p{S}_-]+/u', '', $displayNorm) ?? $displayNorm;
+  $expectedCompact = preg_replace('/[\s\p{P}\p{S}_-]+/u', '', $expectedNorm) ?? $expectedNorm;
+
+  return $displayNorm === $expectedNorm
+    || $displayCompact === $expectedCompact
+    || str_contains($displayNorm, $expectedNorm)
+    || str_contains($displayCompact, $expectedCompact);
+}
+
+function appleCaldavUrlLikelyTrainerAppCalendar(string $calendarUrl): bool {
+  $calendarUrl = normalizeAppleCaldavCalendarUrl($calendarUrl);
+  if ($calendarUrl === '') {
+    return false;
+  }
+
+  $path = strtolower((string)parse_url($calendarUrl, PHP_URL_PATH));
+  if ($path === '') {
+    return false;
+  }
+
+  $decodedPath = strtolower(rawurldecode($path));
+  return str_contains($path, 'trainerapp') || str_contains($decodedPath, 'trainerapp');
+}
+
+function listAppleCaldavCalendars(string $baseUrl, string $homeUrl, string $username, string $password): array {
+  $listBody = '<?xml version="1.0" encoding="UTF-8"?>'
+    . '<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+    . '<d:prop><d:resourcetype /><d:displayname /></d:prop>'
+    . '</d:propfind>';
+
+  $queue = [rtrim($homeUrl, '/') . '/'];
+  $scanned = [];
+  $itemsByUrl = [];
+  $maxCollectionsToScan = 24;
+
+  while (!empty($queue) && count($scanned) < $maxCollectionsToScan) {
+    $collectionUrl = rtrim((string)array_shift($queue), '/') . '/';
+    if ($collectionUrl === '' || isset($scanned[$collectionUrl])) {
+      continue;
+    }
+    $scanned[$collectionUrl] = true;
+
+    $listResponse = appleCaldavHttpRequest('PROPFIND', $collectionUrl, $username, $password, $listBody, [
+      'Depth: 1',
+      'Content-Type: application/xml; charset=utf-8',
+    ]);
+    $listStatus = (int)($listResponse['status'] ?? 0);
+    if (!in_array($listStatus, [200, 207], true)) {
+      continue;
+    }
+
+    $listXml = @simplexml_load_string((string)($listResponse['body'] ?? ''));
+    if (!$listXml) {
+      continue;
+    }
+    $listXml->registerXPathNamespace('d', 'DAV:');
+    $listXml->registerXPathNamespace('c', 'urn:ietf:params:xml:ns:caldav');
+    $responses = $listXml->xpath('//d:response');
+    if (!is_array($responses)) {
+      continue;
+    }
+
+    foreach ($responses as $responseNode) {
+      $hrefNodes = $responseNode->xpath('./d:href');
+      $href = isset($hrefNodes[0]) ? trim((string)$hrefNodes[0]) : '';
+      if ($href === '') {
+        continue;
+      }
+
+      $absolute = rtrim(appleCaldavAbsoluteHref($baseUrl, $href), '/') . '/';
+      $pathLower = strtolower((string)parse_url($absolute, PHP_URL_PATH));
+      if (str_contains($pathLower, '/inbox/') || str_contains($pathLower, '/outbox/') || str_contains($pathLower, '/notification/')) {
+        continue;
+      }
+
+      $displayNodes = $responseNode->xpath('./d:propstat/d:prop/d:displayname|.//*[local-name()="displayname"]');
+      $displayName = isset($displayNodes[0]) ? trim((string)$displayNodes[0]) : '';
+
+      $resourcetype = $responseNode->xpath('.//d:resourcetype');
+      $isCollection = false;
+      $isCalendar = false;
+      if (is_array($resourcetype) && isset($resourcetype[0])) {
+        $rt = $resourcetype[0];
+        $rt->registerXPathNamespace('d', 'DAV:');
+        $rt->registerXPathNamespace('c', 'urn:ietf:params:xml:ns:caldav');
+        $isCollection = !empty($rt->xpath('./d:collection'));
+        $isCalendar = !empty($rt->xpath('./c:calendar'));
+      }
+
+      if ($isCollection && !$isCalendar && $absolute !== $collectionUrl && !isset($scanned[$absolute])) {
+        $queue[] = $absolute;
+      }
+
+      if (!($isCollection && $isCalendar)) {
+        if ($isCollection && $absolute !== $collectionUrl) {
+          $itemsByUrl[$absolute] = [
+            'display_name' => $displayName,
+            'url' => $absolute,
+            'is_calendar' => false,
+          ];
+        }
+        continue;
+      }
+
+      $itemsByUrl[$absolute] = [
+        'display_name' => $displayName,
+        'url' => $absolute,
+        'is_calendar' => true,
+      ];
+    }
+  }
+
+  return array_values($itemsByUrl);
+}
+
+function generateMobileConfigUuidV4(): string {
+  $bytes = random_bytes(16);
+  $bytes[6] = chr((ord($bytes[6]) & 0x0f) | 0x40);
+  $bytes[8] = chr((ord($bytes[8]) & 0x3f) | 0x80);
+  $hex = bin2hex($bytes);
+
+  return sprintf(
+    '%s-%s-%s-%s-%s',
+    substr($hex, 0, 8),
+    substr($hex, 8, 4),
+    substr($hex, 12, 4),
+    substr($hex, 16, 4),
+    substr($hex, 20, 12)
+  );
+}
+
+function mobileConfigXmlEscape(string $value): string {
+  return htmlspecialchars($value, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+}
+
+function buildAppleCaldavMobileConfig(array $options): string {
+  $profileDisplayName = trim((string)($options['profile_display_name'] ?? 'TrainerApp Apple Kalendar'));
+  $profileDescription = trim((string)($options['profile_description'] ?? 'Automaticke nastaveni Apple CalDAV pro TrainerApp.'));
+  $payloadIdentifier = trim((string)($options['payload_identifier'] ?? 'online.reservio.trainerapp.caldav'));
+  $accountDescription = trim((string)($options['account_description'] ?? 'TrainerApp'));
+  $hostName = trim((string)($options['host_name'] ?? ''));
+  $port = (int)($options['port'] ?? 443);
+  $principalUrl = trim((string)($options['principal_url'] ?? '/'));
+  $username = trim((string)($options['username'] ?? ''));
+  $password = (string)($options['password'] ?? '');
+
+  if ($hostName === '' || $username === '') {
+    throw new RuntimeException('Mobileconfig: chybi host nebo uzivatelske jmeno.');
+  }
+
+  if ($principalUrl === '') {
+    $principalUrl = '/';
+  }
+  if (!str_starts_with($principalUrl, '/')) {
+    $principalUrl = '/' . $principalUrl;
+  }
+
+  $profileUuid = generateMobileConfigUuidV4();
+  $accountUuid = generateMobileConfigUuidV4();
+
+  $profileDisplayNameEsc = mobileConfigXmlEscape($profileDisplayName);
+  $profileDescriptionEsc = mobileConfigXmlEscape($profileDescription);
+  $payloadIdentifierEsc = mobileConfigXmlEscape($payloadIdentifier);
+  $accountDescriptionEsc = mobileConfigXmlEscape($accountDescription);
+  $hostNameEsc = mobileConfigXmlEscape($hostName);
+  $principalUrlEsc = mobileConfigXmlEscape($principalUrl);
+  $usernameEsc = mobileConfigXmlEscape($username);
+  $profileUuidEsc = mobileConfigXmlEscape($profileUuid);
+  $accountUuidEsc = mobileConfigXmlEscape($accountUuid);
+
+  $passwordXml = '';
+  if ($password !== '') {
+    $passwordXml = "\n      <key>CalDAVPassword</key>\n      <string>" . mobileConfigXmlEscape($password) . "</string>";
+  }
+
+  return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    . "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+    . "<plist version=\"1.0\">\n"
+    . "<dict>\n"
+    . "  <key>PayloadContent</key>\n"
+    . "  <array>\n"
+    . "    <dict>\n"
+    . "      <key>PayloadType</key>\n"
+    . "      <string>com.apple.caldav.account</string>\n"
+    . "      <key>PayloadVersion</key>\n"
+    . "      <integer>1</integer>\n"
+    . "      <key>PayloadIdentifier</key>\n"
+    . "      <string>{$payloadIdentifierEsc}.account</string>\n"
+    . "      <key>PayloadUUID</key>\n"
+    . "      <string>{$accountUuidEsc}</string>\n"
+    . "      <key>PayloadDisplayName</key>\n"
+    . "      <string>{$accountDescriptionEsc}</string>\n"
+    . "      <key>CalDAVAccountDescription</key>\n"
+    . "      <string>{$accountDescriptionEsc}</string>\n"
+    . "      <key>CalDAVHostName</key>\n"
+    . "      <string>{$hostNameEsc}</string>\n"
+    . "      <key>CalDAVPort</key>\n"
+    . "      <integer>{$port}</integer>\n"
+    . "      <key>CalDAVUseSSL</key>\n"
+    . "      <true/>\n"
+    . "      <key>CalDAVPrincipalURL</key>\n"
+    . "      <string>{$principalUrlEsc}</string>\n"
+    . "      <key>CalDAVUsername</key>\n"
+    . "      <string>{$usernameEsc}</string>"
+    . $passwordXml . "\n"
+    . "    </dict>\n"
+    . "  </array>\n"
+    . "  <key>PayloadType</key>\n"
+    . "  <string>Configuration</string>\n"
+    . "  <key>PayloadVersion</key>\n"
+    . "  <integer>1</integer>\n"
+    . "  <key>PayloadIdentifier</key>\n"
+    . "  <string>{$payloadIdentifierEsc}</string>\n"
+    . "  <key>PayloadUUID</key>\n"
+    . "  <string>{$profileUuidEsc}</string>\n"
+    . "  <key>PayloadDisplayName</key>\n"
+    . "  <string>{$profileDisplayNameEsc}</string>\n"
+    . "  <key>PayloadDescription</key>\n"
+    . "  <string>{$profileDescriptionEsc}</string>\n"
+    . "  <key>PayloadOrganization</key>\n"
+    . "  <string>TrainerApp</string>\n"
+    . "  <key>PayloadRemovalDisallowed</key>\n"
+    . "  <false/>\n"
+    . "</dict>\n"
+    . "</plist>\n";
+}
+
 function discoverAppleCaldavCalendarUrl(string $username, string $password): string {
   $baseUrl = 'https://caldav.icloud.com';
   $debug = [];
@@ -3925,6 +4322,131 @@ function discoverAppleCaldavCalendarUrl(string $username, string $password): str
   );
 }
 
+function discoverAppleCaldavTrainerAppCalendarUrl(string $username, string $password, string $displayName = 'TrainerApp', array &$diagnostics = []): ?string {
+  $diagnostics = [
+    'available_names' => [],
+    'available_urls' => [],
+    'detail' => '',
+  ];
+
+  $displayName = trim($displayName);
+  if ($displayName === '') {
+    $displayName = 'TrainerApp';
+  }
+
+  try {
+    [$baseUrl, $homeUrl] = discoverAppleCaldavHomeUrl($username, $password);
+
+    $calendars = listAppleCaldavCalendars($baseUrl, $homeUrl, $username, $password);
+    $candidateUrls = [];
+    foreach ($calendars as $calendar) {
+      $name = trim((string)($calendar['display_name'] ?? ''));
+      $url = trim((string)($calendar['url'] ?? ''));
+      if ($name !== '') {
+        $diagnostics['available_names'][] = $name;
+      }
+      if ($url !== '') {
+        $diagnostics['available_urls'][] = $url;
+        $candidateUrls[] = $url;
+      }
+    }
+    $diagnostics['available_names'] = array_values(array_unique($diagnostics['available_names']));
+    $diagnostics['available_urls'] = array_values(array_unique($diagnostics['available_urls']));
+
+    $rawCandidateUrls = listAppleCaldavRawCalendarCandidates($baseUrl, $homeUrl, $username, $password);
+    foreach ($rawCandidateUrls as $rawCandidateUrl) {
+      $normalizedRawCandidateUrl = normalizeAppleCaldavCalendarUrl((string)$rawCandidateUrl);
+      if ($normalizedRawCandidateUrl === '') {
+        continue;
+      }
+      if (!in_array($normalizedRawCandidateUrl, $candidateUrls, true)) {
+        $candidateUrls[] = $normalizedRawCandidateUrl;
+      }
+      if (!in_array($normalizedRawCandidateUrl, $diagnostics['available_urls'], true)) {
+        $diagnostics['available_urls'][] = $normalizedRawCandidateUrl;
+      }
+    }
+    $diagnostics['available_urls'] = array_values(array_unique($diagnostics['available_urls']));
+
+    $trainerPathCandidates = [];
+    $remoteCheckCandidates = [];
+    foreach ($candidateUrls as $candidateUrl) {
+      $candidateDisplay = '';
+      foreach ($calendars as $calendar) {
+        if (normalizeAppleCaldavCalendarUrl((string)($calendar['url'] ?? '')) === normalizeAppleCaldavCalendarUrl($candidateUrl)) {
+          $candidateDisplay = (string)($calendar['display_name'] ?? '');
+          break;
+        }
+      }
+
+      if (appleCaldavDisplayNameLooksLike($candidateDisplay, $displayName)) {
+        return normalizeAppleCaldavCalendarUrl($candidateUrl);
+      }
+      if (appleCaldavUrlLikelyTrainerAppCalendar($candidateUrl)) {
+        $trainerPathCandidates[] = normalizeAppleCaldavCalendarUrl($candidateUrl);
+      }
+      if (trim($candidateDisplay) === '' || appleCaldavUrlLikelyTrainerAppCalendar($candidateUrl)) {
+        $remoteCheckCandidates[] = normalizeAppleCaldavCalendarUrl($candidateUrl);
+      }
+    }
+
+    $remoteCheckCandidates = array_values(array_unique(array_filter($remoteCheckCandidates)));
+    foreach (array_slice($remoteCheckCandidates, 0, 4) as $candidateUrl) {
+      if (appleCaldavCalendarDisplayNameMatches($candidateUrl, $username, $password, $displayName)) {
+        return normalizeAppleCaldavCalendarUrl($candidateUrl);
+      }
+    }
+
+    $trainerPathCandidates = array_values(array_unique(array_filter($trainerPathCandidates)));
+    if (!empty($trainerPathCandidates)) {
+      return (string)$trainerPathCandidates[0];
+    }
+
+    $diagnostics['detail'] = 'TrainerApp kalendar se nepodarilo spolehlive odlisit od ostatnich iCloud kalendaru pri rychlem skenu. Automaticky fallback na jiny zapisovatelny kalendar byl zablokovan.';
+    return null;
+  } catch (Throwable $e) {
+    $diagnostics['detail'] = trim((string)$e->getMessage());
+    return null;
+  }
+}
+
+function appleCaldavCalendarUrlAcceptedForTrainerApp(string $calendarUrl, string $username, string $password, string $displayName = 'TrainerApp', array &$diagnostics = []): bool {
+  $diagnostics = [
+    'detail' => '',
+    'discovered_url' => '',
+  ];
+
+  $normalizedInput = normalizeAppleCaldavCalendarUrl($calendarUrl);
+  if ($normalizedInput === '') {
+    $diagnostics['detail'] = 'Neplatna URL kalendare.';
+    return false;
+  }
+
+  if (appleCaldavCalendarDisplayNameMatches($normalizedInput, $username, $password, $displayName)) {
+    return true;
+  }
+
+  $discoveryDiagnostics = [];
+  $autoDiscoveredUrl = discoverAppleCaldavTrainerAppCalendarUrl($username, $password, $displayName, $discoveryDiagnostics);
+  $normalizedDiscovered = normalizeAppleCaldavCalendarUrl((string)$autoDiscoveredUrl);
+  if ($normalizedDiscovered !== '') {
+    $diagnostics['discovered_url'] = $normalizedDiscovered;
+  }
+
+  if ($normalizedDiscovered !== '' && $normalizedInput === $normalizedDiscovered) {
+    return true;
+  }
+
+  $detail = trim((string)($discoveryDiagnostics['detail'] ?? ''));
+  if ($detail !== '') {
+    $diagnostics['detail'] = $detail;
+  } else {
+    $diagnostics['detail'] = 'URL nebyla potvrzena jako kalendar TrainerApp.';
+  }
+
+  return false;
+}
+
 function extractAppleCaldavHrefCandidatesFromXml(string $xml, string $baseUrl): array {
   $xml = trim($xml);
   if ($xml === '') {
@@ -3951,6 +4473,62 @@ function extractAppleCaldavHrefCandidatesFromXml(string $xml, string $baseUrl): 
       $url = rtrim((string)$url, '/') . '/';
       if (!in_array($url, $candidates, true)) {
         $candidates[] = $url;
+      }
+    }
+  }
+
+  return $candidates;
+}
+
+function listAppleCaldavRawCalendarCandidates(string $baseUrl, string $homeUrl, string $username, string $password): array {
+  $listBody = '<?xml version="1.0" encoding="UTF-8"?>'
+    . '<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+    . '<d:prop><d:resourcetype /><d:displayname /></d:prop>'
+    . '</d:propfind>';
+
+  $queue = [rtrim($homeUrl, '/') . '/'];
+  $scanned = [];
+  $candidates = [];
+  $maxCollectionsToScan = 12;
+
+  while (!empty($queue) && count($scanned) < $maxCollectionsToScan) {
+    $collectionUrl = rtrim((string)array_shift($queue), '/') . '/';
+    if ($collectionUrl === '' || isset($scanned[$collectionUrl])) {
+      continue;
+    }
+    $scanned[$collectionUrl] = true;
+
+    try {
+      $listResponse = appleCaldavHttpRequest('PROPFIND', $collectionUrl, $username, $password, $listBody, [
+        'Depth: 1',
+        'Content-Type: application/xml; charset=utf-8',
+      ]);
+    } catch (Throwable $e) {
+      continue;
+    }
+
+    $listStatus = (int)($listResponse['status'] ?? 0);
+    if (!in_array($listStatus, [200, 207], true)) {
+      continue;
+    }
+
+    $hrefCandidates = extractAppleCaldavHrefCandidatesFromXml((string)($listResponse['body'] ?? ''), $baseUrl);
+    foreach ($hrefCandidates as $candidateUrl) {
+      $candidateUrl = normalizeAppleCaldavCalendarUrl((string)$candidateUrl);
+      if ($candidateUrl === '' || $candidateUrl === $collectionUrl) {
+        continue;
+      }
+
+      $candidatePath = strtolower((string)parse_url($candidateUrl, PHP_URL_PATH));
+      if (str_contains($candidatePath, '/inbox/') || str_contains($candidatePath, '/outbox/') || str_contains($candidatePath, '/notification/')) {
+        continue;
+      }
+
+      if (!in_array($candidateUrl, $candidates, true)) {
+        $candidates[] = $candidateUrl;
+      }
+      if (!isset($scanned[$candidateUrl])) {
+        $queue[] = $candidateUrl;
       }
     }
   }
@@ -4212,7 +4790,22 @@ function enqueueAthleteAppleCaldavSync(int $athleteId, ?int $eventId, string $sy
     $syncAction = 'upsert';
   }
 
-  if ($athleteId <= 0 || !athleteAppleCaldavSyncTablesAvailable()) {
+  if ($athleteId <= 0) {
+    return;
+  }
+
+  if (!athleteAppleCaldavSyncTablesAvailable()) {
+    // Fallback pro instalace bez athlete queue tabulek: proved sync hned.
+    try {
+      if ($syncAction === 'delete') {
+        syncAthleteEventDeleteToAppleCaldav($athleteId, $eventId);
+      } else {
+        syncAthleteEventUpsertToAppleCaldav($athleteId, $eventId);
+      }
+    } catch (Throwable $e) {
+      markAthleteAppleCaldavSyncError($athleteId, $e->getMessage());
+      error_log('enqueueAthleteAppleCaldavSync fallback error: ' . $e->getMessage());
+    }
     return;
   }
 
@@ -4289,6 +4882,7 @@ function processAthleteAppleCaldavSyncQueue(int $limit = 8): array {
       $markDone->execute([$jobId]);
       $results[] = ['job_id' => $jobId, 'status' => 'done'];
     } catch (Throwable $e) {
+      markAthleteAppleCaldavSyncError($athleteId, $e->getMessage());
       $delayMinutes = min(360, max(2, (int)pow(2, max(0, $attemptCount))));
       $markFailed = $pdo->prepare(
         'UPDATE athlete_apple_caldav_sync_jobs
@@ -4307,7 +4901,7 @@ function processAthleteAppleCaldavSyncQueue(int $limit = 8): array {
 }
 
 function syncAthleteEventUpsertToAppleCaldav(int $athleteId, ?int $eventId): void {
-  if ($athleteId <= 0 || $eventId === null || $eventId <= 0 || !athleteAppleCaldavSyncTablesAvailable()) {
+  if ($athleteId <= 0 || $eventId === null || $eventId <= 0) {
     return;
   }
 
@@ -4373,36 +4967,44 @@ function syncAthleteEventUpsertToAppleCaldav(int $athleteId, ?int $eventId): voi
     throw new RuntimeException('Athlete Apple CalDAV upsert selhal: HTTP ' . $status . ' | ' . (string)($response['body'] ?? ''));
   }
 
-  $etag = trim((string)($response['headers']['etag'] ?? ''));
-  $upsertLink = $pdo->prepare(
-    'INSERT INTO athlete_apple_caldav_event_links (athlete_id, event_id, remote_href, remote_etag, last_synced_at, last_error)
-     VALUES (?, ?, ?, ?, NOW(), NULL)
-     ON DUPLICATE KEY UPDATE remote_href = VALUES(remote_href), remote_etag = VALUES(remote_etag), last_synced_at = NOW(), last_error = NULL'
-  );
-  $upsertLink->execute([$athleteId, $eventId, $remoteHref, $etag !== '' ? $etag : null]);
+  if (athleteAppleCaldavEventLinksTableAvailable()) {
+    $etag = trim((string)($response['headers']['etag'] ?? ''));
+    $upsertLink = $pdo->prepare(
+      'INSERT INTO athlete_apple_caldav_event_links (athlete_id, event_id, remote_href, remote_etag, last_synced_at, last_error)
+       VALUES (?, ?, ?, ?, NOW(), NULL)
+       ON DUPLICATE KEY UPDATE remote_href = VALUES(remote_href), remote_etag = VALUES(remote_etag), last_synced_at = NOW(), last_error = NULL'
+    );
+    $upsertLink->execute([$athleteId, $eventId, $remoteHref, $etag !== '' ? $etag : null]);
+  }
 
   markAthleteAppleCaldavSyncSuccess($athleteId);
 }
 
 function syncAthleteEventDeleteToAppleCaldav(int $athleteId, ?int $eventId): void {
-  if ($athleteId <= 0 || $eventId === null || $eventId <= 0 || !athleteAppleCaldavSyncTablesAvailable()) {
+  if ($athleteId <= 0 || $eventId === null || $eventId <= 0) {
     return;
   }
 
   $pdo = getDB();
-  $linkStmt = $pdo->prepare(
-    'SELECT remote_href
-     FROM athlete_apple_caldav_event_links
-     WHERE athlete_id = ? AND event_id = ?
-     LIMIT 1'
-  );
-  $linkStmt->execute([$athleteId, $eventId]);
-  $remoteHref = trim((string)($linkStmt->fetchColumn() ?: ''));
+  $hasLinksTable = athleteAppleCaldavEventLinksTableAvailable();
+  $remoteHref = '';
+  if ($hasLinksTable) {
+    $linkStmt = $pdo->prepare(
+      'SELECT remote_href
+       FROM athlete_apple_caldav_event_links
+       WHERE athlete_id = ? AND event_id = ?
+       LIMIT 1'
+    );
+    $linkStmt->execute([$athleteId, $eventId]);
+    $remoteHref = trim((string)($linkStmt->fetchColumn() ?: ''));
+  }
 
   $athlete = getAthleteAppleCaldavConfig($athleteId);
   if (!$athlete || empty($athlete['apple_caldav_sync_enabled'])) {
-    $deleteLocal = $pdo->prepare('DELETE FROM athlete_apple_caldav_event_links WHERE athlete_id = ? AND event_id = ?');
-    $deleteLocal->execute([$athleteId, $eventId]);
+    if ($hasLinksTable) {
+      $deleteLocal = $pdo->prepare('DELETE FROM athlete_apple_caldav_event_links WHERE athlete_id = ? AND event_id = ?');
+      $deleteLocal->execute([$athleteId, $eventId]);
+    }
     return;
   }
 
@@ -4446,10 +5048,106 @@ function syncAthleteEventDeleteToAppleCaldav(int $athleteId, ?int $eventId): voi
     throw new RuntimeException($lastDeleteError);
   }
 
-  $deleteLink = $pdo->prepare('DELETE FROM athlete_apple_caldav_event_links WHERE athlete_id = ? AND event_id = ?');
-  $deleteLink->execute([$athleteId, $eventId]);
+  if ($hasLinksTable) {
+    $deleteLink = $pdo->prepare('DELETE FROM athlete_apple_caldav_event_links WHERE athlete_id = ? AND event_id = ?');
+    $deleteLink->execute([$athleteId, $eventId]);
+  }
 
   markAthleteAppleCaldavSyncSuccess($athleteId);
+}
+
+function purgeAthleteAppleCaldavRemoteEvents(int $athleteId, string $username, string $password): array {
+  if ($athleteId <= 0 || !athleteAppleCaldavEventLinksTableAvailable()) {
+    return ['deleted' => 0, 'failed' => 0];
+  }
+
+  $username = trim($username);
+  $password = trim($password);
+  if ($username === '' || $password === '') {
+    throw new RuntimeException('Athlete Apple CalDAV cleanup: chybi prihlasovaci udaje.');
+  }
+
+  $pdo = getDB();
+  $stmt = $pdo->prepare(
+    'SELECT event_id, remote_href
+     FROM athlete_apple_caldav_event_links
+     WHERE athlete_id = ?'
+  );
+  $stmt->execute([$athleteId]);
+  $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+  $deleted = 0;
+  $failed = 0;
+  foreach ($rows as $row) {
+    $eventId = (int)($row['event_id'] ?? 0);
+    $remoteHref = trim((string)($row['remote_href'] ?? ''));
+    if ($remoteHref === '') {
+      continue;
+    }
+
+    try {
+      $response = appleCaldavHttpRequest('DELETE', $remoteHref, $username, $password, null, []);
+      $status = (int)($response['status'] ?? 0);
+      if (in_array($status, [200, 202, 204, 404], true)) {
+        $deleted++;
+        $deleteStmt = $pdo->prepare('DELETE FROM athlete_apple_caldav_event_links WHERE athlete_id = ? AND event_id = ?');
+        $deleteStmt->execute([$athleteId, $eventId]);
+        continue;
+      }
+      $failed++;
+    } catch (Throwable $e) {
+      $failed++;
+    }
+  }
+
+  return ['deleted' => $deleted, 'failed' => $failed];
+}
+
+function purgeCoachAppleCaldavRemoteEvents(int $coachId, string $username, string $password): array {
+  if ($coachId <= 0 || !appleCaldavSyncTablesAvailable()) {
+    return ['deleted' => 0, 'failed' => 0];
+  }
+
+  $username = trim($username);
+  $password = trim($password);
+  if ($username === '' || $password === '') {
+    throw new RuntimeException('Apple CalDAV cleanup: chybi prihlasovaci udaje.');
+  }
+
+  $pdo = getDB();
+  $stmt = $pdo->prepare(
+    'SELECT event_id, remote_href
+     FROM coach_apple_caldav_event_links
+     WHERE coach_id = ?'
+  );
+  $stmt->execute([$coachId]);
+  $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+  $deleted = 0;
+  $failed = 0;
+  foreach ($rows as $row) {
+    $eventId = (int)($row['event_id'] ?? 0);
+    $remoteHref = trim((string)($row['remote_href'] ?? ''));
+    if ($remoteHref === '') {
+      continue;
+    }
+
+    try {
+      $response = appleCaldavHttpRequest('DELETE', $remoteHref, $username, $password, null, []);
+      $status = (int)($response['status'] ?? 0);
+      if (in_array($status, [200, 202, 204, 404], true)) {
+        $deleted++;
+        $deleteStmt = $pdo->prepare('DELETE FROM coach_apple_caldav_event_links WHERE coach_id = ? AND event_id = ?');
+        $deleteStmt->execute([$coachId, $eventId]);
+        continue;
+      }
+      $failed++;
+    } catch (Throwable $e) {
+      $failed++;
+    }
+  }
+
+  return ['deleted' => $deleted, 'failed' => $failed];
 }
 
 function getAthleteAppleCaldavConfig(int $athleteId): ?array {
@@ -4558,6 +5256,20 @@ function markAthleteAppleCaldavSyncSuccess(int $athleteId): void {
   $stmt->execute([$athleteId]);
 }
 
+function markAthleteAppleCaldavSyncError(int $athleteId, string $errorMessage): void {
+  if ($athleteId <= 0) {
+    return;
+  }
+
+  $pdo = getDB();
+  $stmt = $pdo->prepare(
+    'UPDATE athletes
+     SET apple_caldav_last_error = ?
+     WHERE id = ?'
+  );
+  $stmt->execute([mb_substr($errorMessage, 0, 2000, 'UTF-8'), $athleteId]);
+}
+
 function athleteAppleCaldavSyncTablesAvailable(): bool {
   static $available = null;
   if ($available !== null) {
@@ -4570,6 +5282,23 @@ function athleteAppleCaldavSyncTablesAvailable(): bool {
     $links = $pdo->query("SHOW TABLES LIKE 'athlete_apple_caldav_event_links'");
     $available = ($jobs !== false && (bool)$jobs->fetchColumn())
       && ($links !== false && (bool)$links->fetchColumn());
+  } catch (Throwable $e) {
+    $available = false;
+  }
+
+  return $available;
+}
+
+function athleteAppleCaldavEventLinksTableAvailable(): bool {
+  static $available = null;
+  if ($available !== null) {
+    return $available;
+  }
+
+  try {
+    $pdo = getDB();
+    $links = $pdo->query("SHOW TABLES LIKE 'athlete_apple_caldav_event_links'");
+    $available = ($links !== false && (bool)$links->fetchColumn());
   } catch (Throwable $e) {
     $available = false;
   }

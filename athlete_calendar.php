@@ -19,6 +19,8 @@ $athleteStmt = $pdo->prepare(
             a.apple_caldav_calendar_url,
             a.apple_caldav_username,
             a.apple_caldav_app_password,
+                 a.apple_caldav_last_error,
+                 a.apple_caldav_last_success_at,
             c.name AS coach_name
      FROM athletes a
      JOIN coaches c ON c.id = a.coach_id
@@ -49,8 +51,7 @@ function buildAbsoluteAppUrl(string $path): string
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = (string)($_POST['action'] ?? '');
-    $googleAction = in_array($action, ['update_google_calendar_sync', 'regenerate_google_calendar_token'], true);
-    $actionTab = $googleAction ? 'google' : 'apple';
+    $actionTab = 'apple';
 
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
         flash('danger', 'Neplatný bezpečnostní token.');
@@ -62,8 +63,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $calendarUrl = trim((string)($_POST['apple_caldav_calendar_url'] ?? ''));
         $username = trim((string)($_POST['apple_caldav_username'] ?? ''));
         $appPassword = trim((string)($_POST['apple_caldav_app_password'] ?? ''));
+        $previousCalendarUrl = trim((string)($athlete['apple_caldav_calendar_url'] ?? ''));
+        $previousUsername = trim((string)($athlete['apple_caldav_username'] ?? ''));
+        $previousPassword = trim((string)($athlete['apple_caldav_app_password'] ?? ''));
 
         if ($syncEnabled === 1) {
+            $discoveryErrorDetail = '';
             if ($username === '' || $appPassword === '') {
                 flash('danger', 'Apple CalDAV: vyplňte Apple ID a app-specific heslo.');
                 redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
@@ -71,9 +76,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($calendarUrl === '') {
                 try {
-                    $calendarUrl = discoverAppleCaldavCalendarUrl($username, $appPassword);
+                    $calendarCreated = false;
+                    $calendarUrl = ensureAppleCaldavTrainerAppCalendarUrl($username, $appPassword, 'TrainerApp', $calendarCreated);
                 } catch (Throwable $e) {
-                    flash('danger', 'Apple CalDAV: nepodarilo se automaticky najit URL kalendare. ' . $e->getMessage());
+                    $discoveryErrorDetail = trim((string)$e->getMessage());
+                    flash('danger', 'Apple CalDAV: nepodarilo se najit ani vytvorit kalendar "TrainerApp". Detail: ' . mb_substr(preg_replace('/\s+/', ' ', $discoveryErrorDetail), 0, 220, 'UTF-8') . '.');
+                    redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
+                }
+            } else {
+                try {
+                    $urlDiagnostics = [];
+                    if (!appleCaldavCalendarUrlAcceptedForTrainerApp($calendarUrl, $username, $appPassword, 'TrainerApp', $urlDiagnostics)) {
+                        $calendarCreated = false;
+                        $calendarUrl = ensureAppleCaldavTrainerAppCalendarUrl($username, $appPassword, 'TrainerApp', $calendarCreated);
+                    }
+                } catch (Throwable $e) {
+                    flash('danger', 'Apple CalDAV: zadane URL kalendare TrainerApp se nepodarilo overit ani nahradit spravnym kalendarem. Detail: ' . mb_substr(preg_replace('/\s+/', ' ', trim((string)$e->getMessage())), 0, 220, 'UTF-8') . '.');
                     redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
                 }
             }
@@ -90,7 +108,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  apple_caldav_calendar_url = ?,
                  apple_caldav_username = ?,
                  apple_caldav_app_password = ?,
-                 apple_caldav_last_error = NULL
+                 apple_caldav_last_error = NULL,
+                 apple_caldav_last_success_at = NULL
              WHERE id = ?'
         );
         $updateStmt->execute([
@@ -101,7 +120,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $athleteId,
         ]);
 
-        if ($syncEnabled === 1 && athleteAppleCaldavSyncTablesAvailable()) {
+        $normalizedPreviousUrl = $previousCalendarUrl !== '' ? rtrim($previousCalendarUrl, '/') . '/' : '';
+        $normalizedCurrentUrl = $calendarUrl !== '' ? rtrim($calendarUrl, '/') . '/' : '';
+        if ($normalizedPreviousUrl !== '' && $normalizedCurrentUrl !== '' && $normalizedPreviousUrl !== $normalizedCurrentUrl) {
+            try {
+                purgeAthleteAppleCaldavRemoteEvents(
+                    $athleteId,
+                    $previousUsername !== '' ? $previousUsername : $username,
+                    $previousPassword !== '' ? $previousPassword : $appPassword
+                );
+            } catch (Throwable $e) {
+                // Pri cleanup failu zachovame novou konfiguraci a nechame dalsi seed sync pokracovat.
+            }
+        }
+
+        if ($syncEnabled === 1) {
             // Inicialni naplneni po pripojeni: znovu zapise blizke historicke i budouci udalosti sportovce.
             $seedStmt = $pdo->prepare(
                 'SELECT id
@@ -124,14 +157,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
     }
 
+    if ($action === 'generate_apple_caldav_url') {
+        $calendarUrl = '';
+        $username = trim((string)($_POST['apple_caldav_username'] ?? ''));
+        $appPassword = trim((string)($_POST['apple_caldav_app_password'] ?? ''));
+        $previousCalendarUrl = trim((string)($athlete['apple_caldav_calendar_url'] ?? ''));
+        $previousUsername = trim((string)($athlete['apple_caldav_username'] ?? ''));
+        $previousPassword = trim((string)($athlete['apple_caldav_app_password'] ?? ''));
+
+        if ($username === '' || $appPassword === '') {
+            flash('danger', 'Apple CalDAV: vyplňte Apple ID a app-specific heslo pro vygenerovani URL.');
+            redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
+        }
+
+        try {
+            $calendarCreated = false;
+            $calendarUrl = ensureAppleCaldavTrainerAppCalendarUrl($username, $appPassword, 'TrainerApp', $calendarCreated);
+        } catch (Throwable $e) {
+            flash('danger', 'Apple CalDAV: URL kalendare TrainerApp se nepodarilo automaticky vygenerovat. Detail: ' . mb_substr(preg_replace('/\s+/', ' ', trim((string)$e->getMessage())), 0, 900, 'UTF-8') . '.');
+            redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
+        }
+
+        $calendarUrl = rtrim($calendarUrl, '/') . '/';
+        $updateStmt = $pdo->prepare(
+            'UPDATE athletes
+             SET apple_caldav_calendar_url = ?,
+                 apple_caldav_username = ?,
+                 apple_caldav_app_password = ?,
+                 apple_caldav_last_error = NULL
+             WHERE id = ?'
+        );
+        $updateStmt->execute([$calendarUrl, $username, $appPassword, $athleteId]);
+
+        $normalizedPreviousUrl = $previousCalendarUrl !== '' ? rtrim($previousCalendarUrl, '/') . '/' : '';
+        if ($normalizedPreviousUrl !== '' && $normalizedPreviousUrl !== $calendarUrl) {
+            try {
+                purgeAthleteAppleCaldavRemoteEvents(
+                    $athleteId,
+                    $previousUsername !== '' ? $previousUsername : $username,
+                    $previousPassword !== '' ? $previousPassword : $appPassword
+                );
+            } catch (Throwable $e) {
+                // URL uz je prepnuta na TrainerApp; pripadny cleanup starych zaznamu dobehne az pri dalsim odpojeni nebo zmene.
+            }
+        }
+
+        flash('success', 'Apple CalDAV URL pro kalendar TrainerApp byla nastavena: ' . $calendarUrl);
+        redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
+    }
+
     if ($action === 'disconnect_apple_caldav_sync') {
+        $previousUsername = trim((string)($athlete['apple_caldav_username'] ?? ''));
+        $previousPassword = trim((string)($athlete['apple_caldav_app_password'] ?? ''));
+        try {
+            purgeAthleteAppleCaldavRemoteEvents($athleteId, $previousUsername, $previousPassword);
+        } catch (Throwable $e) {
+            // I pri chybe cleanupu musi jit ucet odpojit.
+        }
+
         $updateStmt = $pdo->prepare(
             'UPDATE athletes
              SET apple_caldav_sync_enabled = 0,
                  apple_caldav_calendar_url = NULL,
                  apple_caldav_username = NULL,
                  apple_caldav_app_password = NULL,
-                 apple_caldav_last_error = NULL
+                 apple_caldav_last_error = NULL,
+                 apple_caldav_last_success_at = NULL
              WHERE id = ?'
         );
         $updateStmt->execute([$athleteId]);
@@ -141,34 +232,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'update_google_calendar_sync') {
-        $syncEnabled = !empty($_POST['google_calendar_sync_enabled']) ? 1 : 0;
-        $currentToken = (string)($athlete['apple_calendar_token'] ?? '');
-        if ($syncEnabled === 1 && $currentToken === '') {
-            $currentToken = generateCalendarSubscriptionToken();
-        }
-
-        $updateStmt = $pdo->prepare(
-            'UPDATE athletes
-             SET apple_calendar_sync_enabled = ?, apple_calendar_token = ?
-             WHERE id = ?'
-        );
-        $updateStmt->execute([$syncEnabled, $currentToken !== '' ? $currentToken : null, $athleteId]);
-
-        flash('success', 'Google Kalendář synchronizace byla aktualizována.');
-        redirect(BASE_URL . '/athlete_calendar.php?tab=google');
+        flash('warning', 'Google Kalendář je dočasně ve vývoji. Záložka je momentálně deaktivovaná.');
+        redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
     }
 
     if ($action === 'regenerate_google_calendar_token') {
-        $newToken = generateCalendarSubscriptionToken();
-        $updateStmt = $pdo->prepare(
-            'UPDATE athletes
-             SET apple_calendar_sync_enabled = 1, apple_calendar_token = ?
-             WHERE id = ?'
-        );
-        $updateStmt->execute([$newToken, $athleteId]);
-
-        flash('success', 'Soukromý Google kalendář odkaz byl obnoven.');
-        redirect(BASE_URL . '/athlete_calendar.php?tab=google');
+        flash('warning', 'Google Kalendář je dočasně ve vývoji. Záložka je momentálně deaktivovaná.');
+        redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
     }
 }
 
@@ -180,7 +250,7 @@ if (!empty($athlete['apple_calendar_sync_enabled']) && !empty($athlete['apple_ca
 }
 
 $activeTab = (string)($_GET['tab'] ?? 'week');
-if (!in_array($activeTab, ['week', 'month', 'apple', 'google'], true)) {
+if (!in_array($activeTab, ['week', 'month', 'apple'], true)) {
     $activeTab = 'week';
 }
 
@@ -345,12 +415,12 @@ renderAthleteHeader('Můj kalendář', false, true);
     </li>
     <li class="nav-item" role="presentation">
         <button class="nav-link <?= $activeTab === 'apple' ? 'active' : '' ?>" id="athlete-apple-tab" data-bs-toggle="tab" data-bs-target="#athlete-apple-pane" type="button" role="tab" aria-controls="athlete-apple-pane" aria-selected="<?= $activeTab === 'apple' ? 'true' : 'false' ?>">
-            Apple Kalendář
+            Apple Kalendář <span class="badge rounded-pill text-bg-warning ms-1 align-middle">Beta</span>
         </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link <?= $activeTab === 'google' ? 'active' : '' ?>" id="athlete-google-tab" data-bs-toggle="tab" data-bs-target="#athlete-google-pane" type="button" role="tab" aria-controls="athlete-google-pane" aria-selected="<?= $activeTab === 'google' ? 'true' : 'false' ?>">
-            Google Kalendář
+        <button class="nav-link disabled" id="athlete-google-tab" type="button" role="tab" aria-controls="athlete-google-pane" aria-selected="false" aria-disabled="true" tabindex="-1" title="Ve vývoji">
+            Google Kalendář <span class="badge rounded-pill text-bg-secondary ms-1 align-middle">Ve vývoji</span>
         </button>
     </li>
 </ul>
@@ -434,6 +504,17 @@ renderAthleteHeader('Můj kalendář', false, true);
                 Přímý zápis do vašeho iCloud kalendáře bez čekání na obnovu ICS odběru.
             </div>
 
+            <?php if (!empty($athlete['apple_caldav_sync_enabled']) && !empty($athlete['apple_caldav_last_error'])): ?>
+            <div class="alert alert-danger py-2 px-3 small">
+                <div class="fw-semibold mb-1"><i class="fas fa-circle-exclamation me-1"></i>Poslední chyba synchronizace</div>
+                <div><?= h((string)$athlete['apple_caldav_last_error']) ?></div>
+            </div>
+            <?php elseif (!empty($athlete['apple_caldav_sync_enabled']) && !empty($athlete['apple_caldav_last_success_at'])): ?>
+            <div class="alert alert-success py-2 px-3 small">
+                Poslední úspěšná synchronizace: <?= h((string)$athlete['apple_caldav_last_success_at']) ?>
+            </div>
+            <?php endif; ?>
+
             <form method="post" class="mb-3">
                 <?= csrfField() ?>
                 <input type="hidden" name="action" value="update_apple_caldav_sync">
@@ -447,7 +528,7 @@ renderAthleteHeader('Můj kalendář', false, true);
                     <div class="col-12">
                         <label class="form-label fw-semibold" for="athleteAppleCaldavCalendarUrl">CalDAV URL kalendáře (volitelné)</label>
                         <input type="url" class="form-control" id="athleteAppleCaldavCalendarUrl" name="apple_caldav_calendar_url" placeholder="https://caldav.icloud.com/..." value="<?= h((string)($athlete['apple_caldav_calendar_url'] ?? '')) ?>">
-                        <div class="form-text">Když necháte prázdné, systém zkusí URL najít automaticky.</div>
+                        <div class="form-text">Když necháte prázdné, systém hledá pouze kalendář s názvem TrainerApp.</div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label fw-semibold" for="athleteAppleCaldavUsername">Apple ID</label>
@@ -456,6 +537,7 @@ renderAthleteHeader('Můj kalendář', false, true);
                     <div class="col-md-6">
                         <label class="form-label fw-semibold" for="athleteAppleCaldavAppPassword">App-specific heslo</label>
                         <input type="password" class="form-control" id="athleteAppleCaldavAppPassword" name="apple_caldav_app_password" value="<?= h((string)($athlete['apple_caldav_app_password'] ?? '')) ?>" autocomplete="new-password">
+                        <div class="form-text text-danger">Nejedna se o heslo k Apple ID. Pouzijte pouze app-specific heslo vygenerovane na appleid.apple.com.</div>
                     </div>
                 </div>
 
@@ -463,20 +545,60 @@ renderAthleteHeader('Můj kalendář', false, true);
                     <button type="submit" class="btn btn-dark fw-semibold">
                         <i class="fas fa-bolt me-1"></i>Uložit CalDAV sync
                     </button>
+                    <button type="submit" class="btn btn-outline-secondary fw-semibold" name="action" value="generate_apple_caldav_url">
+                        <i class="fas fa-wand-magic-sparkles me-1"></i>Vygenerovat URL TrainerApp
+                    </button>
+                    <a href="<?= BASE_URL ?>/athlete_apple_caldav_mobileconfig.php" class="btn btn-outline-primary">
+                        <i class="fas fa-mobile-screen-button me-1"></i>Stahnout Apple profil (.mobileconfig)
+                    </a>
                     <?php if ($athleteCaldavConnected): ?>
                     <button type="submit" class="btn btn-outline-danger" name="action" value="disconnect_apple_caldav_sync" onclick="return confirm('Odpojit Apple CalDAV účet?');">
                         <i class="fas fa-link-slash me-1"></i>Odpojit účet
                     </button>
                     <?php endif; ?>
                 </div>
+                <div class="alert alert-warning py-2 px-3 mt-3 mb-0 small">
+                    <strong>Dulezite:</strong> Nez kliknete na Stahnout Apple profil, overte v iCloud Kalendari, ze existuje kalendar s presnym nazvem <strong>TrainerApp</strong>.
+                    Potom se vratte sem a kliknete na <strong>Ulozit Apple CalDAV sync</strong>, aby se spravna URL kalendare navazala. Bez toho profil negarantuje zapis do kalendare TrainerApp.
+                </div>
             </form>
+
+            <?php if ($athleteCaldavConnected): ?>
+            <div class="alert alert-danger py-2 px-3 mt-2 mb-0 small">
+                <div class="fw-semibold"><i class="fas fa-triangle-exclamation me-1"></i>Pozor na zdvojeni po instalaci profilu</div>
+                <div>iOS po instalaci .mobileconfig prida vsechny kalendare Apple uctu. V aplikaci Kalendar nechte v sekci TrainerApp zapnuty pouze cilovy kalendar pro TrainerApp, ostatni odskrtnete.</div>
+            </div>
+
+            <div class="border border-danger rounded-3 p-3 mt-3 bg-white small">
+                <div class="fw-semibold mb-2">Ukazkovy navod (co zapnout a co skryt)</div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="fw-semibold mb-1">Sekce: TrainerApp Sportovec</div>
+                        <pre class="bg-light border rounded p-2 mb-0">[ ] Domaci
+[ ] Pracovní kalendář
+[ ] Kalendář 1
+[x] TrainerApp   (nechat zapnute)
+[ ] Kalendar</pre>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="fw-semibold mb-1">Sekce: iCloud</div>
+                        <pre class="bg-light border rounded p-2 mb-0">[x] Domaci
+[x] Pracovni kalendář
+[x] Kalendář 1
+[ ] TrainerApp   (vypnout, jinak duplicita)
+[x] Kalendar</pre>
+                    </div>
+                </div>
+                <div class="mt-2">Postup v iPhonu: Kalendar -> Kalendare. Stejny kalendar (napr. Cviceni) nesmi byt zapnuty v obou sekcich zaroven; nechte ho zapnuty jen v jedne sekci.</div>
+            </div>
+            <?php endif; ?>
 
             <div class="row g-3 small mt-1">
                 <div class="col-lg-4">
                     <div class="border rounded-3 bg-light p-3 h-100">
                         <div class="fw-semibold mb-2">1. Vytvoření hesla u Apple</div>
                         <ol class="mb-0 ps-3">
-                            <li>Otevřete [appleid.apple.com](https://appleid.apple.com) a přihlaste se svým Apple ID.</li>
+                            <li>Otevřete <a href="https://appleid.apple.com" target="_blank" rel="noopener">appleid.apple.com</a> a přihlaste se svým Apple ID.</li>
                             <li>V sekci Sign-In and Security otevřete App-Specific Passwords.</li>
                             <li>Klikněte na Generate an app-specific password.</li>
                             <li>Napište název třeba TrainerApp.</li>
@@ -486,10 +608,11 @@ renderAthleteHeader('Můj kalendář', false, true);
                 </div>
                 <div class="col-lg-4">
                     <div class="border rounded-3 bg-light p-3 h-100">
-                        <div class="fw-semibold mb-2">2. Doporučený kalendář</div>
+                        <div class="fw-semibold mb-2">2. Doporučený kalendář (jen bez .mobileconfig)</div>
                         <ol class="mb-0 ps-3">
+                            <li>Tento postup od bodu 2 platí pouze pokud jste nepoužili nastavovací soubor .mobileconfig.</li>
                             <li>V Apple Kalendáři si vytvořte samostatný kalendář, ideálně TrainerApp.</li>
-                            <li>Když necháte CalDAV URL prázdnou, systém vybere první zapisovatelný kalendář automaticky.</li>
+                            <li>Když necháte CalDAV URL prázdnou, systém se pokusí navázat kalendář s názvem TrainerApp.</li>
                             <li>Když se termíny zapisují jinam, vložte sem ručně URL správného kalendáře a znovu uložte.</li>
                         </ol>
                     </div>
@@ -498,8 +621,11 @@ renderAthleteHeader('Můj kalendář', false, true);
                     <div class="border rounded-3 bg-light p-3 h-100">
                         <div class="fw-semibold mb-2">3. Co se děje po uložení</div>
                         <ol class="mb-0 ps-3">
+                            <li>Pred instalaci profilu musi byt v iPhonu zapnuto: Nastaveni > [tvoje jmeno] > iCloud > Kalendare.</li>
+                            <li>Po stazeni .mobileconfig otevrete aplikaci Nastaveni a klepnete na polozku Profil byl stazen.</li>
                             <li>Vaše tréninky se zapisují přímo do iCloudu bez čekání na obnovu odběru.</li>
                             <li>Nové a změněné termíny se většinou projeví během několika sekund až minut.</li>
+                            <li>Po instalaci .mobileconfig otevřete v iPhonu aplikaci Kalendář > Kalendáře a stejné kalendáře nenechávejte zapnuté v obou sekcích zároveň.</li>
                             <li>Pokud máte starý odebíraný Apple kalendář, vypněte ho, ať nevidíte duplicity.</li>
                         </ol>
                     </div>
