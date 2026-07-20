@@ -1,17 +1,21 @@
 <?php
-require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/admin_auth.php';
 require_once __DIR__ . '/includes/functions.php';
-require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/header.php';
 
-requireLogin();
+requireAdminLogin();
 
-$coachId = getCurrentCoachId();
-$error   = null;
+$pdo = getDB();
+ensurePasswordAuditColumns($pdo);
+
+$error = null;
+$coaches = $pdo->query('SELECT id, name, username, is_active FROM coaches ORDER BY is_active DESC, name ASC, username ASC')->fetchAll();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
         $error = 'Neplatný bezpečnostní token.';
     } else {
+        $coachId = intParam($_POST, 'coach_id');
         $firstName = trim($_POST['first_name'] ?? '');
         $lastName  = trim($_POST['last_name']  ?? '');
         $birthDate = trim($_POST['birth_date'] ?? '');
@@ -19,7 +23,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $email     = trim($_POST['email'] ?? '');
         $notes     = trim($_POST['notes'] ?? '');
 
-        if ($firstName === '' || $lastName === '') {
+        $coachStmt = $pdo->prepare('SELECT id FROM coaches WHERE id = ? LIMIT 1');
+        $coachStmt->execute([$coachId]);
+
+        if ($coachId <= 0 || !$coachStmt->fetch()) {
+            $error = 'Vyberte platného trenéra.';
+        } elseif ($firstName === '' || $lastName === '') {
             $error = 'Vyplňte jméno a příjmení.';
         } elseif ($birthDate === '') {
             $error = 'Zadejte datum narození.';
@@ -58,18 +67,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 error_log('video_folder auto-create error (admin/athlete_add): ' . $e->getMessage());
             }
             flash('success', "Sportovec {$firstName} {$lastName} byl přidán.");
-            redirect(BASE_URL . '/dashboard.php');
+            redirect(BASE_URL . '/admin/athletes.php');
         }
     }
 }
 
-renderHeader('Přidat sportovce');
+renderAdminHeader('Přidat sportovce');
 ?>
 
 <div class="row justify-content-center">
     <div class="col-lg-6">
         <div class="d-flex align-items-center mb-4">
-            <a href="<?= BASE_URL ?>/dashboard.php" class="btn btn-outline-secondary btn-sm me-3">
+            <a href="<?= BASE_URL ?>/admin/athletes.php" class="btn btn-outline-secondary btn-sm me-3">
                 <i class="fas fa-arrow-left"></i>
             </a>
             <h2 class="mb-0"><i class="fas fa-user-plus me-2 text-warning"></i>Přidat sportovce</h2>
@@ -83,6 +92,17 @@ renderHeader('Přidat sportovce');
             <div class="card-body p-4">
                 <form method="post" enctype="multipart/form-data" novalidate>
                     <?= csrfField() ?>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Trenér <span class="text-danger">*</span></label>
+                        <select name="coach_id" class="form-select" required>
+                            <option value="">– vyberte trenéra –</option>
+                            <?php foreach ($coaches as $coach): ?>
+                            <option value="<?= (int)$coach['id'] ?>" <?= (int)($_POST['coach_id'] ?? 0) === (int)$coach['id'] ? 'selected' : '' ?>>
+                                <?= h((string)($coach['name'] ?: $coach['username'])) ?><?= !empty($coach['is_active']) ? '' : ' (neaktivní)' ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
                     <div class="row g-3 mb-3">
                         <div class="col-sm-6">
                             <label class="form-label fw-semibold">Jméno <span class="text-danger">*</span></label>
@@ -128,7 +148,7 @@ renderHeader('Přidat sportovce');
                         <button type="submit" class="btn btn-warning fw-bold px-4">
                             <i class="fas fa-save me-1"></i>Uložit
                         </button>
-                        <a href="<?= BASE_URL ?>/dashboard.php" class="btn btn-outline-secondary">Zrušit</a>
+                        <a href="<?= BASE_URL ?>/admin/athletes.php" class="btn btn-outline-secondary">Zrušit</a>
                     </div>
                 </form>
             </div>
@@ -136,4 +156,4 @@ renderHeader('Přidat sportovce');
     </div>
 </div>
 
-<?php renderFooter(); ?>
+<?php renderAdminFooter(); ?>

@@ -1422,6 +1422,64 @@ HTML;
     }
 }
 
+  function sendPasswordResetEmail(string $toEmail, string $displayName, string $resetUrl, string $accountTypeLabel): bool {
+    $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
+    if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
+      error_log('sendPasswordResetEmail: PHPMailer not found');
+      return false;
+    }
+    require_once $phpmailerSrc . '/Exception.php';
+    require_once $phpmailerSrc . '/PHPMailer.php';
+    require_once $phpmailerSrc . '/SMTP.php';
+
+    $h = fn(?string $s): string => htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8');
+
+    $htmlBody = "<p>Dobrý den " . $h($displayName) . ",</p>"
+      . "<p>obdrželi jsme žádost o reset hesla pro účet typu <strong>" . $h($accountTypeLabel) . "</strong>.</p>"
+      . "<p>Pro nastavení nového hesla klikněte na odkaz níže (platnost 60 minut):</p>"
+      . "<p><a href=\"" . $h($resetUrl) . "\" style=\"background:#0d6efd;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;display:inline-block\">"
+      . "Nastavit nové heslo</a></p>"
+      . "<p>Pokud jste reset hesla nepožadovali, tento e-mail ignorujte.</p>"
+      . "<hr><p style=\"color:#777;font-size:.9em\">TrainerApp – automatické notifikace</p>";
+
+    $altBody = "Dobrý den {$displayName},\n\n"
+      . "obdrželi jsme žádost o reset hesla pro účet typu {$accountTypeLabel}.\n"
+      . "Pro nastavení nového hesla otevřete následující odkaz (platnost 60 minut):\n{$resetUrl}\n\n"
+      . "Pokud jste reset hesla nepožadovali, tento e-mail ignorujte.\n\n"
+      . "TrainerApp – automatické notifikace\n";
+
+    $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+    try {
+      _configureMail($mail);
+      $mail->addAddress($toEmail);
+      $mail->isHTML(true);
+      $mail->Subject = 'Reset hesla - TrainerApp';
+      $mail->Body = $htmlBody;
+      $mail->AltBody = $altBody;
+      $mail->send();
+      return true;
+    } catch (\Exception $e) {
+      error_log('sendPasswordResetEmail error: ' . $mail->ErrorInfo . ' | ' . $e->getMessage());
+    }
+
+    try {
+      $fallback = new PHPMailer\PHPMailer\PHPMailer(true);
+      $fallback->isMail();
+      $fallback->CharSet = 'UTF-8';
+      $fallback->setFrom(SMTP_FROM, SMTP_FROM_NAME);
+      $fallback->addAddress($toEmail);
+      $fallback->isHTML(true);
+      $fallback->Subject = 'Reset hesla - TrainerApp';
+      $fallback->Body = $htmlBody;
+      $fallback->AltBody = $altBody;
+      $fallback->send();
+      return true;
+    } catch (\Exception $e) {
+      error_log('sendPasswordResetEmail fallback error: ' . $e->getMessage());
+      return false;
+    }
+  }
+
 /**
  * Nakonfiguruje PHPMailer instanci dle SMTP_HOST:
  * - 'localhost' nebo prázdný host → isMail() (PHP mail(), bez auth, Wedos hosting)

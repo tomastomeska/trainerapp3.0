@@ -7,6 +7,7 @@ requireAdminLogin();
 
 $pdo   = getDB();
 $error = null;
+ensurePasswordAuditColumns($pdo);
 
 $stmtMakeupDeadlineCol = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'makeup_booking_deadline_days'");
 $hasMakeupDeadlineColumn = $stmtMakeupDeadlineCol !== false && (bool)$stmtMakeupDeadlineCol->fetch();
@@ -111,11 +112,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $hash = password_hash($password, PASSWORD_DEFAULT);
                 if ($hasMakeupDeadlineColumn) {
                     $pdo->prepare(
-                        'INSERT INTO coaches (username, password, name, email, is_active, force_password_change, makeup_booking_deadline_days) VALUES (?, ?, ?, ?, ?, 1, ?)'
+                        'INSERT INTO coaches (username, password, password_changed_at, name, email, is_active, force_password_change, makeup_booking_deadline_days) VALUES (?, ?, NOW(), ?, ?, ?, 1, ?)'
                     )->execute([$username, $hash, $name ?: null, $email ?: null, $isActive, $makeupDeadlineDays]);
                 } else {
                     $pdo->prepare(
-                        'INSERT INTO coaches (username, password, name, email, is_active, force_password_change) VALUES (?, ?, ?, ?, ?, 1)'
+                        'INSERT INTO coaches (username, password, password_changed_at, name, email, is_active, force_password_change) VALUES (?, ?, NOW(), ?, ?, ?, 1)'
                     )->execute([$username, $hash, $name ?: null, $email ?: null, $isActive]);
                 }
                 $newCoachId = (int)$pdo->lastInsertId();

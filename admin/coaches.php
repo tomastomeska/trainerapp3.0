@@ -6,6 +6,7 @@ require_once __DIR__ . '/header.php';
 requireAdminLogin();
 
 $pdo = getDB();
+ensurePasswordAuditColumns($pdo);
 
 // Rychly toggle aktivity
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'toggle') {
@@ -71,6 +72,7 @@ renderAdminHeader('Trenéři');
                     <th class="text-center">Cviky</th>
                     <th class="text-center">Trén.</th>
                     <th class="text-center">Smaz.</th>
+                    <th>Heslo</th>
                     <th>Stav</th>
                     <th class="text-end">Detail</th>
                 </tr>
@@ -92,11 +94,23 @@ renderAdminHeader('Trenéři');
                     </td>
                     <td class="text-nowrap"><?= $c['last_login'] ? formatDateTime($c['last_login']) : 'Nikdy' ?></td>
                     <td class="text-center">
-                        <a href="<?= BASE_URL ?>/admin/coach_athletes.php?coach_id=<?= (int)$c['id'] ?>" class="badge text-bg-warning text-decoration-none" title="Zobrazit sportovce trenéra"><?= (int)$c['athlete_count'] ?></a>
+                        <a href="<?= BASE_URL ?>/admin/athletes.php?coach_id=<?= (int)$c['id'] ?>" class="badge text-bg-warning text-decoration-none" title="Zobrazit sportovce trenéra"><?= (int)$c['athlete_count'] ?></a>
                     </td>
                     <td class="text-center"><span class="badge text-bg-primary"><?= (int)$c['exercise_count'] ?></span></td>
                     <td class="text-center"><span class="badge text-bg-info"><?= (int)$c['session_count'] ?></span></td>
                     <td class="text-center"><span class="badge text-bg-danger"><?= (int)$c['deleted_session_count'] ?></span></td>
+                    <td>
+                        <div class="small fw-semibold">
+                            <?php if (!empty($c['password'])): ?>
+                                <span class="badge bg-success">Nastaveno</span>
+                            <?php else: ?>
+                                <span class="badge bg-secondary">Bez hesla</span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="small text-muted">
+                            <?= !empty($c['password_changed_at']) ? 'Změna: ' . h(formatDateTime((string)$c['password_changed_at'])) : 'Změna: ' . h(formatDate($c['created_at'])) ?>
+                        </div>
+                    </td>
                     <td>
                         <?php if ($c['is_active']): ?>
                         <span class="badge bg-success"><i class="fas fa-check me-1"></i>Aktivní</span>
@@ -111,13 +125,17 @@ renderAdminHeader('Trenéři');
                     </td>
                 </tr>
                 <tr>
-                    <td colspan="9" class="p-0 border-0">
+                    <td colspan="10" class="p-0 border-0">
                         <div id="<?= $detailId ?>" class="collapse px-3 pt-2 pb-3 bg-body-tertiary border-top">
                             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                                 <div class="small text-muted">Přidán: <?= formatDate($c['created_at']) ?></div>
                                 <a href="<?= BASE_URL ?>/admin/coach_deleted_trainings.php?coach_id=<?= (int)$c['id'] ?>" class="btn btn-outline-danger btn-sm" title="Smazané tréninky">
                                     <i class="fas fa-folder-open me-1"></i>Smazané tréninky
                                 </a>
+                            </div>
+                            <div class="small text-muted mt-2">
+                                <strong>Heslo:</strong> <?= !empty($c['password']) ? 'nastaveno' : 'bez hesla' ?> ·
+                                <strong>Poslední změna:</strong> <?= !empty($c['password_changed_at']) ? formatDateTime((string)$c['password_changed_at']) : formatDate($c['created_at']) ?>
                             </div>
                             <div class="d-flex flex-wrap gap-2 mt-2">
                                 <?php if ($c['is_active']): ?>
@@ -200,6 +218,14 @@ renderAdminHeader('Trenéři');
                         <span class="coach-mobile-row__label">Poslední přihlášení</span>
                         <span><?= $c['last_login'] ? formatDateTime($c['last_login']) : 'Nikdy' ?></span>
                     </div>
+                        <div class="coach-mobile-row">
+                            <span class="coach-mobile-row__label">Heslo</span>
+                            <span><?= !empty($c['password']) ? 'nastaveno' : 'bez hesla' ?></span>
+                        </div>
+                        <div class="coach-mobile-row">
+                            <span class="coach-mobile-row__label">Poslední změna</span>
+                            <span><?= !empty($c['password_changed_at']) ? formatDateTime($c['password_changed_at']) : formatDate($c['created_at']) ?></span>
+                        </div>
                 </div>
 
                 <button class="btn btn-sm btn-outline-secondary w-100 mt-2" type="button" data-bs-toggle="collapse" data-bs-target="#<?= $mobileDetailId ?>" aria-expanded="false" aria-controls="<?= $mobileDetailId ?>">

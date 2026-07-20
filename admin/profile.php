@@ -8,6 +8,7 @@ requireLogin();
 $coachId = getCurrentCoachId();
 $pdo     = getDB();
 $error   = null;
+ensurePasswordAuditColumns($pdo);
 
 // Akce z formuláře
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -58,7 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error = 'Aktuální heslo není správné.';
                 } else {
                     $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
-                    $pdo->prepare('UPDATE coaches SET password = ?, force_password_change = 0 WHERE id = ?')
+                    $pdo->prepare('UPDATE coaches SET password = ?, password_changed_at = NOW(), force_password_change = 0 WHERE id = ?')
                         ->execute([$newHash, $coachId]);
                     $_SESSION['coach_force_password_change'] = 0;
 
@@ -70,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$stmtCoach = $pdo->prepare('SELECT id, username, name, email, created_at FROM coaches WHERE id = ?');
+$stmtCoach = $pdo->prepare('SELECT id, username, name, email, created_at, password, password_changed_at, force_password_change FROM coaches WHERE id = ?');
 $stmtCoach->execute([$coachId]);
 $coach = $stmtCoach->fetch();
 

@@ -1,22 +1,26 @@
 <?php
-require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/admin_auth.php';
 require_once __DIR__ . '/includes/functions.php';
-require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/header.php';
 
-requireLogin();
+requireAdminLogin();
 
-$coachId   = getCurrentCoachId();
 $athleteId = intParam($_GET, 'id');
 $error     = null;
 
 $pdo  = getDB();
-$stmt = $pdo->prepare('SELECT * FROM athletes WHERE id = ? AND coach_id = ?');
-$stmt->execute([$athleteId, $coachId]);
+$stmt = $pdo->prepare(
+    'SELECT a.*, c.name AS coach_name, c.username AS coach_username
+     FROM athletes a
+     LEFT JOIN coaches c ON c.id = a.coach_id
+     WHERE a.id = ?'
+);
+$stmt->execute([$athleteId]);
 $athlete = $stmt->fetch();
 
 if (!$athlete) {
     flash('danger', 'Sportovec nenalezen.');
-    redirect(BASE_URL . '/dashboard.php');
+    redirect(BASE_URL . '/admin/athletes.php');
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -44,24 +48,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 deleteUploadedPhoto($athlete['photo'] ?? null, 'athletes');
                 $stmt = $pdo->prepare(
                     'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, phone_contact=?, email=?, notes=?, photo=?
-                     WHERE id=? AND coach_id=?'
+                     WHERE id=?'
                 );
                 $stmt->execute([
                     $firstName, $lastName, $birthDate, $phone ?: null, $email ?: null, $notes ?: null,
-                    $newPhoto, $athleteId, $coachId,
+                    $newPhoto, $athleteId,
                 ]);
             } else {
                 $stmt = $pdo->prepare(
                     'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, phone_contact=?, email=?, notes=?
-                     WHERE id=? AND coach_id=?'
+                     WHERE id=?'
                 );
                 $stmt->execute([
                     $firstName, $lastName, $birthDate, $phone ?: null, $email ?: null, $notes ?: null,
-                    $athleteId, $coachId,
+                    $athleteId,
                 ]);
             }
             flash('success', 'Údaje sportovce byly aktualizovány.');
-            redirect(BASE_URL . '/athlete_detail.php?id=' . $athleteId);
+            redirect(BASE_URL . '/admin/athletes.php');
         }
     }
 }
@@ -69,13 +73,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Pro zobrazení ve formuláři – při chybě POST data, jinak DB data
 $d = ($_SERVER['REQUEST_METHOD'] === 'POST' && $error) ? $_POST : $athlete;
 
-renderHeader('Upravit sportovce');
+renderAdminHeader('Upravit sportovce');
 ?>
 
 <div class="row justify-content-center">
     <div class="col-lg-6">
         <div class="d-flex align-items-center mb-4">
-            <a href="<?= BASE_URL ?>/athlete_detail.php?id=<?= $athleteId ?>"
+            <a href="<?= BASE_URL ?>/admin/athletes.php"
                class="btn btn-outline-secondary btn-sm me-3">
                 <i class="fas fa-arrow-left"></i>
             </a>
@@ -93,6 +97,10 @@ renderHeader('Upravit sportovce');
             <div class="card-body p-4">
                 <form method="post" enctype="multipart/form-data" novalidate>
                     <?= csrfField() ?>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Trenér</label>
+                        <input type="text" class="form-control" value="<?= h((string)($athlete['coach_name'] ?: $athlete['coach_username'] ?: 'Bez trenéra')) ?>" disabled>
+                    </div>
                     <div class="row g-3 mb-3">
                         <div class="col-sm-6">
                             <label class="form-label fw-semibold">Jméno <span class="text-danger">*</span></label>
@@ -143,7 +151,7 @@ renderHeader('Upravit sportovce');
                         <button type="submit" class="btn btn-warning fw-bold px-4">
                             <i class="fas fa-save me-1"></i>Uložit změny
                         </button>
-                        <a href="<?= BASE_URL ?>/athlete_detail.php?id=<?= $athleteId ?>"
+                        <a href="<?= BASE_URL ?>/admin/athletes.php"
                            class="btn btn-outline-secondary">Zrušit</a>
                     </div>
                 </form>
@@ -152,4 +160,4 @@ renderHeader('Upravit sportovce');
     </div>
 </div>
 
-<?php renderFooter(); ?>
+<?php renderAdminFooter(); ?>

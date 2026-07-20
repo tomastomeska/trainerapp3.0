@@ -62,6 +62,24 @@ if (!function_exists('redirect')) {
     }
 }
 
+if (!function_exists('ensurePasswordAuditColumns')) {
+    function ensurePasswordAuditColumns(PDO $pdo): void {
+        foreach (['coaches', 'athletes'] as $table) {
+            try {
+                $columnStmt = $pdo->query("SHOW COLUMNS FROM {$table} LIKE 'password_changed_at'");
+                $hasColumn = $columnStmt !== false && (bool)$columnStmt->fetch();
+                if (!$hasColumn) {
+                    $pdo->exec("ALTER TABLE {$table} ADD COLUMN password_changed_at DATETIME NULL DEFAULT NULL AFTER password");
+                }
+
+                $pdo->exec("UPDATE {$table} SET password_changed_at = COALESCE(password_changed_at, created_at) WHERE password_changed_at IS NULL");
+            } catch (Throwable $e) {
+                error_log('ensurePasswordAuditColumns error for ' . $table . ': ' . $e->getMessage());
+            }
+        }
+    }
+}
+
 // Vrátí poslední dokončenou session sportovce
 function getLastSession(int $athleteId): ?array {
     $pdo  = getDB();
@@ -283,7 +301,7 @@ function resizeAndSavePhoto(string $inputName, string $subDir, int $maxDim = 192
         return null;
     }
 
-    $dir = dirname(__DIR__) . '/uploads/' . $subDir . '/';
+    $dir = dirname(__DIR__, 2) . '/uploads/' . $subDir . '/';
     if (!is_dir($dir)) {
         mkdir($dir, 0755, true);
     }
@@ -445,7 +463,7 @@ function deleteUploadedPhoto(?string $filename, string $subDir): void {
     if (!$filename) {
         return;
     }
-    $path = dirname(__DIR__) . '/uploads/' . $subDir . '/' . $filename;
+    $path = dirname(__DIR__, 2) . '/uploads/' . $subDir . '/' . $filename;
     if (is_file($path)) {
         unlink($path);
     }

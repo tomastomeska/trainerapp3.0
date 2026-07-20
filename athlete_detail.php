@@ -8,6 +8,7 @@ requireLogin();
 $coachId   = getCurrentCoachId();
 $athleteId = intParam($_GET, 'id');
 $pdo       = getDB();
+ensurePasswordAuditColumns($pdo);
 
 // Ověření vlastnictví
 $stmt = $pdo->prepare('SELECT * FROM athletes WHERE id = ? AND coach_id = ?');
@@ -117,6 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $updLogin = $pdo->prepare(
             'UPDATE athletes
              SET password = ?,
+                 password_changed_at = NOW(),
                  login_enabled = 1,
                  force_password_change = 1
              WHERE id = ? AND coach_id = ?'
@@ -147,6 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'UPDATE athletes
              SET login_enabled = 0,
                  password = NULL,
+                 password_changed_at = NULL,
                  force_password_change = 1
              WHERE id = ? AND coach_id = ?'
         );
@@ -365,6 +368,20 @@ renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']), true, true
                                 <span class="badge bg-success">Aktivní</span>
                             <?php else: ?>
                                 <span class="badge bg-secondary">Nevytvořen</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted fw-semibold">Heslo</td>
+                        <td>
+                            <?php if (!empty($athlete['password'])): ?>
+                                <span class="badge bg-success">Nastaveno</span>
+                                <?php if (!empty($athlete['force_password_change'])): ?>
+                                <span class="badge bg-warning text-dark ms-1">Vyžaduje změnu</span>
+                                <?php endif; ?>
+                                <small class="text-muted d-block">Poslední změna: <?= !empty($athlete['password_changed_at']) ? h(formatDateTime((string)$athlete['password_changed_at'])) : formatDate($athlete['created_at']) ?></small>
+                            <?php else: ?>
+                                <span class="badge bg-secondary">Bez hesla</span>
                             <?php endif; ?>
                         </td>
                     </tr>

@@ -85,13 +85,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             } else {
                 try {
-                    $urlDiagnostics = [];
-                    if (!appleCaldavCalendarUrlAcceptedForTrainerApp($calendarUrl, $username, $appPassword, 'TrainerApp', $urlDiagnostics)) {
+                    $urlProbe = appleCaldavProbeCollectionWritable($calendarUrl, $username, $appPassword);
+                    if (empty($urlProbe['ok'])) {
                         $calendarCreated = false;
                         $calendarUrl = ensureAppleCaldavTrainerAppCalendarUrl($username, $appPassword, 'TrainerApp', $calendarCreated);
                     }
                 } catch (Throwable $e) {
-                    flash('danger', 'Apple CalDAV: zadane URL kalendare TrainerApp se nepodarilo overit ani nahradit spravnym kalendarem. Detail: ' . mb_substr(preg_replace('/\s+/', ' ', trim((string)$e->getMessage())), 0, 220, 'UTF-8') . '.');
+                    flash('danger', 'Apple CalDAV: zadane URL kalendare se nepodarilo overit ani nahradit spravnym kalendarem. Detail: ' . mb_substr(preg_replace('/\s+/', ' ', trim((string)$e->getMessage())), 0, 220, 'UTF-8') . '.');
                     redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
                 }
             }
@@ -181,10 +181,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $calendarUrl = rtrim($calendarUrl, '/') . '/';
         $updateStmt = $pdo->prepare(
             'UPDATE athletes
-             SET apple_caldav_calendar_url = ?,
+             SET apple_caldav_sync_enabled = 1,
+                 apple_caldav_calendar_url = ?,
                  apple_caldav_username = ?,
                  apple_caldav_app_password = ?,
-                 apple_caldav_last_error = NULL
+                 apple_caldav_last_error = NULL,
+                 apple_caldav_last_success_at = NULL
              WHERE id = ?'
         );
         $updateStmt->execute([$calendarUrl, $username, $appPassword, $athleteId]);
@@ -202,7 +204,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        flash('success', 'Apple CalDAV URL pro kalendar TrainerApp byla nastavena: ' . $calendarUrl);
+        // Stejne chovani jako po Ulozit: rovnou naplnit blizke historicke i budouci udalosti sportovce.
+        $seedStmt = $pdo->prepare(
+            'SELECT id
+             FROM coach_calendar_events
+             WHERE (athlete_id = ? OR second_athlete_id = ?)
+               AND starts_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+             ORDER BY starts_at ASC
+             LIMIT 300'
+        );
+        $seedStmt->execute([$athleteId, $athleteId]);
+        $seedIds = $seedStmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+        foreach ($seedIds as $seedEventId) {
+            enqueueAthleteAppleCaldavSync($athleteId, (int)$seedEventId, 'upsert');
+        }
+        processAthleteAppleCaldavSyncQueue(30);
+
+        flash('success', 'Apple CalDAV URL pro kalendar TrainerApp byla nastavena a push synchronizace byla automaticky zapnuta: ' . $calendarUrl);
         redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
     }
 
@@ -558,8 +577,8 @@ renderAthleteHeader('Můj kalendář', false, true);
                     <?php endif; ?>
                 </div>
                 <div class="alert alert-warning py-2 px-3 mt-3 mb-0 small">
-                    <strong>Dulezite:</strong> Nez kliknete na Stahnout Apple profil, overte v iCloud Kalendari, ze existuje kalendar s presnym nazvem <strong>TrainerApp</strong>.
-                    Potom se vratte sem a kliknete na <strong>Ulozit Apple CalDAV sync</strong>, aby se spravna URL kalendare navazala. Bez toho profil negarantuje zapis do kalendare TrainerApp.
+                    <strong>Dulezite:</strong> Po kliknuti na <strong>Vygenerovat URL TrainerApp</strong> se URL navaze a Apple CalDAV push synchronizace se zapne automaticky.
+                    Neni potreba dalsi klik na Ulozit.
                 </div>
             </form>
 
@@ -611,8 +630,8 @@ renderAthleteHeader('Můj kalendář', false, true);
                         <div class="fw-semibold mb-2">2. Doporučený kalendář (jen bez .mobileconfig)</div>
                         <ol class="mb-0 ps-3">
                             <li>Tento postup od bodu 2 platí pouze pokud jste nepoužili nastavovací soubor .mobileconfig.</li>
-                            <li>V Apple Kalendáři si vytvořte samostatný kalendář, ideálně TrainerApp.</li>
-                            <li>Když necháte CalDAV URL prázdnou, systém se pokusí navázat kalendář s názvem TrainerApp.</li>
+                            <li>Neni potreba predem rucne vytvaret kalendar TrainerApp v mobilu.</li>
+                            <li>Kdyz nechate CalDAV URL prazdnou, system hleda cilovy kalendar TrainerApp a kdyz chybi, pokusi se ho vytvorit automaticky.</li>
                             <li>Když se termíny zapisují jinam, vložte sem ručně URL správného kalendáře a znovu uložte.</li>
                         </ol>
                     </div>

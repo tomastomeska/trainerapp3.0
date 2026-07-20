@@ -67,6 +67,10 @@ function renderAdminHeader(string $title = ''): void {
 				   class="nav-link <?= in_array(basename($_SERVER['PHP_SELF']), ['coaches.php','coach_add.php','coach_edit.php','coach_delete.php','coach_deleted_trainings.php','coach_athletes.php']) ? 'active' : '' ?>">
 					<i class="fas fa-user-tie me-2"></i>Trenéři
 				</a>
+				<a href="<?= BASE_URL ?>/admin/athletes.php"
+				   class="nav-link <?= in_array(basename($_SERVER['PHP_SELF']), ['athletes.php','athlete_add.php','athlete_edit.php','athlete_delete.php']) ? 'active' : '' ?>">
+					<i class="fas fa-users me-2"></i>Sportovci
+				</a>
 				<a href="<?= BASE_URL ?>/admin/exercises.php"
 				   class="nav-link <?= in_array(basename($_SERVER['PHP_SELF']), ['exercises.php','exercise_export.php','exercise_import.php']) ? 'active' : '' ?>">
 					<i class="fas fa-globe me-2"></i>Globální cviky

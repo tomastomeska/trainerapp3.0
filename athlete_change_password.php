@@ -7,6 +7,8 @@ requireAthleteLogin(false);
 
 $athleteId = (int)getCurrentAthleteId();
 $error = null;
+$pdo = getDB();
+ensurePasswordAuditColumns($pdo);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
@@ -16,7 +18,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $newPassword = (string)($_POST['new_password'] ?? '');
         $newPassword2 = (string)($_POST['new_password_confirm'] ?? '');
 
-        $pdo = getDB();
         $stmt = $pdo->prepare('SELECT password FROM athletes WHERE id = ? LIMIT 1');
         $stmt->execute([$athleteId]);
         $row = $stmt->fetch();
@@ -29,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Nová hesla se neshodují.';
         } else {
             $hash = password_hash($newPassword, PASSWORD_DEFAULT);
-            $upd = $pdo->prepare('UPDATE athletes SET password = ?, force_password_change = 0 WHERE id = ?');
+            $upd = $pdo->prepare('UPDATE athletes SET password = ?, password_changed_at = NOW(), force_password_change = 0 WHERE id = ?');
             $upd->execute([$hash, $athleteId]);
 
             $_SESSION['athlete_force_password_change'] = 0;

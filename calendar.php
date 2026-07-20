@@ -67,13 +67,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             } else {
                 try {
-                    $urlDiagnostics = [];
-                    if (!appleCaldavCalendarUrlAcceptedForTrainerApp($calendarUrl, $username, $appPassword, 'TrainerApp', $urlDiagnostics)) {
+                    $urlProbe = appleCaldavProbeCollectionWritable($calendarUrl, $username, $appPassword);
+                    if (empty($urlProbe['ok'])) {
                         $calendarCreated = false;
                         $calendarUrl = ensureAppleCaldavTrainerAppCalendarUrl($username, $appPassword, 'TrainerApp', $calendarCreated);
                     }
                 } catch (Throwable $e) {
-                    flash('danger', 'Apple CalDAV: zadane URL kalendare TrainerApp se nepodarilo overit ani nahradit spravnym kalendarem. Detail: ' . mb_substr(preg_replace('/\s+/', ' ', trim((string)$e->getMessage())), 0, 220, 'UTF-8') . '.');
+                    flash('danger', 'Apple CalDAV: zadane URL kalendare se nepodarilo overit ani nahradit spravnym kalendarem. Detail: ' . mb_substr(preg_replace('/\s+/', ' ', trim((string)$e->getMessage())), 0, 220, 'UTF-8') . '.');
                     redirect(BASE_URL . '/calendar.php?tab=apple');
                 }
             }
@@ -143,7 +143,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $calendarUrl = rtrim($calendarUrl, '/') . '/';
         $updateStmt = $pdo->prepare(
             'UPDATE coaches
-             SET apple_caldav_calendar_url = ?,
+             SET apple_caldav_sync_enabled = 1,
+                 apple_caldav_calendar_url = ?,
                  apple_caldav_username = ?,
                  apple_caldav_app_password = ?,
                  apple_caldav_last_error = NULL
@@ -164,7 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        flash('success', 'Apple CalDAV URL pro kalendar TrainerApp byla nastavena: ' . $calendarUrl);
+        flash('success', 'Apple CalDAV URL pro kalendar TrainerApp byla nastavena a push synchronizace byla automaticky zapnuta: ' . $calendarUrl);
         redirect(BASE_URL . '/calendar.php?tab=apple');
     }
 
@@ -635,8 +636,8 @@ renderHeader('Kalendář', false, true);
                         <a href="<?= BASE_URL ?>/apple_caldav_mobileconfig.php" class="btn btn-outline-primary"><i class="fas fa-mobile-screen-button me-1"></i>Stahnout Apple profil (.mobileconfig)</a>
                     </div>
                     <div class="alert alert-warning py-2 px-3 mt-3 mb-0 small">
-                        <strong>Dulezite:</strong> Nez kliknete na Stahnout Apple profil, overte v iCloud Kalendari, ze existuje kalendar s presnym nazvem <strong>TrainerApp</strong>.
-                        Potom se vratte sem a kliknete na <strong>Ulozit Apple CalDAV</strong>, aby se spravna URL kalendare navazala. Bez toho profil negarantuje zapis do kalendare TrainerApp.
+                        <strong>Dulezite:</strong> Po kliknuti na <strong>Vygenerovat URL TrainerApp</strong> se URL navaze a Apple CalDAV push synchronizace se zapne automaticky.
+                        Neni potreba dalsi klik na Ulozit.
                     </div>
                 </form>
 
@@ -690,8 +691,8 @@ renderHeader('Kalendář', false, true);
                         <div class="fw-semibold mb-2">2. Doporučený kalendář (jen bez .mobileconfig)</div>
                         <ol class="mb-0 ps-3">
                             <li>Tento postup od bodu 2 platí pouze pokud jste nepoužili nastavovací soubor .mobileconfig.</li>
-                            <li>Na iPhonu, iPadu nebo Macu si v Apple Kalendáři založte samostatný kalendář, ideálně TrainerApp.</li>
-                            <li>Pokud necháte CalDAV URL prázdnou, systém zkusí vybrat první zapisovatelný kalendář automaticky.</li>
+                            <li>Neni potreba predem rucne vytvaret kalendar TrainerApp v mobilu.</li>
+                            <li>Pokud nechate CalDAV URL prazdnou, system hleda cilovy kalendar TrainerApp a kdyz chybi, pokusi se ho vytvorit automaticky.</li>
                             <li>Když se události zapisují do jiného kalendáře, vložte sem ručně URL správného kalendáře a znovu uložte.</li>
                         </ol>
                     </div>

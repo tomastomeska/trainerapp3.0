@@ -4,6 +4,9 @@ require_once __DIR__ . '/includes/functions.php';
 
 header('Referrer-Policy: no-referrer');
 
+$pdo = getDB();
+ensurePasswordAuditColumns($pdo);
+
 $token = trim((string)($_GET['token'] ?? $_POST['token'] ?? ''));
 $request = getPasswordResetRequestByToken($token);
 $error = null;
@@ -23,16 +26,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($newPassword !== $newPasswordConfirm) {
             $error = 'Hesla se neshodují.';
         } else {
-            $pdo = getDB();
             $hash = password_hash($newPassword, PASSWORD_DEFAULT);
 
             if (($request['user_type'] ?? '') === 'athlete') {
                 $athleteId = (int)($request['athlete_id'] ?? 0);
-                $stmt = $pdo->prepare('UPDATE athletes SET password = ?, force_password_change = 0 WHERE id = ? LIMIT 1');
+                $stmt = $pdo->prepare('UPDATE athletes SET password = ?, password_changed_at = NOW(), force_password_change = 0 WHERE id = ? LIMIT 1');
                 $stmt->execute([$hash, $athleteId]);
             } else {
                 $coachId = (int)($request['coach_id'] ?? 0);
-                $stmt = $pdo->prepare('UPDATE coaches SET password = ? WHERE id = ? LIMIT 1');
+                $stmt = $pdo->prepare('UPDATE coaches SET password = ?, password_changed_at = NOW() WHERE id = ? LIMIT 1');
                 $stmt->execute([$hash, $coachId]);
             }
 

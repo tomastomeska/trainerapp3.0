@@ -195,6 +195,34 @@ renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']));
     </div>
 </div>
 
+<div class="alert alert-light border mb-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+        <div>
+            <div class="fw-semibold mb-1">Přístup do aplikace</div>
+            <div class="small text-muted">V administraci je vidět jen stav a datum poslední změny hesla.</div>
+        </div>
+        <div class="text-end small">
+            <div>
+                <span class="text-muted">Přístup:</span>
+                <?php if (!empty($athlete['login_enabled'])): ?>
+                <span class="badge bg-success">Aktivní</span>
+                <?php else: ?>
+                <span class="badge bg-secondary">Nevytvořen</span>
+                <?php endif; ?>
+            </div>
+            <div class="mt-1">
+                <span class="text-muted">Heslo:</span>
+                <?php if (!empty($athlete['password'])): ?>
+                <span class="badge bg-success">Nastaveno</span>
+                <?php else: ?>
+                <span class="badge bg-secondary">Bez hesla</span>
+                <?php endif; ?>
+            </div>
+            <div class="mt-1 text-muted">Poslední změna: <?= !empty($athlete['password_changed_at']) ? h(formatDateTime((string)$athlete['password_changed_at'])) : '–' ?></div>
+        </div>
+    </div>
+</div>
+
 <div class="d-md-none mb-4">
     <div class="admin-athlete-mobile-card mb-3">
         <div class="admin-athlete-mobile-card__head">

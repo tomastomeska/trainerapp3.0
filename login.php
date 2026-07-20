@@ -112,8 +112,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'screenshot_path' => null,
             ];
 
-            sendSupportTicketNotificationEmail($ticketId, $ticketPayload);
-            sendCoachAccessRequestOwnerEmail(getAdminNotificationEmail(), [
+            $supportTicketEmailsSent = sendSupportTicketNotificationEmail($ticketId, $ticketPayload);
+            $ownerEmailSent = sendCoachAccessRequestOwnerEmail(getAdminNotificationEmail(), [
                 'first_name' => $accessRequest['first_name'],
                 'last_name' => $accessRequest['last_name'],
                 'email' => $accessRequest['email'],
@@ -121,8 +121,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'created_at' => date('Y-m-d H:i:s'),
             ]);
 
-            $noticeType = 'success';
-            $notice = 'Žádost byla odeslána do administrace. Po schválení budete kontaktován na uvedený e-mail.';
+            if ($supportTicketEmailsSent < 1 && !$ownerEmailSent) {
+                $noticeType = 'warning';
+                $notice = 'Žádost byla uložena, ale e-mailovou notifikaci se nepodařilo odeslat. Zkuste to prosím později.';
+            } else {
+                $noticeType = 'success';
+                $notice = 'Žádost byla odeslána do administrace. Po schválení budete kontaktován na uvedený e-mail.';
+            }
             $accessRequest = ['first_name' => '', 'last_name' => '', 'email' => '', 'note' => ''];
         }
     } elseif ($action === 'request_password_reset') {
@@ -182,16 +187,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $host = (string)($_SERVER['HTTP_HOST'] ?? '');
                 $baseUrlAbsolute = $host !== '' ? ($scheme . '://' . $host . BASE_URL) : BASE_URL;
                 $resetUrl = rtrim($baseUrlAbsolute, '/') . '/reset_password.php?token=' . urlencode((string)$reset['token']);
-                sendPasswordResetEmail(
+                $resetEmailSent = sendPasswordResetEmail(
                     $targetEmail,
                     $displayName !== '' ? $displayName : 'uživateli',
                     $resetUrl,
                     $accountType === 'athlete' ? 'sportovec' : 'trenér'
                 );
+                if (!$resetEmailSent) {
+                    $noticeType = 'warning';
+                    $notice = 'Žádost o reset byla zaznamenána, ale e-mail s odkazem se nepodařilo odeslat. Zkontrolujte nastavení pošty.';
+                }
             }
 
-            $noticeType = 'success';
-            $notice = 'Pokud účet existuje, byl na něj odeslán e-mail s odkazem pro reset hesla.';
+            if ($notice === null) {
+                $noticeType = 'success';
+                $notice = 'Pokud účet existuje, byl na něj odeslán e-mail s odkazem pro reset hesla.';
+            }
             $resetRequest = ['account_type' => 'coach', 'identity' => ''];
         }
     } else {
