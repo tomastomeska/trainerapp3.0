@@ -49,8 +49,52 @@ function buildAbsoluteAppUrl(string $path): string
     return $scheme . '://' . $host . BASE_URL . $path;
 }
 
+function getAthleteAppleCaldavBackfillStats(PDO $pdo, int $athleteId): array
+{
+    $stats = [
+        'missing_events' => 0,
+        'queue_pending' => 0,
+        'queue_processing' => 0,
+        'available' => false,
+    ];
+
+    if ($athleteId <= 0 || !athleteAppleCaldavSyncTablesAvailable()) {
+        return $stats;
+    }
+
+    $stats['available'] = true;
+
+    $missingStmt = $pdo->prepare(
+        'SELECT COUNT(*)
+         FROM coach_calendar_events e
+         LEFT JOIN athlete_apple_caldav_event_links l ON l.athlete_id = ? AND l.event_id = e.id
+         WHERE (e.athlete_id = ? OR e.second_athlete_id = ?)
+           AND l.event_id IS NULL'
+    );
+    $missingStmt->execute([$athleteId, $athleteId, $athleteId]);
+    $stats['missing_events'] = (int)$missingStmt->fetchColumn();
+
+    $queueStmt = $pdo->prepare(
+        'SELECT
+            SUM(CASE WHEN status IN ("pending", "failed") THEN 1 ELSE 0 END) AS queue_pending,
+            SUM(CASE WHEN status = "processing" THEN 1 ELSE 0 END) AS queue_processing
+         FROM athlete_apple_caldav_sync_jobs
+         WHERE athlete_id = ?'
+    );
+    $queueStmt->execute([$athleteId]);
+    $queue = $queueStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+    $stats['queue_pending'] = (int)($queue['queue_pending'] ?? 0);
+    $stats['queue_processing'] = (int)($queue['queue_processing'] ?? 0);
+
+    return $stats;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = (string)($_POST['action'] ?? '');
+    if (!empty($_POST['run_apple_caldav_backfill'])) {
+        $action = 'backfill_apple_caldav_history';
+    }
     $actionTab = 'apple';
 
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
@@ -60,6 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'update_apple_caldav_sync') {
         $syncEnabled = !empty($_POST['apple_caldav_sync_enabled']) ? 1 : 0;
+        $previousSyncEnabled = !empty($athlete['apple_caldav_sync_enabled']) ? 1 : 0;
         $calendarUrl = trim((string)($_POST['apple_caldav_calendar_url'] ?? ''));
         $username = trim((string)($_POST['apple_caldav_username'] ?? ''));
         $appPassword = trim((string)($_POST['apple_caldav_app_password'] ?? ''));
@@ -134,31 +179,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        if ($syncEnabled === 1) {
-            // Inicialni naplneni po pripojeni: znovu zapise blizke historicke i budouci udalosti sportovce.
+        if ($syncEnabled === 1 && $previousSyncEnabled === 0) {
+            // Inicialni naplneni po pripojeni: dotahne vsechny chybejici udalosti sportovce bez lokalniho CalDAV linku.
             $seedStmt = $pdo->prepare(
-                'SELECT id
-                 FROM coach_calendar_events
-                 WHERE (athlete_id = ? OR second_athlete_id = ?)
-                   AND starts_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                 ORDER BY starts_at ASC
-                 LIMIT 300'
+                'SELECT e.id
+                 FROM coach_calendar_events e
+                 LEFT JOIN athlete_apple_caldav_event_links l ON l.athlete_id = ? AND l.event_id = e.id
+                 WHERE (e.athlete_id = ? OR e.second_athlete_id = ?)
+                   AND l.event_id IS NULL
+                 ORDER BY e.starts_at ASC
+                 LIMIT 3000'
             );
-            $seedStmt->execute([$athleteId, $athleteId]);
+            $seedStmt->execute([$athleteId, $athleteId, $athleteId]);
             $seedIds = $seedStmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
 
             foreach ($seedIds as $seedEventId) {
                 enqueueAthleteAppleCaldavSync($athleteId, (int)$seedEventId, 'upsert');
             }
-            processAthleteAppleCaldavSyncQueue(30);
+
+            // Bez cronu zpracujeme v jedne akci nekolik mensich davek, aby request netrval prilis dlouho.
+            for ($i = 0; $i < 6; $i++) {
+                $processedBatch = processAthleteAppleCaldavSyncQueue(35);
+                if (count($processedBatch) < 35) {
+                    break;
+                }
+            }
         }
 
-        flash('success', 'Apple CalDAV synchronizace byla uložena.');
+        $saveMessage = 'Apple CalDAV synchronizace byla uložena.';
+        if ($syncEnabled === 1) {
+            $saveStats = getAthleteAppleCaldavBackfillStats($pdo, $athleteId);
+            if (!empty($saveStats['available'])) {
+                $saveRemaining = (int)($saveStats['missing_events'] ?? 0);
+                $savePending = (int)($saveStats['queue_pending'] ?? 0);
+                $saveProcessing = (int)($saveStats['queue_processing'] ?? 0);
+                $saveMessage .= ' Stav prenosu historie: zbyva neprenesenych ' . $saveRemaining . ', ceka ve fronte ' . $savePending;
+                if ($saveProcessing > 0) {
+                    $saveMessage .= ', prave se zpracovava ' . $saveProcessing;
+                }
+                $saveMessage .= '.';
+                if ($saveRemaining > 0) {
+                    $saveMessage .= ' Pro dorovnani historie kliknete na Natáhnout dřívější události.';
+                }
+            }
+        }
+
+        flash('success', $saveMessage);
         redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
     }
 
     if ($action === 'generate_apple_caldav_url') {
         $calendarUrl = '';
+        $previousSyncEnabled = !empty($athlete['apple_caldav_sync_enabled']) ? 1 : 0;
         $username = trim((string)($_POST['apple_caldav_username'] ?? ''));
         $appPassword = trim((string)($_POST['apple_caldav_app_password'] ?? ''));
         $previousCalendarUrl = trim((string)($athlete['apple_caldav_calendar_url'] ?? ''));
@@ -204,24 +276,152 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // Stejne chovani jako po Ulozit: rovnou naplnit blizke historicke i budouci udalosti sportovce.
+        if ($previousSyncEnabled === 0) {
+            // Stejne chovani jako po prvnim zapnuti: dotahne vsechny chybejici udalosti sportovce bez lokalniho CalDAV linku.
+            $seedStmt = $pdo->prepare(
+                'SELECT e.id
+                 FROM coach_calendar_events e
+                 LEFT JOIN athlete_apple_caldav_event_links l ON l.athlete_id = ? AND l.event_id = e.id
+                 WHERE (e.athlete_id = ? OR e.second_athlete_id = ?)
+                   AND l.event_id IS NULL
+                 ORDER BY e.starts_at ASC
+                 LIMIT 3000'
+            );
+            $seedStmt->execute([$athleteId, $athleteId, $athleteId]);
+            $seedIds = $seedStmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+            foreach ($seedIds as $seedEventId) {
+                enqueueAthleteAppleCaldavSync($athleteId, (int)$seedEventId, 'upsert');
+            }
+
+            // Bez cronu zpracujeme v jedne akci nekolik mensich davek, aby request netrval prilis dlouho.
+            for ($i = 0; $i < 6; $i++) {
+                $processedBatch = processAthleteAppleCaldavSyncQueue(35);
+                if (count($processedBatch) < 35) {
+                    break;
+                }
+            }
+        }
+
+        flash('success', 'Apple CalDAV URL pro kalendar TrainerApp byla nastavena a push synchronizace byla automaticky zapnuta: ' . $calendarUrl);
+        redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
+    }
+
+    if ($action === 'backfill_apple_caldav_history') {
+        if (empty($athlete['apple_caldav_sync_enabled'])) {
+            flash('danger', 'Apple CalDAV push synchronizace neni zapnuta. Nejprve ji zapnete.');
+            redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
+        }
+
+        $username = trim((string)($athlete['apple_caldav_username'] ?? ''));
+        $appPassword = trim((string)($athlete['apple_caldav_app_password'] ?? ''));
+        if ($username === '' || $appPassword === '') {
+            flash('danger', 'Chybi Apple ID nebo app-specific heslo.');
+            redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
+        }
+
+        $beforeStats = getAthleteAppleCaldavBackfillStats($pdo, $athleteId);
+
         $seedStmt = $pdo->prepare(
-            'SELECT id
-             FROM coach_calendar_events
-             WHERE (athlete_id = ? OR second_athlete_id = ?)
-               AND starts_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-             ORDER BY starts_at ASC
-             LIMIT 300'
+            'SELECT e.id
+             FROM coach_calendar_events e
+             LEFT JOIN athlete_apple_caldav_event_links l ON l.athlete_id = ? AND l.event_id = e.id
+             WHERE (e.athlete_id = ? OR e.second_athlete_id = ?)
+               AND l.event_id IS NULL
+             ORDER BY e.starts_at ASC
+             LIMIT 5000'
         );
-        $seedStmt->execute([$athleteId, $athleteId]);
+        $seedStmt->execute([$athleteId, $athleteId, $athleteId]);
         $seedIds = $seedStmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
 
         foreach ($seedIds as $seedEventId) {
             enqueueAthleteAppleCaldavSync($athleteId, (int)$seedEventId, 'upsert');
         }
-        processAthleteAppleCaldavSyncQueue(30);
 
-        flash('success', 'Apple CalDAV URL pro kalendar TrainerApp byla nastavena a push synchronizace byla automaticky zapnuta: ' . $calendarUrl);
+        $processed = 0;
+        $failed = 0;
+        for ($i = 0; $i < 8; $i++) {
+            $batch = processAthleteAppleCaldavSyncQueue(35);
+            $processed += count($batch);
+            foreach ($batch as $row) {
+                if ((string)($row['status'] ?? '') === 'failed') {
+                    $failed++;
+                }
+            }
+            if (count($batch) < 35) {
+                break;
+            }
+        }
+
+        $afterStats = getAthleteAppleCaldavBackfillStats($pdo, $athleteId);
+
+        $remaining = (int)($afterStats['missing_events'] ?? 0);
+        $queuePending = (int)($afterStats['queue_pending'] ?? 0);
+        $queueProcessing = (int)($afterStats['queue_processing'] ?? 0);
+        $beforeMissing = (int)($beforeStats['missing_events'] ?? 0);
+        $transferredNow = max(0, $beforeMissing - $remaining);
+
+        $directProcessed = 0;
+        $directFailed = 0;
+        $directFirstError = '';
+        if ($remaining > 0 && $queuePending === 0 && $transferredNow === 0) {
+            // Kdyz je fronta prazdna a nic se neposunulo, zkusime prime dorovnani par prvnich chybejicich udalosti.
+            $directStmt = $pdo->prepare(
+                'SELECT e.id
+                 FROM coach_calendar_events e
+                 LEFT JOIN athlete_apple_caldav_event_links l ON l.athlete_id = ? AND l.event_id = e.id
+                 WHERE (e.athlete_id = ? OR e.second_athlete_id = ?)
+                   AND l.event_id IS NULL
+                 ORDER BY e.starts_at ASC
+                 LIMIT 40'
+            );
+            $directStmt->execute([$athleteId, $athleteId, $athleteId]);
+            $directIds = $directStmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+            foreach ($directIds as $directEventIdRaw) {
+                $directEventId = (int)$directEventIdRaw;
+                if ($directEventId <= 0) {
+                    continue;
+                }
+
+                try {
+                    syncAthleteEventUpsertToAppleCaldav($athleteId, $directEventId);
+                    $directProcessed++;
+                } catch (Throwable $e) {
+                    $directFailed++;
+                    if ($directFirstError === '') {
+                        $directFirstError = trim((string)$e->getMessage());
+                    }
+                }
+            }
+
+            $afterStats = getAthleteAppleCaldavBackfillStats($pdo, $athleteId);
+            $remaining = (int)($afterStats['missing_events'] ?? 0);
+            $queuePending = (int)($afterStats['queue_pending'] ?? 0);
+            $queueProcessing = (int)($afterStats['queue_processing'] ?? 0);
+            $transferredNow = max(0, $beforeMissing - $remaining);
+        }
+
+        $message = 'Dohistoreni Apple CalDAV spusteno. Pred: ' . $beforeMissing
+            . ', preneseno nyni: ' . $transferredNow
+            . ', zarazeno do fronty: ' . count($seedIds)
+            . ', chyby: ' . $failed
+            . ', zbyva nepreneseno: ' . $remaining
+            . ', ceka ve fronte: ' . $queuePending;
+        if ($directProcessed > 0 || $directFailed > 0) {
+            $message .= ', prime dorovnani: uspesne ' . $directProcessed . ', chybne ' . $directFailed;
+        }
+        if ($queueProcessing > 0) {
+            $message .= ', prave se zpracovava: ' . $queueProcessing;
+        }
+        if ($remaining > 0) {
+            $message .= '. Pro dalsi varku kliknete znovu na Natáhnout dřívější události.';
+        }
+        if ($directFirstError !== '') {
+            $message .= ' Prvni chyba: ' . mb_substr(preg_replace('/\s+/', ' ', $directFirstError), 0, 260, 'UTF-8') . '.';
+        }
+
+        flash('success', $message);
         redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
     }
 
@@ -262,6 +462,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $athleteCaldavConnected = !empty($athlete['apple_caldav_username']) && !empty($athlete['apple_caldav_calendar_url']);
+$athleteBackfillStats = getAthleteAppleCaldavBackfillStats($pdo, $athleteId);
 
 $athleteGoogleCalendarUrl = null;
 if (!empty($athlete['apple_calendar_sync_enabled']) && !empty($athlete['apple_calendar_token'])) {
@@ -534,7 +735,7 @@ renderAthleteHeader('Můj kalendář', false, true);
             </div>
             <?php endif; ?>
 
-            <form method="post" class="mb-3">
+            <form method="post" class="mb-3" id="athleteAppleCaldavForm">
                 <?= csrfField() ?>
                 <input type="hidden" name="action" value="update_apple_caldav_sync">
 
@@ -567,6 +768,9 @@ renderAthleteHeader('Můj kalendář', false, true);
                     <button type="submit" class="btn btn-outline-secondary fw-semibold" name="action" value="generate_apple_caldav_url">
                         <i class="fas fa-wand-magic-sparkles me-1"></i>Vygenerovat URL TrainerApp
                     </button>
+                    <button type="submit" class="btn btn-outline-success fw-semibold" name="run_apple_caldav_backfill" value="1" id="athleteBackfillBtn">
+                        <i class="fas fa-rotate me-1"></i><span class="js-btn-label">Natáhnout dřívější události</span>
+                    </button>
                     <a href="<?= BASE_URL ?>/athlete_apple_caldav_mobileconfig.php" class="btn btn-outline-primary">
                         <i class="fas fa-mobile-screen-button me-1"></i>Stahnout Apple profil (.mobileconfig)
                     </a>
@@ -576,6 +780,21 @@ renderAthleteHeader('Můj kalendář', false, true);
                     </button>
                     <?php endif; ?>
                 </div>
+                <?php if (!empty($athleteBackfillStats['available']) && !empty($athlete['apple_caldav_sync_enabled'])): ?>
+                <div class="alert alert-info py-2 px-3 mt-3 mb-0 small">
+                    <strong>Stav přenosu historie:</strong>
+                    Zbývá nepřenesených: <strong><?= (int)$athleteBackfillStats['missing_events'] ?></strong>,
+                    čeká ve frontě: <strong><?= (int)$athleteBackfillStats['queue_pending'] ?></strong>
+                    <?php if ((int)$athleteBackfillStats['queue_processing'] > 0): ?>
+                        , právě se zpracovává: <strong><?= (int)$athleteBackfillStats['queue_processing'] ?></strong>
+                    <?php endif; ?>.
+                    <?php if ((int)$athleteBackfillStats['missing_events'] > 0): ?>
+                        Pokud číslo "Zbývá nepřenesených" neklesne na 0, klikněte znovu na <strong>Natáhnout dřívější události</strong>.
+                    <?php else: ?>
+                        Historie je kompletně přenesená.
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
                 <div class="alert alert-warning py-2 px-3 mt-3 mb-0 small">
                     <strong>Dulezite:</strong> Po kliknuti na <strong>Vygenerovat URL TrainerApp</strong> se URL navaze a Apple CalDAV push synchronizace se zapne automaticky.
                     Neni potreba dalsi klik na Ulozit.
@@ -894,6 +1113,31 @@ document.addEventListener('DOMContentLoaded', () => {
     const athleteMonthNextBtn = document.getElementById('athleteMonthNextBtn');
     const athleteMonthListBody = document.getElementById('athleteMonthListBody');
     const athleteMonthListEmpty = document.getElementById('athleteMonthListEmpty');
+    const athleteAppleCaldavForm = document.getElementById('athleteAppleCaldavForm');
+    const athleteBackfillBtn = document.getElementById('athleteBackfillBtn');
+
+    if (athleteAppleCaldavForm && athleteBackfillBtn) {
+        athleteAppleCaldavForm.addEventListener('submit', (e) => {
+            const submitter = e.submitter;
+            if (!submitter || submitter !== athleteBackfillBtn) {
+                return;
+            }
+
+            if (athleteBackfillBtn.disabled) {
+                e.preventDefault();
+                return;
+            }
+
+            const label = athleteBackfillBtn.querySelector('.js-btn-label');
+            athleteBackfillBtn.disabled = true;
+            athleteBackfillBtn.classList.add('disabled');
+            athleteBackfillBtn.setAttribute('aria-disabled', 'true');
+            if (label) {
+                label.textContent = 'Zpracovávám...';
+            }
+            athleteBackfillBtn.insertAdjacentHTML('afterbegin', '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>');
+        });
+    }
 
     let currentWeekStart = getMonday(new Date());
     let events = [];

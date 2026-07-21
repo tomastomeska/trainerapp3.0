@@ -8,11 +8,13 @@ $limitRaw = isset($_GET['limit']) ? (int)$_GET['limit'] : 30;
 $limit = max(1, min(200, $limitRaw));
 
 try {
+    $bootstrap = bootstrapCoachAppleCaldavMissingEvents(8, 300);
     $coachResults = processCoachAppleCaldavSyncQueue($limit);
     $athleteResults = processAthleteAppleCaldavSyncQueue($limit);
     $results = array_merge($coachResults, $athleteResults);
     echo json_encode([
         'success' => true,
+        'bootstrap' => $bootstrap,
         'processed_coach' => count($coachResults),
         'processed_athlete' => count($athleteResults),
         'processed' => count($results),

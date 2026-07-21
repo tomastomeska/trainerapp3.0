@@ -3488,7 +3488,7 @@ function enqueueCoachAppleCaldavSync(int $coachId, ?int $eventId, string $syncAc
        WHERE coach_id = ?
          AND ((event_id = ?) OR (event_id IS NULL AND ? IS NULL))
          AND sync_action = ?
-         AND status IN ("pending", "failed")'
+         AND status IN ("pending", "failed", "done")'
     );
     $cleanup->execute([$coachId, $eventId, $eventId, $syncAction]);
 
@@ -3572,6 +3572,71 @@ function processCoachAppleCaldavSyncQueue(int $limit = 8): array {
   }
 
   return $results;
+}
+
+function bootstrapCoachAppleCaldavMissingEvents(int $coachLimit = 5, int $eventsPerCoachLimit = 250): array {
+  $summary = [
+    'coaches_scanned' => 0,
+    'jobs_enqueued' => 0,
+  ];
+
+  if (!appleCaldavSyncTablesAvailable()) {
+    return $summary;
+  }
+
+  $pdo = getDB();
+  $coachLimit = max(1, min(100, $coachLimit));
+  $eventsPerCoachLimit = max(1, min(2000, $eventsPerCoachLimit));
+
+  $coachStmt = $pdo->prepare(
+    'SELECT id
+     FROM coaches
+     WHERE apple_caldav_sync_enabled = 1
+       AND apple_caldav_calendar_url IS NOT NULL
+       AND apple_caldav_calendar_url <> ""
+       AND apple_caldav_username IS NOT NULL
+       AND apple_caldav_username <> ""
+       AND apple_caldav_app_password IS NOT NULL
+       AND apple_caldav_app_password <> ""
+     ORDER BY id ASC
+     LIMIT ' . $coachLimit
+  );
+  $coachStmt->execute();
+  $coachIds = $coachStmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+  foreach ($coachIds as $coachIdRaw) {
+    $coachId = (int)$coachIdRaw;
+    if ($coachId <= 0) {
+      continue;
+    }
+
+    $summary['coaches_scanned']++;
+
+    $eventStmt = $pdo->prepare(
+      'SELECT e.id
+       FROM coach_calendar_events e
+       LEFT JOIN coach_apple_caldav_event_links l ON l.coach_id = e.coach_id AND l.event_id = e.id
+       WHERE e.coach_id = ?
+         AND e.starts_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+         AND l.event_id IS NULL
+       ORDER BY e.starts_at ASC
+       LIMIT ' . $eventsPerCoachLimit
+    );
+    $eventStmt->execute([$coachId]);
+    $eventIds = $eventStmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+    foreach ($eventIds as $eventIdRaw) {
+      $eventId = (int)$eventIdRaw;
+      if ($eventId <= 0) {
+        continue;
+      }
+
+      enqueueCoachAppleCaldavSync($coachId, $eventId, 'upsert');
+      $summary['jobs_enqueued']++;
+    }
+  }
+
+  return $summary;
 }
 
 function syncCoachEventUpsertToAppleCaldav(int $coachId, ?int $eventId): void {
@@ -4937,7 +5002,7 @@ function enqueueAthleteAppleCaldavSync(int $athleteId, ?int $eventId, string $sy
        WHERE athlete_id = ?
          AND ((event_id = ?) OR (event_id IS NULL AND ? IS NULL))
          AND sync_action = ?
-         AND status IN ("pending", "failed")'
+         AND status IN ("pending", "failed", "done")'
     );
     $cleanup->execute([$athleteId, $eventId, $eventId, $syncAction]);
 
