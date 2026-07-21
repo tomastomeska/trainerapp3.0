@@ -324,21 +324,26 @@ $coachDisplayName = ($event['coach_name'] ?? '') !== '' ? (string)$event['coach_
 if ($removedFromPairOnly) {
     enqueueCoachGoogleCalendarSync((int)$event['coach_id'], $eventId, 'upsert');
     enqueueCoachAppleCaldavSync((int)$event['coach_id'], $eventId, 'upsert');
+    attemptImmediateCoachAppleCaldavSync((int)$event['coach_id'], $eventId, 'upsert');
     enqueueAthleteAppleCaldavSync($athleteId, $eventId, 'delete');
+    attemptImmediateAthleteAppleCaldavSync($athleteId, $eventId, 'delete');
     $remainingAthleteId = ((int)($event['athlete_id'] ?? 0) === $athleteId)
         ? (int)($event['second_athlete_id'] ?? 0)
         : (int)($event['athlete_id'] ?? 0);
     if ($remainingAthleteId > 0) {
         enqueueAthleteAppleCaldavSync($remainingAthleteId, $eventId, 'upsert');
+        attemptImmediateAthleteAppleCaldavSync($remainingAthleteId, $eventId, 'upsert');
     }
 } else {
     enqueueCoachGoogleCalendarSync((int)$event['coach_id'], $eventId, 'delete');
     enqueueCoachAppleCaldavSync((int)$event['coach_id'], $eventId, 'delete');
+    attemptImmediateCoachAppleCaldavSync((int)$event['coach_id'], $eventId, 'delete');
     enqueueAthleteAppleCaldavSync($athleteId, $eventId, 'delete');
+    attemptImmediateAthleteAppleCaldavSync($athleteId, $eventId, 'delete');
 }
 processCoachGoogleCalendarSyncQueue(4);
-processCoachAppleCaldavSyncQueue(4);
-processAthleteAppleCaldavSyncQueue(4);
+processCoachAppleCaldavSyncQueue(8);
+processAthleteAppleCaldavSyncQueue(8);
 
 $subject = $removedFromPairOnly
     ? "Sportovec zrušil účast na párovém termínu - {$athleteName}"

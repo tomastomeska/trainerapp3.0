@@ -647,13 +647,15 @@ if ($eventId > 0) {
     foreach (array_values(array_unique(array_filter(array_map('intval', $syncedEventIds)))) as $syncEventId) {
         enqueueCoachGoogleCalendarSync($coachId, $syncEventId, 'upsert');
         enqueueCoachAppleCaldavSync($coachId, $syncEventId, 'upsert');
+        attemptImmediateCoachAppleCaldavSync($coachId, $syncEventId, 'upsert');
         foreach (array_values(array_unique(array_filter(array_map('intval', $athleteSyncIds)))) as $athleteSyncId) {
             enqueueAthleteAppleCaldavSync($athleteSyncId, $syncEventId, 'upsert');
+            attemptImmediateAthleteAppleCaldavSync($athleteSyncId, $syncEventId, 'upsert');
         }
     }
     processCoachGoogleCalendarSyncQueue(6);
-    processCoachAppleCaldavSyncQueue(6);
-    processAthleteAppleCaldavSyncQueue(6);
+    processCoachAppleCaldavSyncQueue(8);
+    processAthleteAppleCaldavSyncQueue(8);
 
     echo json_encode(['success' => true, 'id' => $eventId, 'mode' => 'updated', 'approval_status' => $nextApprovalStatus]);
     exit;
@@ -766,16 +768,19 @@ try {
 foreach ($createdIds as $syncEventId) {
     enqueueCoachGoogleCalendarSync($coachId, (int)$syncEventId, 'upsert');
     enqueueCoachAppleCaldavSync($coachId, (int)$syncEventId, 'upsert');
+    attemptImmediateCoachAppleCaldavSync($coachId, (int)$syncEventId, 'upsert');
     if ((int)($athleteId ?? 0) > 0) {
         enqueueAthleteAppleCaldavSync((int)$athleteId, (int)$syncEventId, 'upsert');
+        attemptImmediateAthleteAppleCaldavSync((int)$athleteId, (int)$syncEventId, 'upsert');
     }
     if ((int)($secondAthleteId ?? 0) > 0) {
         enqueueAthleteAppleCaldavSync((int)$secondAthleteId, (int)$syncEventId, 'upsert');
+        attemptImmediateAthleteAppleCaldavSync((int)$secondAthleteId, (int)$syncEventId, 'upsert');
     }
 }
 processCoachGoogleCalendarSyncQueue(6);
-processCoachAppleCaldavSyncQueue(6);
-processAthleteAppleCaldavSyncQueue(6);
+processCoachAppleCaldavSyncQueue(8);
+processAthleteAppleCaldavSyncQueue(8);
 
 echo json_encode([
     'success' => true,

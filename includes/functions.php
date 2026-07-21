@@ -3511,12 +3511,23 @@ function processCoachAppleCaldavSyncQueue(int $limit = 8): array {
   $pdo = getDB();
   $limit = max(1, min(50, $limit));
 
+  $resetStale = $pdo->prepare(
+    'UPDATE coach_apple_caldav_sync_jobs
+     SET status = "failed",
+         last_error = COALESCE(last_error, "Apple CalDAV job byl resetovan po prerusenem nebo timeout requestu."),
+         next_attempt_at = NOW(),
+         updated_at = NOW()
+     WHERE status = "processing"
+       AND updated_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)'
+  );
+  $resetStale->execute();
+
   $jobStmt = $pdo->prepare(
     'SELECT id, coach_id, event_id, sync_action, attempt_count
      FROM coach_apple_caldav_sync_jobs
      WHERE status IN ("pending", "failed")
        AND next_attempt_at <= NOW()
-     ORDER BY id ASC
+     ORDER BY id DESC
      LIMIT ' . $limit
   );
   $jobStmt->execute();
@@ -4960,6 +4971,146 @@ function markCoachAppleCaldavSyncSuccess(int $coachId): void {
   $stmt->execute([$coachId]);
 }
 
+function markCoachAppleCaldavSyncError(int $coachId, string $errorMessage): void {
+  if ($coachId <= 0) {
+    return;
+  }
+
+  $pdo = getDB();
+  $stmt = $pdo->prepare(
+    'UPDATE coaches
+     SET apple_caldav_last_error = ?
+     WHERE id = ?'
+  );
+  $stmt->execute([mb_substr($errorMessage, 0, 2000, 'UTF-8'), $coachId]);
+}
+
+function attemptImmediateCoachAppleCaldavSync(int $coachId, ?int $eventId, string $syncAction = 'upsert'): bool {
+  if ($coachId <= 0 || $eventId === null || $eventId <= 0) {
+    return false;
+  }
+
+  $config = getCoachAppleCaldavConfig($coachId);
+  if (!$config || empty($config['apple_caldav_sync_enabled'])) {
+    return false;
+  }
+
+  $calendarUrl = normalizeAppleCaldavCalendarUrl((string)($config['apple_caldav_calendar_url'] ?? ''));
+  $username = trim((string)($config['apple_caldav_username'] ?? ''));
+  $password = trim((string)($config['apple_caldav_app_password'] ?? ''));
+  if ($calendarUrl === '' || $username === '' || $password === '') {
+    return false;
+  }
+
+  try {
+    if ($syncAction === 'delete') {
+      syncCoachEventDeleteToAppleCaldav($coachId, $eventId);
+      if (appleCaldavSyncTablesAvailable()) {
+        $pdo = getDB();
+        $checkStmt = $pdo->prepare('SELECT COUNT(*) FROM coach_apple_caldav_event_links WHERE coach_id = ? AND event_id = ?');
+        $checkStmt->execute([$coachId, $eventId]);
+        return ((int)$checkStmt->fetchColumn()) === 0;
+      }
+    } else {
+      syncCoachEventUpsertToAppleCaldav($coachId, $eventId);
+      return verifyCoachAppleCaldavRemoteEvent($coachId, $eventId, $username, $password);
+    }
+    return true;
+  } catch (Throwable $e) {
+    markCoachAppleCaldavSyncError($coachId, $e->getMessage());
+    error_log('attemptImmediateCoachAppleCaldavSync error: ' . $e->getMessage());
+    return false;
+  }
+}
+
+function attemptImmediateAthleteAppleCaldavSync(int $athleteId, ?int $eventId, string $syncAction = 'upsert'): bool {
+  if ($athleteId <= 0 || $eventId === null || $eventId <= 0) {
+    return false;
+  }
+
+  $config = getAthleteAppleCaldavConfig($athleteId);
+  if (!$config || empty($config['apple_caldav_sync_enabled'])) {
+    return false;
+  }
+
+  $calendarUrl = normalizeAppleCaldavCalendarUrl((string)($config['apple_caldav_calendar_url'] ?? ''));
+  $username = trim((string)($config['apple_caldav_username'] ?? ''));
+  $password = trim((string)($config['apple_caldav_app_password'] ?? ''));
+  if ($calendarUrl === '' || $username === '' || $password === '') {
+    return false;
+  }
+
+  try {
+    if ($syncAction === 'delete') {
+      syncAthleteEventDeleteToAppleCaldav($athleteId, $eventId);
+      if (athleteAppleCaldavEventLinksTableAvailable()) {
+        $pdo = getDB();
+        $checkStmt = $pdo->prepare('SELECT COUNT(*) FROM athlete_apple_caldav_event_links WHERE athlete_id = ? AND event_id = ?');
+        $checkStmt->execute([$athleteId, $eventId]);
+        return ((int)$checkStmt->fetchColumn()) === 0;
+      }
+    } else {
+      syncAthleteEventUpsertToAppleCaldav($athleteId, $eventId);
+      return verifyAthleteAppleCaldavRemoteEvent($athleteId, $eventId, $username, $password);
+    }
+    return true;
+  } catch (Throwable $e) {
+    markAthleteAppleCaldavSyncError($athleteId, $e->getMessage());
+    error_log('attemptImmediateAthleteAppleCaldavSync error: ' . $e->getMessage());
+    return false;
+  }
+}
+
+function verifyCoachAppleCaldavRemoteEvent(int $coachId, int $eventId, string $username, string $password): bool {
+  if ($coachId <= 0 || $eventId <= 0 || !appleCaldavSyncTablesAvailable()) {
+    return false;
+  }
+
+  $pdo = getDB();
+  $hrefStmt = $pdo->prepare(
+    'SELECT remote_href
+     FROM coach_apple_caldav_event_links
+     WHERE coach_id = ? AND event_id = ?
+     LIMIT 1'
+  );
+  $hrefStmt->execute([$coachId, $eventId]);
+  $remoteHref = trim((string)($hrefStmt->fetchColumn() ?: ''));
+  if ($remoteHref === '') {
+    return false;
+  }
+
+  $response = appleCaldavHttpRequest('GET', $remoteHref, $username, $password, null, []);
+  $status = (int)($response['status'] ?? 0);
+  $body = (string)($response['body'] ?? '');
+
+  return $status === 200 && $body !== '' && stripos($body, 'BEGIN:VEVENT') !== false;
+}
+
+function verifyAthleteAppleCaldavRemoteEvent(int $athleteId, int $eventId, string $username, string $password): bool {
+  if ($athleteId <= 0 || $eventId <= 0 || !athleteAppleCaldavEventLinksTableAvailable()) {
+    return false;
+  }
+
+  $pdo = getDB();
+  $hrefStmt = $pdo->prepare(
+    'SELECT remote_href
+     FROM athlete_apple_caldav_event_links
+     WHERE athlete_id = ? AND event_id = ?
+     LIMIT 1'
+  );
+  $hrefStmt->execute([$athleteId, $eventId]);
+  $remoteHref = trim((string)($hrefStmt->fetchColumn() ?: ''));
+  if ($remoteHref === '') {
+    return false;
+  }
+
+  $response = appleCaldavHttpRequest('GET', $remoteHref, $username, $password, null, []);
+  $status = (int)($response['status'] ?? 0);
+  $body = (string)($response['body'] ?? '');
+
+  return $status === 200 && $body !== '' && stripos($body, 'BEGIN:VEVENT') !== false;
+}
+
 function appleCaldavSyncTablesAvailable(): bool {
   static $available = null;
   if ($available !== null) {
@@ -5032,12 +5183,24 @@ function processAthleteAppleCaldavSyncQueue(int $limit = 8): array {
 
   $pdo = getDB();
   $limit = max(1, min(50, $limit));
+
+  $resetStale = $pdo->prepare(
+    'UPDATE athlete_apple_caldav_sync_jobs
+     SET status = "failed",
+         last_error = COALESCE(last_error, "Apple CalDAV job byl resetovan po prerusenem nebo timeout requestu."),
+         next_attempt_at = NOW(),
+         updated_at = NOW()
+     WHERE status = "processing"
+       AND updated_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)'
+  );
+  $resetStale->execute();
+
   $jobStmt = $pdo->prepare(
     'SELECT id, athlete_id, event_id, sync_action, attempt_count
      FROM athlete_apple_caldav_sync_jobs
      WHERE status IN ("pending", "failed")
        AND next_attempt_at <= NOW()
-     ORDER BY id ASC
+     ORDER BY id DESC
      LIMIT ' . $limit
   );
   $jobStmt->execute();
@@ -5297,6 +5460,55 @@ function purgeAthleteAppleCaldavRemoteEvents(int $athleteId, string $username, s
   return ['deleted' => $deleted, 'failed' => $failed];
 }
 
+function cleanupAthleteAppleCaldavOrphanedRemoteEvents(int $athleteId, string $username, string $password): array {
+  if ($athleteId <= 0 || !athleteAppleCaldavEventLinksTableAvailable()) {
+    return ['deleted' => 0, 'failed' => 0, 'matched' => 0];
+  }
+
+  $username = trim($username);
+  $password = trim($password);
+  if ($username === '' || $password === '') {
+    throw new RuntimeException('Athlete Apple CalDAV cleanup: chybi prihlasovaci udaje.');
+  }
+
+  $pdo = getDB();
+  $stmt = $pdo->prepare(
+    'SELECT l.event_id, l.remote_href
+     FROM athlete_apple_caldav_event_links l
+     LEFT JOIN coach_calendar_events e ON e.id = l.event_id AND (e.athlete_id = ? OR e.second_athlete_id = ?)
+     WHERE l.athlete_id = ?
+       AND e.id IS NULL'
+  );
+  $stmt->execute([$athleteId, $athleteId, $athleteId]);
+  $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+  $deleted = 0;
+  $failed = 0;
+  foreach ($rows as $row) {
+    $eventId = (int)($row['event_id'] ?? 0);
+    $remoteHref = trim((string)($row['remote_href'] ?? ''));
+    if ($eventId <= 0 || $remoteHref === '') {
+      continue;
+    }
+
+    try {
+      $response = appleCaldavHttpRequest('DELETE', $remoteHref, $username, $password, null, []);
+      $status = (int)($response['status'] ?? 0);
+      if (in_array($status, [200, 202, 204, 404], true)) {
+        $deleteStmt = $pdo->prepare('DELETE FROM athlete_apple_caldav_event_links WHERE athlete_id = ? AND event_id = ?');
+        $deleteStmt->execute([$athleteId, $eventId]);
+        $deleted++;
+      } else {
+        $failed++;
+      }
+    } catch (Throwable $e) {
+      $failed++;
+    }
+  }
+
+  return ['deleted' => $deleted, 'failed' => $failed, 'matched' => count($rows)];
+}
+
 function purgeCoachAppleCaldavRemoteEvents(int $coachId, string $username, string $password): array {
   if ($coachId <= 0 || !appleCaldavSyncTablesAvailable()) {
     return ['deleted' => 0, 'failed' => 0];
@@ -5342,6 +5554,55 @@ function purgeCoachAppleCaldavRemoteEvents(int $coachId, string $username, strin
   }
 
   return ['deleted' => $deleted, 'failed' => $failed];
+}
+
+function cleanupCoachAppleCaldavOrphanedRemoteEvents(int $coachId, string $username, string $password): array {
+  if ($coachId <= 0 || !appleCaldavSyncTablesAvailable()) {
+    return ['deleted' => 0, 'failed' => 0, 'matched' => 0];
+  }
+
+  $username = trim($username);
+  $password = trim($password);
+  if ($username === '' || $password === '') {
+    throw new RuntimeException('Apple CalDAV cleanup: chybi prihlasovaci udaje.');
+  }
+
+  $pdo = getDB();
+  $stmt = $pdo->prepare(
+    'SELECT l.event_id, l.remote_href
+     FROM coach_apple_caldav_event_links l
+     LEFT JOIN coach_calendar_events e ON e.id = l.event_id AND e.coach_id = ?
+     WHERE l.coach_id = ?
+       AND e.id IS NULL'
+  );
+  $stmt->execute([$coachId, $coachId]);
+  $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+  $deleted = 0;
+  $failed = 0;
+  foreach ($rows as $row) {
+    $eventId = (int)($row['event_id'] ?? 0);
+    $remoteHref = trim((string)($row['remote_href'] ?? ''));
+    if ($eventId <= 0 || $remoteHref === '') {
+      continue;
+    }
+
+    try {
+      $response = appleCaldavHttpRequest('DELETE', $remoteHref, $username, $password, null, []);
+      $status = (int)($response['status'] ?? 0);
+      if (in_array($status, [200, 202, 204, 404], true)) {
+        $deleteStmt = $pdo->prepare('DELETE FROM coach_apple_caldav_event_links WHERE coach_id = ? AND event_id = ?');
+        $deleteStmt->execute([$coachId, $eventId]);
+        $deleted++;
+      } else {
+        $failed++;
+      }
+    } catch (Throwable $e) {
+      $failed++;
+    }
+  }
+
+  return ['deleted' => $deleted, 'failed' => $failed, 'matched' => count($rows)];
 }
 
 function getAthleteAppleCaldavConfig(int $athleteId): ?array {

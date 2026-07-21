@@ -284,13 +284,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $beforeStats = getCoachAppleCaldavBackfillStats($pdo, $coachId);
 
-                $seedStmt = $pdo->prepare(
-                        'SELECT e.id
-                         FROM coach_calendar_events e
-                         WHERE e.coach_id = ?
-                         ORDER BY e.starts_at ASC
-                         LIMIT 5000'
-                );
+            $seedStmt = $pdo->prepare(
+                'SELECT e.id
+                 FROM coach_calendar_events e
+                 LEFT JOIN coach_apple_caldav_event_links l ON l.coach_id = e.coach_id AND l.event_id = e.id
+                 WHERE e.coach_id = ?
+                   AND l.event_id IS NULL
+                 ORDER BY e.starts_at ASC
+                 LIMIT 5000'
+            );
         $seedStmt->execute([$coachId]);
         $seedIds = $seedStmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
 
@@ -382,6 +384,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         flash('success', $message);
+        redirect(BASE_URL . '/calendar.php?tab=apple');
+    }
+
+    if ($action === 'cleanup_apple_caldav_deleted') {
+        $username = trim((string)($coach['apple_caldav_username'] ?? ''));
+        $appPassword = trim((string)($coach['apple_caldav_app_password'] ?? ''));
+        if ($username === '' || $appPassword === '') {
+            flash('danger', 'Chybi Apple ID nebo app-specific heslo.');
+            redirect(BASE_URL . '/calendar.php?tab=apple');
+        }
+
+        try {
+            $cleanup = cleanupCoachAppleCaldavOrphanedRemoteEvents($coachId, $username, $appPassword);
+            flash('success', 'Cleanup smazaných Apple událostí dokončen. Nalezeno osiřelých: ' . (int)($cleanup['matched'] ?? 0) . ', smazáno v iCloudu: ' . (int)($cleanup['deleted'] ?? 0) . ', chyby: ' . (int)($cleanup['failed'] ?? 0) . '.');
+        } catch (Throwable $e) {
+            flash('danger', 'Cleanup smazaných Apple událostí selhal: ' . mb_substr(preg_replace('/\s+/', ' ', trim((string)$e->getMessage())), 0, 260, 'UTF-8') . '.');
+        }
         redirect(BASE_URL . '/calendar.php?tab=apple');
     }
 
@@ -882,6 +901,7 @@ renderHeader('Kalendář', false, true);
                         <button type="submit" class="btn btn-warning fw-semibold"><i class="fas fa-save me-1"></i>Ulozit Apple CalDAV</button>
                         <button type="submit" class="btn btn-outline-secondary fw-semibold" name="action" value="generate_apple_caldav_url"><i class="fas fa-wand-magic-sparkles me-1"></i>Vygenerovat URL TrainerApp</button>
                         <button type="submit" class="btn btn-outline-success fw-semibold" name="run_apple_caldav_backfill" value="1" id="appleBackfillBtn"><i class="fas fa-rotate me-1"></i><span class="js-btn-label">Natáhnout dřívější události</span></button>
+                        <button type="submit" class="btn btn-outline-dark fw-semibold" name="action" value="cleanup_apple_caldav_deleted"><i class="fas fa-broom me-1"></i>Smazat staré z iPhonu</button>
                         <button type="submit" class="btn btn-outline-danger" name="action" value="disconnect_apple_caldav_sync" onclick="return confirm('Odpojit Apple CalDAV ucet?')"><i class="fas fa-link-slash me-1"></i>Odpojit ucet</button>
                         <a href="<?= BASE_URL ?>/apple_caldav_mobileconfig.php" class="btn btn-outline-primary"><i class="fas fa-mobile-screen-button me-1"></i>Stahnout Apple profil (.mobileconfig)</a>
                     </div>

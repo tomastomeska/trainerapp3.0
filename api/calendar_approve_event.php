@@ -75,15 +75,18 @@ $updateStmt->execute([$eventId, $coachId]);
 
 enqueueCoachGoogleCalendarSync($coachId, $eventId, 'upsert');
 enqueueCoachAppleCaldavSync($coachId, $eventId, 'upsert');
+attemptImmediateCoachAppleCaldavSync($coachId, $eventId, 'upsert');
 if ((int)($event['athlete_id'] ?? 0) > 0) {
     enqueueAthleteAppleCaldavSync((int)$event['athlete_id'], $eventId, 'upsert');
+    attemptImmediateAthleteAppleCaldavSync((int)$event['athlete_id'], $eventId, 'upsert');
 }
 if ((int)($event['second_athlete_id'] ?? 0) > 0) {
     enqueueAthleteAppleCaldavSync((int)$event['second_athlete_id'], $eventId, 'upsert');
+    attemptImmediateAthleteAppleCaldavSync((int)$event['second_athlete_id'], $eventId, 'upsert');
 }
 processCoachGoogleCalendarSyncQueue(4);
-processCoachAppleCaldavSyncQueue(4);
-processAthleteAppleCaldavSyncQueue(4);
+processCoachAppleCaldavSyncQueue(8);
+processAthleteAppleCaldavSyncQueue(8);
 
 $athleteId = (int)($event['athlete_id'] ?? 0);
 if ($athleteId > 0) {

@@ -250,6 +250,7 @@ foreach ($eventsToCancel as $cancelEvent) {
 foreach (array_values(array_unique($deletedEventIds)) as $deletedEventId) {
     enqueueCoachGoogleCalendarSync($coachId, $deletedEventId, 'delete');
     enqueueCoachAppleCaldavSync($coachId, $deletedEventId, 'delete');
+    attemptImmediateCoachAppleCaldavSync($coachId, $deletedEventId, 'delete');
 
     foreach ($eventsToCancel as $cancelEvent) {
         if ((int)($cancelEvent['id'] ?? 0) !== (int)$deletedEventId) {
@@ -257,15 +258,17 @@ foreach (array_values(array_unique($deletedEventIds)) as $deletedEventId) {
         }
         if ((int)($cancelEvent['athlete_id'] ?? 0) > 0) {
             enqueueAthleteAppleCaldavSync((int)$cancelEvent['athlete_id'], $deletedEventId, 'delete');
+            attemptImmediateAthleteAppleCaldavSync((int)$cancelEvent['athlete_id'], $deletedEventId, 'delete');
         }
         if ((int)($cancelEvent['second_athlete_id'] ?? 0) > 0) {
             enqueueAthleteAppleCaldavSync((int)$cancelEvent['second_athlete_id'], $deletedEventId, 'delete');
+            attemptImmediateAthleteAppleCaldavSync((int)$cancelEvent['second_athlete_id'], $deletedEventId, 'delete');
         }
     }
 }
 processCoachGoogleCalendarSyncQueue(6);
-processCoachAppleCaldavSyncQueue(6);
-processAthleteAppleCaldavSyncQueue(6);
+processCoachAppleCaldavSyncQueue(8);
+processAthleteAppleCaldavSyncQueue(8);
 
 $participants = [];
 if (!empty($event['athlete_id'])) {

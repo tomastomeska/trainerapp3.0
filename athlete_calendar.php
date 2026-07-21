@@ -322,14 +322,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $beforeStats = getAthleteAppleCaldavBackfillStats($pdo, $athleteId);
 
-                $seedStmt = $pdo->prepare(
-                        'SELECT e.id
-                         FROM coach_calendar_events e
-                         WHERE (e.athlete_id = ? OR e.second_athlete_id = ?)
-                         ORDER BY e.starts_at ASC
-                         LIMIT 5000'
-                );
-        $seedStmt->execute([$athleteId, $athleteId]);
+            $seedStmt = $pdo->prepare(
+                'SELECT e.id
+                 FROM coach_calendar_events e
+                 LEFT JOIN athlete_apple_caldav_event_links l ON l.athlete_id = ? AND l.event_id = e.id
+                 WHERE (e.athlete_id = ? OR e.second_athlete_id = ?)
+                   AND l.event_id IS NULL
+                 ORDER BY e.starts_at ASC
+                 LIMIT 5000'
+            );
+            $seedStmt->execute([$athleteId, $athleteId, $athleteId]);
         $seedIds = $seedStmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
 
         foreach ($seedIds as $seedEventId) {
@@ -420,6 +422,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         flash('success', $message);
+        redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
+    }
+
+    if ($action === 'cleanup_apple_caldav_deleted') {
+        $username = trim((string)($athlete['apple_caldav_username'] ?? ''));
+        $appPassword = trim((string)($athlete['apple_caldav_app_password'] ?? ''));
+        if ($username === '' || $appPassword === '') {
+            flash('danger', 'Chybi Apple ID nebo app-specific heslo.');
+            redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
+        }
+
+        try {
+            $cleanup = cleanupAthleteAppleCaldavOrphanedRemoteEvents($athleteId, $username, $appPassword);
+            flash('success', 'Cleanup smazaných Apple událostí dokončen. Nalezeno osiřelých: ' . (int)($cleanup['matched'] ?? 0) . ', smazáno v iCloudu: ' . (int)($cleanup['deleted'] ?? 0) . ', chyby: ' . (int)($cleanup['failed'] ?? 0) . '.');
+        } catch (Throwable $e) {
+            flash('danger', 'Cleanup smazaných Apple událostí selhal: ' . mb_substr(preg_replace('/\s+/', ' ', trim((string)$e->getMessage())), 0, 260, 'UTF-8') . '.');
+        }
         redirect(BASE_URL . '/athlete_calendar.php?tab=apple');
     }
 
@@ -800,6 +819,9 @@ renderAthleteHeader('Můj kalendář', false, true);
                     </button>
                     <button type="submit" class="btn btn-outline-success fw-semibold" name="run_apple_caldav_backfill" value="1" id="athleteBackfillBtn">
                         <i class="fas fa-rotate me-1"></i><span class="js-btn-label">Natáhnout dřívější události</span>
+                    </button>
+                    <button type="submit" class="btn btn-outline-dark fw-semibold" name="action" value="cleanup_apple_caldav_deleted">
+                        <i class="fas fa-broom me-1"></i>Smazat staré z iPhonu
                     </button>
                     <a href="<?= BASE_URL ?>/athlete_apple_caldav_mobileconfig.php" class="btn btn-outline-primary">
                         <i class="fas fa-mobile-screen-button me-1"></i>Stahnout Apple profil (.mobileconfig)
@@ -1891,6 +1913,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!result.success) {
             alert(result.error || 'Nepodařilo se vytvořit rezervaci.');
             return;
+        }
+
+        if (result.athlete_apple_sync_ok === false) {
+            alert('Událost byla uložena, ale okamžitý Apple sync sportovce selhal. Otevřete prosím záložku Apple Kalendář a zkontrolujte poslední chybu synchronizace.');
         }
 
         invalidateReserveMakeupSuggestionCache();

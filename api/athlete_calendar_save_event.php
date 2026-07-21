@@ -575,9 +575,16 @@ createAthleteNotification($athleteId, 'Požadavek odeslán ke schválení', "Tv�
 
 enqueueCoachGoogleCalendarSync((int)$athlete['coach_id'], $newEventId, 'upsert');
 enqueueCoachAppleCaldavSync((int)$athlete['coach_id'], $newEventId, 'upsert');
+$coachAppleSyncOk = attemptImmediateCoachAppleCaldavSync((int)$athlete['coach_id'], $newEventId, 'upsert');
 enqueueAthleteAppleCaldavSync($athleteId, $newEventId, 'upsert');
+$athleteAppleSyncOk = attemptImmediateAthleteAppleCaldavSync($athleteId, $newEventId, 'upsert');
 processCoachGoogleCalendarSyncQueue(4);
-processCoachAppleCaldavSyncQueue(4);
-processAthleteAppleCaldavSyncQueue(4);
+processCoachAppleCaldavSyncQueue(8);
+processAthleteAppleCaldavSyncQueue(8);
 
-echo json_encode(['success' => true, 'message' => 'Požadavek byl odeslán ke schválení.']);
+echo json_encode([
+    'success' => true,
+    'message' => 'Požadavek byl odeslán ke schválení.',
+    'coach_apple_sync_ok' => $coachAppleSyncOk,
+    'athlete_apple_sync_ok' => $athleteAppleSyncOk,
+]);
