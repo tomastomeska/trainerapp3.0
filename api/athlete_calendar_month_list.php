@@ -41,9 +41,11 @@ $eventsStmt = $pdo->prepare(
             e.ends_at,
             e.approval_status,
             e.is_makeup_session,
+         CASE WHEN ael.event_id IS NULL THEN 0 ELSE 1 END AS is_caldav_synced,
             e.athlete_id,
             e.second_athlete_id
      FROM coach_calendar_events e
+     LEFT JOIN athlete_apple_caldav_event_links ael ON ael.athlete_id = ? AND ael.event_id = e.id
      WHERE e.coach_id = ?
        AND e.starts_at >= ?
        AND e.starts_at < ?
@@ -52,6 +54,7 @@ $eventsStmt = $pdo->prepare(
      ORDER BY e.starts_at ASC, e.id ASC"
 );
 $eventsStmt->execute([
+    $athleteId,
     (int)$athlete['coach_id'],
     $monthStart->format('Y-m-d H:i:s'),
     $monthEnd->format('Y-m-d H:i:s'),
@@ -71,6 +74,7 @@ $cancellationsStmt = $pdo->prepare(
             c.ends_at,
             c.approval_status,
             c.is_makeup_session,
+            0 AS is_caldav_synced,
             c.athlete_id,
             c.second_athlete_id
      FROM coach_calendar_event_cancellations c
@@ -136,6 +140,7 @@ foreach ($rows as $row) {
     $items[] = [
         'id' => (int)($row['id'] ?? 0),
         'record_type' => (string)($row['record_type'] ?? 'active'),
+        'is_caldav_synced' => (int)($row['is_caldav_synced'] ?? 0) === 1,
         'date_label' => $startTs !== false ? date('d.m.Y', $startTs) : '-',
         'time_label' => ($startTs !== false && $endTs !== false) ? (date('H:i', $startTs) . ' - ' . date('H:i', $endTs)) : '-',
         'type_label' => $typeLabel,

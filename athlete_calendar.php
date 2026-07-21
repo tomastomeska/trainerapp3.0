@@ -322,16 +322,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $beforeStats = getAthleteAppleCaldavBackfillStats($pdo, $athleteId);
 
-        $seedStmt = $pdo->prepare(
-            'SELECT e.id
-             FROM coach_calendar_events e
-             LEFT JOIN athlete_apple_caldav_event_links l ON l.athlete_id = ? AND l.event_id = e.id
-             WHERE (e.athlete_id = ? OR e.second_athlete_id = ?)
-               AND l.event_id IS NULL
-             ORDER BY e.starts_at ASC
-             LIMIT 5000'
-        );
-        $seedStmt->execute([$athleteId, $athleteId, $athleteId]);
+                $seedStmt = $pdo->prepare(
+                        'SELECT e.id
+                         FROM coach_calendar_events e
+                         WHERE (e.athlete_id = ? OR e.second_athlete_id = ?)
+                         ORDER BY e.starts_at ASC
+                         LIMIT 5000'
+                );
+        $seedStmt->execute([$athleteId, $athleteId]);
         $seedIds = $seedStmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
 
         foreach ($seedIds as $seedEventId) {
@@ -462,6 +460,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $athleteCaldavConnected = !empty($athlete['apple_caldav_username']) && !empty($athlete['apple_caldav_calendar_url']);
+$athleteAppleCaldavActive = !empty($athlete['apple_caldav_sync_enabled']);
 $athleteBackfillStats = getAthleteAppleCaldavBackfillStats($pdo, $athleteId);
 
 $athleteGoogleCalendarUrl = null;
@@ -517,6 +516,36 @@ renderAthleteHeader('Můj kalendář', false, true);
     position: sticky;
     top: 0;
     z-index: 2;
+}
+
+.icloud-sync-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.24);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    font-size: .66rem;
+    margin-right: .28rem;
+}
+
+.icloud-sync-legend {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    font-size: .78rem;
+    color: #374151;
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    border-radius: 999px;
+    padding: .18rem .55rem;
+}
+
+.ios-add-disabled {
+    pointer-events: none;
+    opacity: .55;
 }
 
 .calendar-grid .time-col {
@@ -659,6 +688,7 @@ renderAthleteHeader('Můj kalendář', false, true);
             <span class="badge" style="background:#f97316;color:#fff">Ke schválení</span>
             <span class="badge" style="background:#374151;color:#fff">Obsazeno</span>
             <span class="badge" style="background:#9ca3af;color:#111827">Nelze zrušit</span>
+            <span class="icloud-sync-legend"><span class="icloud-sync-mark">☁</span>Synchronizováno do iCloud</span>
             <span class="badge text-bg-secondary">Uzamčeno</span>
         </div>
     </div>
@@ -983,6 +1013,9 @@ renderAthleteHeader('Můj kalendář', false, true);
                 <div class="alert alert-light border mt-3 mb-0 py-2" id="eventDetailCancelInfo">Tento termín lze zrušit.</div>
             </div>
             <div class="modal-footer">
+                <a href="#" class="btn btn-outline-primary" id="eventDetailAddToIosBtn" target="_blank" rel="noopener">
+                    <i class="fas fa-mobile-screen-button me-1"></i>Přidat do iOS kalendáře
+                </a>
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Zavřít</button>
                 <button type="button" class="btn btn-danger" id="eventDetailCancelBtn">
                     <i class="fas fa-trash-alt me-1"></i>Zrušit událost
@@ -1107,6 +1140,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const eventDetailStatusEl = document.getElementById('eventDetailStatus');
     const eventDetailPaymentInfoEl = document.getElementById('eventDetailPaymentInfo');
     const eventDetailCancelInfoEl = document.getElementById('eventDetailCancelInfo');
+    const eventDetailAddToIosBtn = document.getElementById('eventDetailAddToIosBtn');
     const eventDetailCancelBtn = document.getElementById('eventDetailCancelBtn');
     const athleteMonthInput = document.getElementById('athleteMonthInput');
     const athleteMonthPrevBtn = document.getElementById('athleteMonthPrevBtn');
@@ -1115,6 +1149,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const athleteMonthListEmpty = document.getElementById('athleteMonthListEmpty');
     const athleteAppleCaldavForm = document.getElementById('athleteAppleCaldavForm');
     const athleteBackfillBtn = document.getElementById('athleteBackfillBtn');
+    const athleteAppleCaldavActive = <?= !empty($athleteAppleCaldavActive) ? 'true' : 'false' ?>;
 
     if (athleteAppleCaldavForm && athleteBackfillBtn) {
         athleteAppleCaldavForm.addEventListener('submit', (e) => {
@@ -1271,6 +1306,16 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/'/g, '&#39;');
     }
 
+    function getIcloudSyncBadgeHtml(event, dark = false) {
+        if (!event || !event.is_caldav_synced) {
+            return '';
+        }
+        const style = dark
+            ? 'background:rgba(17,24,39,.14);border-color:rgba(17,24,39,.35);color:#111827;'
+            : '';
+        return `<span class="icloud-sync-mark" title="Synchronizováno do iCloud" aria-label="Synchronizováno do iCloud" style="${style}">☁</span>`;
+    }
+
     function dayPilotDateToJs(value) {
         if (!value) return null;
         const raw = typeof value.toString === 'function' ? value.toString() : String(value);
@@ -1375,7 +1420,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const timeLabel = `${formatTimeCs(startDate)} - ${formatTimeCs(endDate)}`;
         const detailLine = event.is_foreign
             ? timeLabel
-            : [timeLabel, event.location ? `Místo: ${event.location}` : 'Místo: -'].filter(Boolean).join('\n');
+            : [event.location ? `Místo: ${event.location}` : 'Místo: -', timeLabel].filter(Boolean).join('\n');
         const place = event.is_foreign ? '' : (event.location ? `\nMísto: ${event.location}` : '');
         const time = `\nČas: ${formatTimeCs(startDate)} - ${formatTimeCs(endDate)}`;
         const color = getEventColorScheme(event);
@@ -1386,15 +1431,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const canCancel = Boolean(event.can_cancel ?? ownedByAthlete);
         const nonCancelableOwnedEvent = ownedByAthlete && !canCancel;
         const isForeign = Boolean(event.is_foreign);
+        const syncBadgeHtml = getIcloudSyncBadgeHtml(event);
 
         return {
             id: String(event.id),
             text: [title, detailLine].filter(Boolean).join('\n'),
+            html: isForeign
+                ? `<div style="font-weight:700;line-height:1.15;font-size:12px;">${escapeHtml(title)}</div><div style="font-size:11px;line-height:1.15;margin-top:2px;">${escapeHtml(timeLabel)}</div>`
+                : `<div style="display:flex;align-items:center;font-weight:700;line-height:1.15;font-size:12px;">${syncBadgeHtml}<span>${escapeHtml(title)}</span></div><div style="font-size:11px;line-height:1.15;margin-top:2px;">${escapeHtml(event.location || 'Bez místa')}</div><div style="font-size:11px;line-height:1.15;margin-top:2px;">${escapeHtml(timeLabel)}</div>`,
             toolTip: isForeign
                 ? `${title}${time}`
                 : `${title}${time}${place}${statusLine}`
                 + (paymentLabel ? `\nStav úhrady: ${paymentLabel}` : '')
-                + (nonCancelableOwnedEvent ? '\nPoznámka: Tento termín už nelze zrušit.' : ''),
+                + (nonCancelableOwnedEvent ? '\nPoznámka: Tento termín už nelze zrušit.' : '')
+                + (event.is_caldav_synced ? '\nSynchronizováno do iCloud' : ''),
             start: toDateTimeSecondsValue(startDate),
             end: toDateTimeSecondsValue(endDate),
             backColor: color.backColor,
@@ -1430,6 +1480,20 @@ document.addEventListener('DOMContentLoaded', () => {
         eventDetailWhenEl.textContent = `${formatDateCs(startDate)} ${formatTimeCs(startDate)} - ${formatTimeCs(endDate)}`;
         eventDetailLocationEl.textContent = event.location || '-';
         eventDetailStatusEl.textContent = statusMeta.label || 'Schváleno';
+
+        if (eventDetailAddToIosBtn) {
+            if (athleteAppleCaldavActive) {
+                eventDetailAddToIosBtn.classList.add('ios-add-disabled');
+                eventDetailAddToIosBtn.setAttribute('aria-disabled', 'true');
+                eventDetailAddToIosBtn.setAttribute('title', 'Ruční přidání je vypnuté, protože máte aktivní Apple CalDAV synchronizaci.');
+                eventDetailAddToIosBtn.href = '#';
+            } else {
+                eventDetailAddToIosBtn.classList.remove('ios-add-disabled');
+                eventDetailAddToIosBtn.removeAttribute('aria-disabled');
+                eventDetailAddToIosBtn.removeAttribute('title');
+                eventDetailAddToIosBtn.href = `<?= BASE_URL ?>/api/athlete_calendar_event_ics.php?event_id=${encodeURIComponent(String(event.id || ''))}`;
+            }
+        }
 
         if (String(event.payment_status || '') === 'paid') {
             eventDetailPaymentInfoEl.textContent = 'Tato událost patří do již uhrazeného období.';
@@ -1733,8 +1797,11 @@ document.addEventListener('DOMContentLoaded', () => {
         athleteMonthListEmpty.classList.add('d-none');
         items.forEach((item) => {
             const tr = document.createElement('tr');
+            const monthSyncBadge = item.is_caldav_synced
+                ? '<span class="icloud-sync-mark" style="background:#e0e7ff;border-color:#c7d2fe;color:#1e3a8a;" title="Synchronizováno do iCloud">☁</span>'
+                : '';
             tr.innerHTML = `
-                <td>${escapeHtml(item.type_label || '-')}</td>
+                <td>${monthSyncBadge}${escapeHtml(item.type_label || '-')}</td>
                 <td>${escapeHtml(item.date_label || '-')}</td>
                 <td>${escapeHtml(item.time_label || '-')}</td>
                 <td>${escapeHtml(item.location_label || '-')}</td>

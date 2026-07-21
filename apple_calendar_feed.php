@@ -201,10 +201,9 @@ foreach ($events as $event) {
         $participants[] = $secondAthlete;
     }
 
-    $summary = trim((string)($event['custom_title'] ?? ''));
-    if ($summary === '') {
-        $summary = !empty($participants) ? 'Trénink - ' . implode(' + ', $participants) : 'Trénink';
-    }
+    $participantSummary = !empty($participants) ? implode(' + ', $participants) : 'Trénink';
+    $locationSummary = trim((string)($event['location'] ?? ''));
+    $summary = $participantSummary . ($locationSummary !== '' ? (' | ' . $locationSummary) : '');
 
     if (($event['approval_status'] ?? 'approved') === 'pending') {
         $summary = 'Čeká na schválení - ' . $summary;

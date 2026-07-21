@@ -4810,10 +4810,16 @@ function buildAppleCaldavEventIcs(int $coachId, array $event, string $uid): stri
     $participants[] = $secondary;
   }
 
-  $summary = trim((string)($event['custom_title'] ?? ''));
-  if ($summary === '') {
-    $summary = !empty($participants) ? ('Trenink - ' . implode(' + ', $participants)) : 'Trenink';
+  $participantSummary = !empty($participants) ? implode(' + ', $participants) : 'Trenink';
+  $location = trim((string)($event['location'] ?? ''));
+  $summary = $participantSummary;
+  if ($location !== '') {
+    $summary .= ' | ' . $location;
   }
+
+  // Pokud je vyplneny vlastni nazev, nechame ho v popisu kvuli detailu,
+  // ale v SUMMARY priorizujeme sportovce + misto kvuli iOS mesicnimu prehledu.
+  $customTitle = trim((string)($event['custom_title'] ?? ''));
   if ((string)($event['approval_status'] ?? 'approved') === 'pending') {
     $summary = 'Ceka na schvaleni - ' . $summary;
   }
@@ -4822,10 +4828,12 @@ function buildAppleCaldavEventIcs(int $coachId, array $event, string $uid): stri
     'Zdroj: TrainerApp',
     'Lokalni ID udalosti: ' . (int)($event['id'] ?? 0),
   ];
+  if ($customTitle !== '') {
+    $descriptionParts[] = 'Nazev: ' . $customTitle;
+  }
   if (!empty($participants)) {
     $descriptionParts[] = 'Ucastnici: ' . implode(', ', $participants);
   }
-  $location = trim((string)($event['location'] ?? ''));
   if ($location !== '') {
     $descriptionParts[] = 'Misto: ' . $location;
   }
@@ -5369,6 +5377,10 @@ function buildAthleteAppleCaldavEventIcs(int $athleteId, array $event, string $u
   if ($summary === '') {
     $summary = 'Trenink';
   }
+  $location = trim((string)($event['location'] ?? ''));
+  if ($location !== '') {
+    $summary .= ' | ' . $location;
+  }
   if ((string)($event['approval_status'] ?? 'approved') === 'pending') {
     $summary = 'Ceka na schvaleni - ' . $summary;
   }
@@ -5384,7 +5396,6 @@ function buildAthleteAppleCaldavEventIcs(int $athleteId, array $event, string $u
   if (!empty($participants)) {
     $descriptionParts[] = 'Ucastnici: ' . implode(', ', $participants);
   }
-  $location = trim((string)($event['location'] ?? ''));
   if ($location !== '') {
     $descriptionParts[] = 'Misto: ' . $location;
   }

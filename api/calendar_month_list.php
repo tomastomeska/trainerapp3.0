@@ -32,6 +32,7 @@ $eventsStmt = $pdo->prepare(
             e.ends_at,
             e.approval_status,
             e.is_makeup_session,
+         CASE WHEN cel.event_id IS NULL THEN 0 ELSE 1 END AS is_caldav_synced,
             e.athlete_id,
             e.second_athlete_id,
             e.requested_by_athlete_id,
@@ -40,6 +41,7 @@ $eventsStmt = $pdo->prepare(
             a2.first_name AS second_first_name,
             a2.last_name AS second_last_name
      FROM coach_calendar_events e
+     LEFT JOIN coach_apple_caldav_event_links cel ON cel.coach_id = e.coach_id AND cel.event_id = e.id
      LEFT JOIN athletes a ON a.id = e.athlete_id
      LEFT JOIN athletes a2 ON a2.id = e.second_athlete_id
      WHERE e.coach_id = ?
@@ -62,6 +64,7 @@ $cancellationsStmt = $pdo->prepare(
             c.ends_at,
             c.approval_status,
             c.is_makeup_session,
+            0 AS is_caldav_synced,
             c.athlete_id,
             c.second_athlete_id,
             NULL AS requested_by_athlete_id,
@@ -144,6 +147,7 @@ foreach ($rows as $row) {
     $items[] = [
         'id' => (int)($row['id'] ?? 0),
         'record_type' => (string)($row['record_type'] ?? 'active'),
+        'is_caldav_synced' => (int)($row['is_caldav_synced'] ?? 0) === 1,
         'can_approve' => (($row['record_type'] ?? '') === 'active')
             && ((string)($row['approval_status'] ?? 'approved') === 'pending')
             && ((int)($row['requested_by_athlete_id'] ?? 0) > 0),

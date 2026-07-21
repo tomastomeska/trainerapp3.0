@@ -214,6 +214,10 @@ foreach ($events as $event) {
     if ($summary === '') {
         $summary = 'Trénink';
     }
+    $locationSummary = trim((string)($event['location'] ?? ''));
+    if ($locationSummary !== '') {
+        $summary .= ' | ' . $locationSummary;
+    }
     if (($event['approval_status'] ?? 'approved') === 'pending') {
         $summary = 'Čeká na schválení - ' . $summary;
     }
