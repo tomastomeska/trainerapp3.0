@@ -784,7 +784,7 @@ renderAthleteHeader('Můj kalendář', false, true);
             </div>
             <?php endif; ?>
 
-            <form method="post" class="mb-3" id="athleteAppleCaldavForm">
+            <form method="post" class="mb-3 js-single-submit" id="athleteAppleCaldavForm">
                 <?= csrfField() ?>
                 <input type="hidden" name="action" value="update_apple_caldav_sync">
 
@@ -928,7 +928,7 @@ renderAthleteHeader('Můj kalendář', false, true);
 <div class="tab-pane fade <?= $activeTab === 'google' ? 'show active' : '' ?>" id="athlete-google-pane" role="tabpanel" aria-labelledby="athlete-google-tab" tabindex="0">
     <div class="card border-0 shadow-sm">
         <div class="card-body">
-            <form method="post" class="mb-3">
+            <form method="post" class="mb-3 js-single-submit">
                 <?= csrfField() ?>
                 <input type="hidden" name="action" value="update_google_calendar_sync">
 
@@ -991,7 +991,7 @@ renderAthleteHeader('Můj kalendář', false, true);
                 <div class="small text-muted mt-2">
                     Obnovení soukromého odkazu okamžitě zneplatní původní URL. Použijte pouze tehdy, pokud se domníváte, že byl odkaz sdílen nepovolané osobě nebo pokud potřebujete vynutit nový odběr.
                 </div>
-                <form method="post" class="mt-2">
+                <form method="post" class="mt-2 js-single-submit">
                     <?= csrfField() ?>
                     <input type="hidden" name="action" value="regenerate_google_calendar_token">
                     <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Opravdu obnovit soukromý odkaz? Tímto okamžitě přestanou fungovat všechny stávající Google odběry a bude nutné přidat nový odkaz.');">
@@ -1170,31 +1170,103 @@ document.addEventListener('DOMContentLoaded', () => {
     const athleteMonthListBody = document.getElementById('athleteMonthListBody');
     const athleteMonthListEmpty = document.getElementById('athleteMonthListEmpty');
     const athleteAppleCaldavForm = document.getElementById('athleteAppleCaldavForm');
-    const athleteBackfillBtn = document.getElementById('athleteBackfillBtn');
+    const reserveForm = document.getElementById('reserveForm');
+    const reserveSubmitBtn = reserveForm ? reserveForm.querySelector('button[type="submit"]') : null;
     const athleteAppleCaldavActive = <?= !empty($athleteAppleCaldavActive) ? 'true' : 'false' ?>;
 
-    if (athleteAppleCaldavForm && athleteBackfillBtn) {
-        athleteAppleCaldavForm.addEventListener('submit', (e) => {
-            const submitter = e.submitter;
-            if (!submitter || submitter !== athleteBackfillBtn) {
-                return;
-            }
-
-            if (athleteBackfillBtn.disabled) {
-                e.preventDefault();
-                return;
-            }
-
-            const label = athleteBackfillBtn.querySelector('.js-btn-label');
-            athleteBackfillBtn.disabled = true;
-            athleteBackfillBtn.classList.add('disabled');
-            athleteBackfillBtn.setAttribute('aria-disabled', 'true');
-            if (label) {
-                label.textContent = 'Zpracovávám...';
-            }
-            athleteBackfillBtn.insertAdjacentHTML('afterbegin', '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>');
-        });
+    function getSubmitControls(form) {
+        return Array.from(form.querySelectorAll('button[type="submit"], input[type="submit"]'));
     }
+
+    function setButtonBusy(button, busyText = 'Zpracovávám...') {
+        const originalHtml = button.innerHTML;
+        if (!button.style.minWidth) {
+            button.style.minWidth = `${Math.ceil(button.offsetWidth)}px`;
+        }
+        button.disabled = true;
+        button.classList.add('disabled');
+        button.setAttribute('aria-disabled', 'true');
+        button.setAttribute('aria-busy', 'true');
+        button.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>${busyText}`;
+
+        return () => {
+            button.disabled = false;
+            button.classList.remove('disabled');
+            button.removeAttribute('aria-disabled');
+            button.removeAttribute('aria-busy');
+            button.innerHTML = originalHtml;
+        };
+    }
+
+    function beginAsyncFormSubmit(form, submitter, busyText = 'Zpracovávám...') {
+        if (!form || form.dataset.submitting === '1') {
+            return null;
+        }
+
+        form.dataset.submitting = '1';
+        const controls = getSubmitControls(form);
+        const originalStates = controls.map((control) => ({
+            control,
+            disabled: control.disabled,
+        }));
+        controls.forEach((control) => {
+            control.disabled = true;
+            control.classList.add('disabled');
+            control.setAttribute('aria-disabled', 'true');
+        });
+
+        const restoreBusy = submitter ? setButtonBusy(submitter, busyText) : null;
+
+        return () => {
+            form.dataset.submitting = '0';
+            if (restoreBusy) {
+                restoreBusy();
+            }
+            originalStates.forEach(({ control, disabled }) => {
+                control.disabled = disabled;
+                control.classList.toggle('disabled', disabled);
+                if (disabled) {
+                    control.setAttribute('aria-disabled', 'true');
+                } else {
+                    control.removeAttribute('aria-disabled');
+                }
+            });
+        };
+    }
+
+    function beginBusyButton(button, busyText) {
+        if (!button || button.dataset.submitting === '1') {
+            return null;
+        }
+        button.dataset.submitting = '1';
+        const restore = setButtonBusy(button, busyText);
+        return () => {
+            button.dataset.submitting = '0';
+            restore();
+        };
+    }
+
+    document.querySelectorAll('form.js-single-submit').forEach((form) => {
+        form.addEventListener('submit', (event) => {
+            if (form.dataset.submitting === '1') {
+                event.preventDefault();
+                return;
+            }
+
+            const submitter = event.submitter || form.querySelector('button[type="submit"], input[type="submit"]');
+            const controls = getSubmitControls(form);
+            controls.forEach((control) => {
+                control.disabled = true;
+                control.classList.add('disabled');
+                control.setAttribute('aria-disabled', 'true');
+            });
+
+            if (submitter) {
+                setButtonBusy(submitter, 'Zpracovávám...');
+            }
+            form.dataset.submitting = '1';
+        });
+    });
 
     let currentWeekStart = getMonday(new Date());
     let events = [];
@@ -1886,12 +1958,29 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        await cancelMyEvent(eventId);
-        eventDetailModal.hide();
+        const finishCancel = beginBusyButton(eventDetailCancelBtn, 'Rusim...');
+        if (!finishCancel) {
+            return;
+        }
+
+        try {
+            await cancelMyEvent(eventId);
+            eventDetailModal.hide();
+        } finally {
+            finishCancel();
+        }
     });
 
-    document.getElementById('reserveForm').addEventListener('submit', async (event) => {
+    reserveForm.addEventListener('submit', async (event) => {
         event.preventDefault();
+
+        const submitter = event.submitter || reserveSubmitBtn;
+        const finishSubmit = beginAsyncFormSubmit(reserveForm, submitter, 'Rezervuji...');
+        if (!finishSubmit) {
+            return;
+        }
+
+        try {
 
         const payload = {
             csrf_token: csrfToken,
@@ -1922,6 +2011,9 @@ document.addEventListener('DOMContentLoaded', () => {
         invalidateReserveMakeupSuggestionCache();
         reserveModal.hide();
         await loadWeekData();
+        } finally {
+            finishSubmit();
+        }
     });
 
     document.getElementById('prevWeekBtn').addEventListener('click', () => {

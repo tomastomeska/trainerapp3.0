@@ -870,7 +870,7 @@ renderHeader('Kalendář', false, true);
                 <div class="fw-semibold mb-2">Apple rychly sync (CalDAV)</div>
                 <div class="small text-muted mb-3">Doporuceny rezim pro iPhone/iPad/Mac. Zmeny se posilaji okamzite z TrainerApp (bez cekani na ICS refresh).</div>
 
-                <form method="post" class="mb-2" id="appleCaldavForm">
+                <form method="post" class="mb-2 js-single-submit" id="appleCaldavForm">
                     <?= csrfField() ?>
                     <input type="hidden" name="action" value="update_apple_caldav_sync">
 
@@ -1003,7 +1003,7 @@ renderHeader('Kalendář', false, true);
 <div class="tab-pane fade <?= $activeTab === 'google' ? 'show active' : '' ?>" id="google-calendar-pane" role="tabpanel" aria-labelledby="google-calendar-tab" tabindex="0">
     <div class="card border-0 shadow-sm">
         <div class="card-body">
-            <form method="post" class="mb-3">
+            <form method="post" class="mb-3 js-single-submit">
                 <?= csrfField() ?>
                 <input type="hidden" name="action" value="update_google_calendar_sync">
 
@@ -1090,7 +1090,7 @@ renderHeader('Kalendář', false, true);
                 <div class="small text-muted mt-2">
                     Obnovení soukromého odkazu okamžitě zneplatní původní URL. Použijte pouze tehdy, pokud se domníváte, že byl odkaz sdílen nepovolané osobě nebo pokud potřebujete vynutit nový odběr.
                 </div>
-                <form method="post" class="mt-2">
+                <form method="post" class="mt-2 js-single-submit">
                     <?= csrfField() ?>
                     <input type="hidden" name="action" value="regenerate_google_calendar_token">
                     <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Opravdu obnovit soukromý odkaz? Tímto okamžitě přestanou fungovat všechny stávající Google odběry a bude nutné přidat nový odkaz.');">
@@ -1438,31 +1438,101 @@ document.addEventListener('DOMContentLoaded', () => {
     const monthListEmpty = document.getElementById('monthListEmpty');
     const eventAddToIosBtn = document.getElementById('eventAddToIosBtn');
     const coachAppleCaldavActive = <?= !empty($coachAppleCaldavActive) ? 'true' : 'false' ?>;
-    const appleCaldavForm = document.getElementById('appleCaldavForm');
-    const appleBackfillBtn = document.getElementById('appleBackfillBtn');
+    const eventModalSubmitBtn = eventForm ? eventForm.querySelector('button[type="submit"]') : null;
 
-    if (appleCaldavForm && appleBackfillBtn) {
-        appleCaldavForm.addEventListener('submit', (e) => {
-            const submitter = e.submitter;
-            if (!submitter || submitter !== appleBackfillBtn) {
-                return;
-            }
-
-            if (appleBackfillBtn.disabled) {
-                e.preventDefault();
-                return;
-            }
-
-            const label = appleBackfillBtn.querySelector('.js-btn-label');
-            appleBackfillBtn.disabled = true;
-            appleBackfillBtn.classList.add('disabled');
-            appleBackfillBtn.setAttribute('aria-disabled', 'true');
-            if (label) {
-                label.textContent = 'Zpracovávám...';
-            }
-            appleBackfillBtn.insertAdjacentHTML('afterbegin', '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>');
-        });
+    function getSubmitControls(form) {
+        return Array.from(form.querySelectorAll('button[type="submit"], input[type="submit"]'));
     }
+
+    function setButtonBusy(button, busyText = 'Zpracovávám...') {
+        const originalHtml = button.innerHTML;
+        if (!button.style.minWidth) {
+            button.style.minWidth = `${Math.ceil(button.offsetWidth)}px`;
+        }
+        button.disabled = true;
+        button.classList.add('disabled');
+        button.setAttribute('aria-disabled', 'true');
+        button.setAttribute('aria-busy', 'true');
+        button.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>${busyText}`;
+
+        return () => {
+            button.disabled = false;
+            button.classList.remove('disabled');
+            button.removeAttribute('aria-disabled');
+            button.removeAttribute('aria-busy');
+            button.innerHTML = originalHtml;
+        };
+    }
+
+    function beginAsyncFormSubmit(form, submitter, busyText = 'Zpracovávám...') {
+        if (!form || form.dataset.submitting === '1') {
+            return null;
+        }
+
+        form.dataset.submitting = '1';
+        const controls = getSubmitControls(form);
+        const originalStates = controls.map((control) => ({
+            control,
+            disabled: control.disabled,
+        }));
+        controls.forEach((control) => {
+            control.disabled = true;
+            control.classList.add('disabled');
+            control.setAttribute('aria-disabled', 'true');
+        });
+
+        const restoreBusy = submitter ? setButtonBusy(submitter, busyText) : null;
+
+        return () => {
+            form.dataset.submitting = '0';
+            if (restoreBusy) {
+                restoreBusy();
+            }
+            originalStates.forEach(({ control, disabled }) => {
+                control.disabled = disabled;
+                control.classList.toggle('disabled', disabled);
+                if (disabled) {
+                    control.setAttribute('aria-disabled', 'true');
+                } else {
+                    control.removeAttribute('aria-disabled');
+                }
+            });
+        };
+    }
+
+    function beginBusyButton(button, busyText) {
+        if (!button || button.dataset.submitting === '1') {
+            return null;
+        }
+        button.dataset.submitting = '1';
+        const restore = setButtonBusy(button, busyText);
+        return () => {
+            button.dataset.submitting = '0';
+            restore();
+        };
+    }
+
+    document.querySelectorAll('form.js-single-submit').forEach((form) => {
+        form.addEventListener('submit', (event) => {
+            if (form.dataset.submitting === '1') {
+                event.preventDefault();
+                return;
+            }
+
+            const submitter = event.submitter || form.querySelector('button[type="submit"], input[type="submit"]');
+            const controls = getSubmitControls(form);
+            controls.forEach((control) => {
+                control.disabled = true;
+                control.classList.add('disabled');
+                control.setAttribute('aria-disabled', 'true');
+            });
+
+            if (submitter) {
+                setButtonBusy(submitter, 'Zpracovávám...');
+            }
+            form.dataset.submitting = '1';
+        });
+    });
 
     const czechDayShort = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
     const hourStart = 5;
@@ -2614,6 +2684,7 @@ document.addEventListener('DOMContentLoaded', () => {
     eventForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         clearError(eventError);
+        const submitter = e.submitter || eventModalSubmitBtn;
 
         if (eventIsLockInput.checked) {
             syncLockRangeFromControls();
@@ -2632,30 +2703,39 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const payload = await fetchJson('<?= BASE_URL ?>/api/calendar_save_lock.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify({
-                    csrf_token: csrfToken,
-                    lock_id: lockIdInput.value ? Number(lockIdInput.value) : 0,
-                    starts_at: lockStartsAt,
-                    ends_at: lockEndsAt,
-                    note: lockNoteInlineInput.value.trim(),
-                    mode: lockUnlockModeInput.checked ? 'unlock' : 'lock',
-                    repeat_mode: lockRepeatMode,
-                    repeat_until: lockRepeatUntil,
-                }),
-            });
-
-            if (!payload.success) {
-                showError(eventError, payload.error || 'Uložení uzamčení se nepodařilo.');
+            const finishSubmit = beginAsyncFormSubmit(eventForm, submitter, 'Ukládám...');
+            if (!finishSubmit) {
                 return;
             }
 
-            eventModal.hide();
-            await loadWeekData();
-            return;
+            try {
+                const payload = await fetchJson('<?= BASE_URL ?>/api/calendar_save_lock.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        csrf_token: csrfToken,
+                        lock_id: lockIdInput.value ? Number(lockIdInput.value) : 0,
+                        starts_at: lockStartsAt,
+                        ends_at: lockEndsAt,
+                        note: lockNoteInlineInput.value.trim(),
+                        mode: lockUnlockModeInput.checked ? 'unlock' : 'lock',
+                        repeat_mode: lockRepeatMode,
+                        repeat_until: lockRepeatUntil,
+                    }),
+                });
+
+                if (!payload.success) {
+                    showError(eventError, payload.error || 'Uložení uzamčení se nepodařilo.');
+                    return;
+                }
+
+                eventModal.hide();
+                await loadWeekData();
+                return;
+            } finally {
+                finishSubmit();
+            }
         }
 
         syncEventStartFromControls();
@@ -2712,35 +2792,44 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        const isMakeupSession = eventIsMakeupInput.checked;
-
-        const payload = await fetchJson('<?= BASE_URL ?>/api/calendar_save_event.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify({
-                csrf_token: csrfToken,
-                event_id: eventIdInput.value ? Number(eventIdInput.value) : 0,
-                athlete_id: athleteId,
-                second_athlete_id: secondAthleteId,
-                title_type: titleType,
-                custom_title: customTitle,
-                location: eventLocationInput.value.trim(),
-                color_key: normalizeColorKey(eventColorInput.value),
-                starts_at: startsAt,
-                is_makeup_session: isMakeupSession,
-                repeat_mode: repeatMode,
-                repeat_until: repeatUntil,
-            }),
-        });
-
-        if (!payload.success) {
-            showError(eventError, payload.error || 'Uložení se nepodařilo.');
+        const finishSubmit = beginAsyncFormSubmit(eventForm, submitter, 'Ukládám...');
+        if (!finishSubmit) {
             return;
         }
 
-        eventModal.hide();
-        await loadWeekData();
+        try {
+            const isMakeupSession = eventIsMakeupInput.checked;
+
+            const payload = await fetchJson('<?= BASE_URL ?>/api/calendar_save_event.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    csrf_token: csrfToken,
+                    event_id: eventIdInput.value ? Number(eventIdInput.value) : 0,
+                    athlete_id: athleteId,
+                    second_athlete_id: secondAthleteId,
+                    title_type: titleType,
+                    custom_title: customTitle,
+                    location: eventLocationInput.value.trim(),
+                    color_key: normalizeColorKey(eventColorInput.value),
+                    starts_at: startsAt,
+                    is_makeup_session: isMakeupSession,
+                    repeat_mode: repeatMode,
+                    repeat_until: repeatUntil,
+                }),
+            });
+
+            if (!payload.success) {
+                showError(eventError, payload.error || 'Uložení se nepodařilo.');
+                return;
+            }
+
+            eventModal.hide();
+            await loadWeekData();
+        } finally {
+            finishSubmit();
+        }
     });
 
     approveEventBtn.addEventListener('click', async () => {
@@ -2749,36 +2838,45 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        syncEventStartFromControls();
-
-        const payload = await fetchJson('<?= BASE_URL ?>/api/calendar_save_event.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify({
-                csrf_token: csrfToken,
-                event_id: eventId,
-                athlete_id: eventAthleteInput.value ? Number(eventAthleteInput.value) : 0,
-                second_athlete_id: eventSecondAthleteInput.value ? Number(eventSecondAthleteInput.value) : 0,
-                title_type: getSelectedEventTitleType(),
-                custom_title: eventCustomTitleInput.value.trim(),
-                location: eventLocationInput.value.trim(),
-                color_key: normalizeColorKey(eventColorInput.value),
-                starts_at: eventStartInput.value,
-                is_makeup_session: eventIsMakeupInput.checked,
-                repeat_mode: 'none',
-                repeat_until: '',
-                approval_action: 'approve',
-            }),
-        });
-
-        if (!payload.success) {
-            showError(eventError, payload.error || 'Schválení se nepodařilo.');
+        const finishApprove = beginBusyButton(approveEventBtn, 'Schvaluji...');
+        if (!finishApprove) {
             return;
         }
 
-        eventModal.hide();
-        await loadWeekData();
+        try {
+            syncEventStartFromControls();
+
+            const payload = await fetchJson('<?= BASE_URL ?>/api/calendar_save_event.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    csrf_token: csrfToken,
+                    event_id: eventId,
+                    athlete_id: eventAthleteInput.value ? Number(eventAthleteInput.value) : 0,
+                    second_athlete_id: eventSecondAthleteInput.value ? Number(eventSecondAthleteInput.value) : 0,
+                    title_type: getSelectedEventTitleType(),
+                    custom_title: eventCustomTitleInput.value.trim(),
+                    location: eventLocationInput.value.trim(),
+                    color_key: normalizeColorKey(eventColorInput.value),
+                    starts_at: eventStartInput.value,
+                    is_makeup_session: eventIsMakeupInput.checked,
+                    repeat_mode: 'none',
+                    repeat_until: '',
+                    approval_action: 'approve',
+                }),
+            });
+
+            if (!payload.success) {
+                showError(eventError, payload.error || 'Schválení se nepodařilo.');
+                return;
+            }
+
+            eventModal.hide();
+            await loadWeekData();
+        } finally {
+            finishApprove();
+        }
     });
 
     monthListBody.addEventListener('click', async (e) => {
@@ -2817,6 +2915,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     deleteEventBtn.addEventListener('click', async () => {
+        const finishDelete = beginBusyButton(deleteEventBtn, 'Mazu...');
+        if (!finishDelete) {
+            return;
+        }
+
+        try {
         if (eventIsLockInput.checked) {
             const lockId = Number(lockIdInput.value || 0);
             if (!lockId) {
@@ -2891,6 +2995,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         eventModal.hide();
         await loadWeekData();
+        } finally {
+            finishDelete();
+        }
     });
 
     document.getElementById('prevWeekBtn').addEventListener('click', async () => {
