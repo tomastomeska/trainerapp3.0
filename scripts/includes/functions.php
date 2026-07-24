@@ -1487,6 +1487,8 @@ HTML;
  */
 function _configureMail(object $mail): void {
     $host = defined('SMTP_HOST') ? SMTP_HOST : '';
+  $smtpTimeout = max(3, (int)(defined('SMTP_TIMEOUT') ? SMTP_TIMEOUT : 8));
+
     if ($host === '' || $host === 'localhost' || $host === '127.0.0.1') {
         $mail->isMail();
         $mail->CharSet = 'UTF-8';
@@ -1501,6 +1503,7 @@ function _configureMail(object $mail): void {
     $mail->Password   = SMTP_PASS;
     $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
     $mail->Port       = defined('SMTP_PORT') ? SMTP_PORT : 587;
+    $mail->Timeout    = $smtpTimeout;
     $mail->CharSet    = 'UTF-8';
     $mail->SMTPOptions = ['ssl' => [
         'verify_peer'       => false,

@@ -1558,6 +1558,8 @@ HTML;
  */
 function _configureMail(object $mail): void {
     $host = defined('SMTP_HOST') ? SMTP_HOST : '';
+  $smtpTimeout = max(3, (int)(defined('SMTP_TIMEOUT') ? SMTP_TIMEOUT : 8));
+
     if ($host === '' || $host === 'localhost' || $host === '127.0.0.1') {
         $mail->isMail();
         $mail->CharSet = 'UTF-8';
@@ -1572,6 +1574,7 @@ function _configureMail(object $mail): void {
     $mail->Password   = SMTP_PASS;
     $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
     $mail->Port       = defined('SMTP_PORT') ? SMTP_PORT : 587;
+    $mail->Timeout    = $smtpTimeout;
     $mail->CharSet    = 'UTF-8';
     $mail->SMTPOptions = ['ssl' => [
         'verify_peer'       => false,
@@ -1591,6 +1594,22 @@ function _configureMail(object $mail): void {
  * @return bool
  */
 function sendMessageNotificationEmail(string $toEmail, string $coachName, string $subject, int $messageId): bool {
+  if (isEmailQueueEnabled() && emailNotificationQueueTableAvailable()) {
+    return enqueueEmailNotificationJob(
+      'coach_message_notification',
+      $toEmail,
+      $subject,
+      [
+        'coach_name' => $coachName,
+        'message_id' => $messageId,
+      ]
+    );
+  }
+
+  return sendMessageNotificationEmailNow($toEmail, $coachName, $subject, $messageId);
+}
+
+function sendMessageNotificationEmailNow(string $toEmail, string $coachName, string $subject, int $messageId): bool {
     $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
     if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
         return false;
@@ -1721,6 +1740,22 @@ function sendAthleteWelcomeEmail(string $toEmail, string $athleteName, string $p
 }
 
 function sendAthleteCalendarNotificationEmail(string $toEmail, string $athleteName, string $subject, string $message): bool {
+  if (isEmailQueueEnabled() && emailNotificationQueueTableAvailable()) {
+    return enqueueEmailNotificationJob(
+      'athlete_calendar_notification',
+      $toEmail,
+      $subject,
+      [
+        'athlete_name' => $athleteName,
+        'message' => $message,
+      ]
+    );
+  }
+
+  return sendAthleteCalendarNotificationEmailNow($toEmail, $athleteName, $subject, $message);
+}
+
+function sendAthleteCalendarNotificationEmailNow(string $toEmail, string $athleteName, string $subject, string $message): bool {
   $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
   if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
     return false;
@@ -2926,6 +2961,162 @@ function processCalendarSummaryNotifications(?DateTimeImmutable $now = null): ar
         'events_count' => count($events),
         'sent' => $sent,
       ];
+    }
+  }
+
+  return $results;
+}
+
+function isEmailQueueEnabled(): bool {
+  return !defined('EMAIL_QUEUE_ENABLED') || EMAIL_QUEUE_ENABLED;
+}
+
+function emailNotificationQueueTableAvailable(): bool {
+  static $available = null;
+  if ($available !== null) {
+    return $available;
+  }
+
+  try {
+    $pdo = getDB();
+    $table = $pdo->query("SHOW TABLES LIKE 'email_notification_jobs'");
+    $available = ($table !== false && (bool)$table->fetchColumn());
+  } catch (Throwable $e) {
+    $available = false;
+  }
+
+  return $available;
+}
+
+function enqueueEmailNotificationJob(string $templateKey, string $recipientEmail, string $subject, array $payload): bool {
+  if (!isEmailQueueEnabled() || !emailNotificationQueueTableAvailable()) {
+    return false;
+  }
+
+  $recipientEmail = trim($recipientEmail);
+  if ($recipientEmail === '') {
+    return false;
+  }
+
+  $subject = trim($subject);
+  if ($subject === '') {
+    $subject = 'Notifikace TrainerApp';
+  }
+
+  $payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  if (!is_string($payloadJson)) {
+    return false;
+  }
+
+  try {
+    $pdo = getDB();
+    $ins = $pdo->prepare(
+      'INSERT INTO email_notification_jobs (template_key, recipient_email, subject, payload_json, status, attempt_count, next_attempt_at)
+       VALUES (?, ?, ?, ?, "pending", 0, NOW())'
+    );
+    $ins->execute([$templateKey, $recipientEmail, $subject, $payloadJson]);
+    return true;
+  } catch (Throwable $e) {
+    error_log('enqueueEmailNotificationJob error: ' . $e->getMessage());
+    return false;
+  }
+}
+
+function processEmailNotificationQueue(int $limit = 20): array {
+  $results = [];
+
+  if (!isEmailQueueEnabled() || !emailNotificationQueueTableAvailable()) {
+    return $results;
+  }
+
+  $pdo = getDB();
+  $limit = max(1, min(200, $limit));
+
+  $resetStale = $pdo->prepare(
+    'UPDATE email_notification_jobs
+     SET status = "failed",
+         last_error = COALESCE(last_error, "Email job byl resetovan po prerusenem nebo timeout requestu."),
+         next_attempt_at = NOW(),
+         updated_at = NOW()
+     WHERE status = "processing"
+       AND updated_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)'
+  );
+  $resetStale->execute();
+
+  $jobStmt = $pdo->prepare(
+    'SELECT id, template_key, recipient_email, subject, payload_json, attempt_count
+     FROM email_notification_jobs
+     WHERE status IN ("pending", "failed")
+       AND next_attempt_at <= NOW()
+     ORDER BY id ASC
+     LIMIT ' . $limit
+  );
+  $jobStmt->execute();
+  $jobs = $jobStmt->fetchAll();
+
+  foreach ($jobs as $job) {
+    $jobId = (int)($job['id'] ?? 0);
+    $attemptCount = (int)($job['attempt_count'] ?? 0);
+    $templateKey = trim((string)($job['template_key'] ?? ''));
+    $recipientEmail = trim((string)($job['recipient_email'] ?? ''));
+    $subject = trim((string)($job['subject'] ?? ''));
+
+    if ($jobId <= 0 || $templateKey === '' || $recipientEmail === '') {
+      continue;
+    }
+
+    $markProcessing = $pdo->prepare(
+      'UPDATE email_notification_jobs
+       SET status = "processing", updated_at = NOW(), attempt_count = attempt_count + 1
+       WHERE id = ?'
+    );
+    $markProcessing->execute([$jobId]);
+
+    try {
+      $payloadRaw = (string)($job['payload_json'] ?? '{}');
+      $payload = json_decode($payloadRaw, true);
+      if (!is_array($payload)) {
+        $payload = [];
+      }
+
+      $sent = false;
+      if ($templateKey === 'coach_message_notification') {
+        $coachName = trim((string)($payload['coach_name'] ?? 'trenér'));
+        $messageId = (int)($payload['message_id'] ?? 0);
+        $sent = sendMessageNotificationEmailNow($recipientEmail, $coachName, $subject, $messageId);
+      } elseif ($templateKey === 'athlete_calendar_notification') {
+        $athleteName = trim((string)($payload['athlete_name'] ?? 'sportovec'));
+        $message = trim((string)($payload['message'] ?? ''));
+        $sent = sendAthleteCalendarNotificationEmailNow($recipientEmail, $athleteName, $subject, $message);
+      } else {
+        throw new RuntimeException('Neznamy template email fronty: ' . $templateKey);
+      }
+
+      if (!$sent) {
+        throw new RuntimeException('Odeslani e-mailu selhalo bez detailu.');
+      }
+
+      $markDone = $pdo->prepare(
+        'UPDATE email_notification_jobs
+         SET status = "done", last_error = NULL, processed_at = NOW(), updated_at = NOW()
+         WHERE id = ?'
+      );
+      $markDone->execute([$jobId]);
+
+      $results[] = ['job_id' => $jobId, 'status' => 'done', 'template' => $templateKey];
+    } catch (Throwable $e) {
+      $delayMinutes = min(360, max(2, (int)pow(2, max(0, $attemptCount))));
+      $markFailed = $pdo->prepare(
+        'UPDATE email_notification_jobs
+         SET status = "failed",
+             last_error = ?,
+             next_attempt_at = DATE_ADD(NOW(), INTERVAL ? MINUTE),
+             updated_at = NOW()
+         WHERE id = ?'
+      );
+      $markFailed->execute([mb_substr($e->getMessage(), 0, 2000, 'UTF-8'), $delayMinutes, $jobId]);
+
+      $results[] = ['job_id' => $jobId, 'status' => 'failed', 'template' => $templateKey, 'error' => $e->getMessage()];
     }
   }
 
@@ -4907,10 +5098,14 @@ function appleCaldavHttpRequest(string $method, string $url, string $username, s
     'User-Agent: TrainerApp-AppleCalDAV/1.0',
   ], $extraHeaders);
 
+  $connectTimeout = max(2, (int)(defined('APPLE_CALDAV_CONNECT_TIMEOUT') ? APPLE_CALDAV_CONNECT_TIMEOUT : 5));
+  $requestTimeout = max($connectTimeout, (int)(defined('APPLE_CALDAV_HTTP_TIMEOUT') ? APPLE_CALDAV_HTTP_TIMEOUT : 12));
+
   curl_setopt_array($ch, [
     CURLOPT_CUSTOMREQUEST => $method,
     CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_TIMEOUT => 25,
+    CURLOPT_CONNECTTIMEOUT => $connectTimeout,
+    CURLOPT_TIMEOUT => $requestTimeout,
     CURLOPT_FOLLOWLOCATION => true,
     CURLOPT_MAXREDIRS => 5,
     CURLOPT_HTTPAUTH => CURLAUTH_BASIC,

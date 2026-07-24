@@ -376,11 +376,16 @@ renderHeader('Párový trénink');
 </div>
 
 <script>
-const BASE_URL = '<?= BASE_URL ?>';
+const APP_BASE_PATH = <?= json_encode(rtrim((string)(parse_url((string)BASE_URL, PHP_URL_PATH) ?? ''), '/'), JSON_UNESCAPED_SLASHES) ?>;
+
+function apiUrl(path) {
+    const normalizedPath = path.startsWith('/') ? path : ('/' + path);
+    return APP_BASE_PATH + normalizedPath;
+}
 
 async function saveExerciseOrder(sessionId, orderedExerciseIds) {
     try {
-        const response = await fetch(BASE_URL + '/api/reorder_session_exercises.php', {
+        const response = await fetch(apiUrl('/api/reorder_session_exercises.php'), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -482,7 +487,7 @@ async function updatePairedSessionExercise(button, payload) {
     }
 
     try {
-        const response = await fetch(BASE_URL + '/api/update_session_exercise.php', {
+        const response = await fetch(apiUrl('/api/update_session_exercise.php'), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -528,7 +533,7 @@ async function addExerciseToPairedSession(button, sessionId) {
     }
 
     try {
-        const resp = await fetch(BASE_URL + '/api/add_session_exercise.php', {
+        const resp = await fetch(apiUrl('/api/add_session_exercise.php'), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -612,7 +617,7 @@ async function addPairedSeries(sessionId, exerciseId) {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
     try {
-        const resp = await fetch(BASE_URL + '/api/save_series.php', {
+        const resp = await fetch(apiUrl('/api/save_series.php'), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -664,7 +669,7 @@ async function deletePairedSeries(seriesId, sessionId, exerciseId) {
     if (!confirm('Smazat tuto sérii?')) return;
     const key = sessionId + '-' + exerciseId;
     try {
-        const resp = await fetch(BASE_URL + '/api/delete_series.php', {
+        const resp = await fetch(apiUrl('/api/delete_series.php'), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({

@@ -32,18 +32,44 @@ if ($isCli) {
     }
 }
 
-$results = processCalendarSummaryNotifications();
+$emailLimitRaw = isset($_GET['email_limit']) ? (int)$_GET['email_limit'] : 300;
+$emailLimit = max(1, min(1000, $emailLimitRaw));
+
+$googleLimitRaw = isset($_GET['google_limit']) ? (int)$_GET['google_limit'] : 120;
+$googleLimit = max(1, min(500, $googleLimitRaw));
+
+$appleLimitRaw = isset($_GET['apple_limit']) ? (int)$_GET['apple_limit'] : 120;
+$appleLimit = max(1, min(500, $appleLimitRaw));
+
+$appleBootstrapCoachLimitRaw = isset($_GET['apple_bootstrap_coach_limit']) ? (int)$_GET['apple_bootstrap_coach_limit'] : 8;
+$appleBootstrapCoachLimit = max(1, min(60, $appleBootstrapCoachLimitRaw));
+
+$appleBootstrapEventsLimitRaw = isset($_GET['apple_bootstrap_events_limit']) ? (int)$_GET['apple_bootstrap_events_limit'] : 300;
+$appleBootstrapEventsLimit = max(1, min(3000, $appleBootstrapEventsLimitRaw));
+
+$summaryResults = processCalendarSummaryNotifications();
+$emailResults = processEmailNotificationQueue($emailLimit);
+$googleResults = processCoachGoogleCalendarSyncQueue($googleLimit);
+$appleBootstrap = bootstrapCoachAppleCaldavMissingEvents($appleBootstrapCoachLimit, $appleBootstrapEventsLimit);
+$appleCoachResults = processCoachAppleCaldavSyncQueue($appleLimit);
+$appleAthleteResults = processAthleteAppleCaldavSyncQueue($appleLimit);
 
 if ($isCli) {
-    $total = count($results);
-    $sent = count(array_filter($results, static function ($r) {
+    $total = count($summaryResults);
+    $sent = count(array_filter($summaryResults, static function ($r) {
         return !empty($r['sent']);
     }));
 
     echo '=== Calendar summary notifications: ' . date('Y-m-d H:i:s') . " ===\n";
-    echo "Celkem zpracovano: {$total}, odeslano: {$sent}, chyby: " . ($total - $sent) . "\n\n";
+    echo "Celkem zpracovano: {$total}, odeslano: {$sent}, chyby: " . ($total - $sent) . "\n";
+    echo "Queue worker: email=" . count($emailResults)
+        . ", google=" . count($googleResults)
+        . ", apple_coach=" . count($appleCoachResults)
+        . ", apple_athlete=" . count($appleAthleteResults)
+        . ", apple_bootstrap_jobs=" . (int)($appleBootstrap['jobs_enqueued'] ?? 0)
+        . "\n\n";
 
-    foreach ($results as $row) {
+    foreach ($summaryResults as $row) {
         $icon = !empty($row['sent']) ? '[OK]' : '[CHYBA]';
         $recipientType = (string)($row['recipient_type'] ?? '') === 'coach' ? 'TRENÉR' : 'SPORTOVEC';
         $digestType = (string)($row['digest_type'] ?? '') === 'monthly_next_month' ? 'MESICNI' : 'TYDENNI';
@@ -56,14 +82,25 @@ if ($isCli) {
 } else {
     header('Content-Type: application/json; charset=UTF-8');
 
-    $sent = count(array_filter($results, static function ($r) {
+    $sent = count(array_filter($summaryResults, static function ($r) {
         return !empty($r['sent']);
     }));
 
     echo json_encode([
         'processed_at' => date('c'),
-        'total' => count($results),
+        'total' => count($summaryResults),
         'sent' => $sent,
-        'results' => $results,
+        'results' => $summaryResults,
+        'queue' => [
+            'email_processed' => count($emailResults),
+            'google_processed' => count($googleResults),
+            'apple_bootstrap' => $appleBootstrap,
+            'apple_coach_processed' => count($appleCoachResults),
+            'apple_athlete_processed' => count($appleAthleteResults),
+            'email_results' => $emailResults,
+            'google_results' => $googleResults,
+            'apple_coach_results' => $appleCoachResults,
+            'apple_athlete_results' => $appleAthleteResults,
+        ],
     ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
 }

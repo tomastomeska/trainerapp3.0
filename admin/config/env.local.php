@@ -12,13 +12,35 @@ function envValue(string $key, ?string $default = null): ?string {
 	return $value === '' ? $default : $value;
 }
 
+function normalizeBaseUrlPath(string $baseUrl): string {
+	$baseUrl = trim($baseUrl);
+	if ($baseUrl === '') {
+		return '';
+	}
+
+	$parsedPath = parse_url($baseUrl, PHP_URL_PATH);
+	if ($parsedPath !== null && $parsedPath !== false) {
+		$baseUrl = (string)$parsedPath;
+	}
+
+	if ($baseUrl === '/' || $baseUrl === '.') {
+		return '';
+	}
+
+	if ($baseUrl[0] !== '/') {
+		$baseUrl = '/' . $baseUrl;
+	}
+
+	return rtrim($baseUrl, '/');
+}
+
 if (!defined('DB_HOST')) define('DB_HOST', (string)envValue('TRAINERAPP_DB_HOST', 'localhost,md433.wedos.net'));
 if (!defined('DB_NAME')) define('DB_NAME', (string)envValue('TRAINERAPP_DB_NAME', 'd391857_tplan'));
 if (!defined('DB_USER')) define('DB_USER', (string)envValue('TRAINERAPP_DB_USER', 'a391857_tplan'));
 if (!defined('DB_PASS')) define('DB_PASS', (string)envValue('TRAINERAPP_DB_PASS', 'rfea4txM'));
 
 $baseUrl = envValue('TRAINERAPP_BASE_URL', null);
-if (!defined('BASE_URL') && $baseUrl !== null) define('BASE_URL', (string)$baseUrl);
+if (!defined('BASE_URL') && $baseUrl !== null) define('BASE_URL', normalizeBaseUrlPath((string)$baseUrl));
 unset($baseUrl);
 if (!defined('SESSION_NAME')) define('SESSION_NAME', (string)envValue('TRAINERAPP_SESSION_NAME', 'trainerapp_v2_sess'));
 if (!defined('SESSION_SECURE')) define('SESSION_SECURE', envValue('TRAINERAPP_SESSION_SECURE', '0') === '1');

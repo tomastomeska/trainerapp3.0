@@ -32,7 +32,15 @@ define('ENABLE_SETUP_ADMIN', false);
 // SMTP (volitelne)
 define('SMTP_HOST',      '');
 define('SMTP_PORT',      587);
+define('SMTP_TIMEOUT',   8);
 define('SMTP_USER',      '');
 define('SMTP_PASS',      '');
 define('SMTP_FROM',      'noreply@example.com');
 define('SMTP_FROM_NAME', 'TrainerApp');
+
+// Externi Apple CalDAV timeouty (v sekundach)
+define('APPLE_CALDAV_CONNECT_TIMEOUT', 5);
+define('APPLE_CALDAV_HTTP_TIMEOUT', 12);
+
+// Zapne odesilani notifikacnich emailu pres DB frontu + cron worker
+define('EMAIL_QUEUE_ENABLED', true);

@@ -613,6 +613,7 @@ HTML;
 
     $mail = new PHPMailer\PHPMailer\PHPMailer(true);
     try {
+        $smtpTimeout = max(3, (int)(defined('SMTP_TIMEOUT') ? SMTP_TIMEOUT : 8));
         $mail->isSMTP();
         $mail->Host       = SMTP_HOST;
         $mail->SMTPAuth   = true;
@@ -620,6 +621,7 @@ HTML;
         $mail->Password   = SMTP_PASS;
         $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = SMTP_PORT;
+        $mail->Timeout    = $smtpTimeout;
         $mail->CharSet    = 'UTF-8';
         $mail->SMTPOptions = [
             'ssl' => [

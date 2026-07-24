@@ -947,6 +947,26 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
 
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `email_notification_jobs` (
+            `id`               BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `template_key`     VARCHAR(80) NOT NULL,
+            `recipient_email`  VARCHAR(255) NOT NULL,
+            `subject`          VARCHAR(255) NOT NULL,
+            `payload_json`     LONGTEXT NOT NULL,
+            `status`           ENUM('pending','processing','done','failed') NOT NULL DEFAULT 'pending',
+            `attempt_count`    INT NOT NULL DEFAULT 0,
+            `next_attempt_at`  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `last_error`       TEXT NULL,
+            `created_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            `processed_at`     DATETIME NULL,
+            KEY `idx_enj_queue` (`status`, `next_attempt_at`),
+            KEY `idx_enj_template_status` (`template_key`, `status`, `next_attempt_at`),
+            KEY `idx_enj_recipient` (`recipient_email`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
     $stmtSeries = $pdo->query("SHOW COLUMNS FROM coach_calendar_events LIKE 'series_id'");
     if (!$stmtSeries->fetch()) {
         $pdo->exec('ALTER TABLE coach_calendar_events ADD COLUMN series_id CHAR(36) NULL AFTER athlete_id');

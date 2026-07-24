@@ -404,9 +404,16 @@ renderHeader('Aktivní trénink');
 </div>
 
 <script>
+const APP_BASE_PATH = <?= json_encode(rtrim((string)(parse_url((string)BASE_URL, PHP_URL_PATH) ?? ''), '/'), JSON_UNESCAPED_SLASHES) ?>;
+
+function apiUrl(path) {
+    const normalizedPath = path.startsWith('/') ? path : ('/' + path);
+    return APP_BASE_PATH + normalizedPath;
+}
+
 async function saveExerciseOrder(sessionId, orderedExerciseIds) {
     try {
-        const response = await fetch('<?= BASE_URL ?>/api/reorder_session_exercises.php', {
+        const response = await fetch(apiUrl('/api/reorder_session_exercises.php'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -509,7 +516,7 @@ async function updateSessionExercise(button, payload) {
     }
 
     try {
-        const response = await fetch('<?= BASE_URL ?>/api/update_session_exercise.php', {
+        const response = await fetch(apiUrl('/api/update_session_exercise.php'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -594,7 +601,7 @@ async function addExerciseToSession(sessionId) {
     button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Přidávám...';
 
     try {
-        const resp = await fetch('<?= BASE_URL ?>/api/add_session_exercise.php', {
+        const resp = await fetch(apiUrl('/api/add_session_exercise.php'), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -688,7 +695,7 @@ async function addSeries(exerciseId, sessionId) {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Ukládám...';
 
     try {
-        const resp = await fetch('<?= BASE_URL ?>/api/save_series.php', {
+        const resp = await fetch(apiUrl('/api/save_series.php'), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -813,7 +820,7 @@ async function editSeriesPrompt(seriesId, exerciseId, isTimed, currentWeight, cu
     }
 
     try {
-        const resp = await fetch('<?= BASE_URL ?>/api/update_series.php', {
+        const resp = await fetch(apiUrl('/api/update_series.php'), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -842,7 +849,7 @@ async function deleteSeries(seriesId, exerciseId) {
     if (!confirm('Smazat tuto sérii?')) return;
 
     try {
-        const resp = await fetch('<?= BASE_URL ?>/api/delete_series.php', {
+        const resp = await fetch(apiUrl('/api/delete_series.php'), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
