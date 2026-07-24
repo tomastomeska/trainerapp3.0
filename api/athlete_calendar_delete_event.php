@@ -336,6 +336,7 @@ if ($removedFromPairOnly) {
     enqueueCoachAppleCaldavSync((int)$event['coach_id'], $eventId, 'delete');
     enqueueAthleteAppleCaldavSync($athleteId, $eventId, 'delete');
 }
+processInlineCalendarSyncQueues(2, 3, 3);
 
 $subject = $removedFromPairOnly
     ? "Sportovec zrušil účast na párovém termínu - {$athleteName}"

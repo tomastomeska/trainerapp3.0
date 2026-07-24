@@ -135,7 +135,7 @@ $eventsStmt = $pdo->prepare(
 $eventsStmt->execute([(int)$athlete['id'], (int)$athlete['id']]);
 $events = $eventsStmt->fetchAll();
 
-$host = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? 'localhost');
+$host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
 $athleteDisplayName = trim((string)($athlete['first_name'] ?? '') . ' ' . (string)($athlete['last_name'] ?? ''));
 if ($athleteDisplayName === '') {
     $athleteDisplayName = 'Sportovec';

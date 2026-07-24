@@ -1553,14 +1553,14 @@ HTML;
 
 /**
  * Nakonfiguruje PHPMailer instanci dle SMTP_HOST:
- * - 'localhost' nebo prázdný host → isMail() (PHP mail(), bez auth, Wedos hosting)
+ * - prázdný host → isMail() (PHP mail(), bez auth, Wedos hosting)
  * - jinak → isSMTP() s STARTTLS a autentizací
  */
 function _configureMail(object $mail): void {
     $host = defined('SMTP_HOST') ? SMTP_HOST : '';
   $smtpTimeout = max(3, (int)(defined('SMTP_TIMEOUT') ? SMTP_TIMEOUT : 8));
 
-    if ($host === '' || $host === 'localhost' || $host === '127.0.0.1') {
+    if ($host === '') {
         $mail->isMail();
         $mail->CharSet = 'UTF-8';
         $mail->setFrom(SMTP_FROM, SMTP_FROM_NAME);
@@ -1620,7 +1620,7 @@ function sendMessageNotificationEmailNow(string $toEmail, string $coachName, str
 
     $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['SERVER_PORT'] ?? '') === '443');
     $scheme = $isHttps ? 'https' : 'http';
-    $host = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? 'localhost');
+    $host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
     $link = $scheme . '://' . $host . BASE_URL . '/zpravy.php';
 
     $htmlBody = "<p>Dobrý den, <strong>" . htmlspecialchars($coachName, ENT_QUOTES) . "</strong>,</p>"
@@ -1852,7 +1852,7 @@ function sendSupportTicketNotificationEmail(int $ticketId, array $ticket, array 
 
   $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['SERVER_PORT'] ?? '') === '443');
   $scheme = $isHttps ? 'https' : 'http';
-  $host = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? 'localhost');
+  $host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
   $ticketUrl = $scheme . '://' . $host . BASE_URL . '/admin/podpora.php?id=' . $ticketId;
 
   $reporter = htmlspecialchars((string)($ticket['reporter_name'] ?? 'Uživatel'), ENT_QUOTES, 'UTF-8');
@@ -2160,7 +2160,7 @@ function sendTestEmail(string $toEmail): string {
     require_once $phpmailerSrc . '/SMTP.php';
 
     $host     = defined('SMTP_HOST') ? SMTP_HOST : '';
-    $useSendmail = ($host === '' || $host === 'localhost' || $host === '127.0.0.1');
+    $useSendmail = ($host === '');
 
     $mail = new PHPMailer\PHPMailer\PHPMailer(true);
     $debugLog = '';
@@ -3024,6 +3024,7 @@ function enqueueEmailNotificationJob(string $templateKey, string $recipientEmail
 
 function processEmailNotificationQueue(int $limit = 20): array {
   $results = [];
+  $maxAttempts = 5;
 
   if (!isEmailQueueEnabled() || !emailNotificationQueueTableAvailable()) {
     return $results;
@@ -3047,6 +3048,7 @@ function processEmailNotificationQueue(int $limit = 20): array {
     'SELECT id, template_key, recipient_email, subject, payload_json, attempt_count
      FROM email_notification_jobs
      WHERE status IN ("pending", "failed")
+       AND attempt_count < ' . $maxAttempts . '
        AND next_attempt_at <= NOW()
      ORDER BY id ASC
      LIMIT ' . $limit
@@ -3105,22 +3107,75 @@ function processEmailNotificationQueue(int $limit = 20): array {
 
       $results[] = ['job_id' => $jobId, 'status' => 'done', 'template' => $templateKey];
     } catch (Throwable $e) {
-      $delayMinutes = min(360, max(2, (int)pow(2, max(0, $attemptCount))));
-      $markFailed = $pdo->prepare(
-        'UPDATE email_notification_jobs
-         SET status = "failed",
-             last_error = ?,
-             next_attempt_at = DATE_ADD(NOW(), INTERVAL ? MINUTE),
-             updated_at = NOW()
-         WHERE id = ?'
-      );
-      $markFailed->execute([mb_substr($e->getMessage(), 0, 2000, 'UTF-8'), $delayMinutes, $jobId]);
+      $nextAttemptCount = $attemptCount + 1;
+      if ($nextAttemptCount >= $maxAttempts) {
+        $markDead = $pdo->prepare(
+          'UPDATE email_notification_jobs
+           SET status = "dead",
+               last_error = ?,
+               updated_at = NOW()
+           WHERE id = ?'
+        );
+        $markDead->execute([mb_substr($e->getMessage(), 0, 2000, 'UTF-8'), $jobId]);
 
-      $results[] = ['job_id' => $jobId, 'status' => 'failed', 'template' => $templateKey, 'error' => $e->getMessage()];
+        $results[] = ['job_id' => $jobId, 'status' => 'dead', 'template' => $templateKey, 'error' => $e->getMessage()];
+      } else {
+        $delayMinutes = min(360, max(2, (int)pow(2, max(0, $attemptCount))));
+        $markFailed = $pdo->prepare(
+          'UPDATE email_notification_jobs
+           SET status = "failed",
+               last_error = ?,
+               next_attempt_at = DATE_ADD(NOW(), INTERVAL ? MINUTE),
+               updated_at = NOW()
+           WHERE id = ?'
+        );
+        $markFailed->execute([mb_substr($e->getMessage(), 0, 2000, 'UTF-8'), $delayMinutes, $jobId]);
+
+        $results[] = ['job_id' => $jobId, 'status' => 'failed', 'template' => $templateKey, 'error' => $e->getMessage()];
+      }
     }
   }
 
   return $results;
+}
+
+function isInlineCalendarSyncEnabled(): bool {
+  return defined('CALENDAR_SYNC_INLINE_ENABLED') && CALENDAR_SYNC_INLINE_ENABLED;
+}
+
+function processInlineCalendarSyncQueues(int $googleLimit = 2, int $appleLimit = 3, int $athleteAppleLimit = 3): array {
+  $summary = [
+    'google' => 0,
+    'apple_coach' => 0,
+    'apple_athlete' => 0,
+  ];
+
+  if (!isInlineCalendarSyncEnabled()) {
+    return $summary;
+  }
+
+  try {
+    $google = processCoachGoogleCalendarSyncQueue(max(1, min(20, $googleLimit)));
+    $summary['google'] = count($google);
+  } catch (Throwable $e) {
+    error_log('processInlineCalendarSyncQueues google error: ' . $e->getMessage());
+  }
+
+  try {
+    $appleCoach = processCoachAppleCaldavSyncQueue(max(1, min(20, $appleLimit)));
+    $summary['apple_coach'] = count($appleCoach);
+  } catch (Throwable $e) {
+    error_log('processInlineCalendarSyncQueues apple coach error: ' . $e->getMessage());
+  }
+
+  try {
+    $appleAthlete = processAthleteAppleCaldavSyncQueue(max(1, min(20, $athleteAppleLimit)));
+    $summary['apple_athlete'] = count($appleAthlete);
+  } catch (Throwable $e) {
+    error_log('processInlineCalendarSyncQueues apple athlete error: ' . $e->getMessage());
+  }
+
+  return $summary;
 }
 
 function isGoogleCalendarApiConfigured(): bool {

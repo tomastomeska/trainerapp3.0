@@ -25,29 +25,13 @@ if (!defined('APP_VERSION')) {
     define('APP_VERSION', '1.1.01');
 }
 
-if (!defined('DB_HOST'))    define('DB_HOST',    'localhost');
+if (!defined('DB_HOST'))    define('DB_HOST',    'md433.wedos.net');
 if (!defined('DB_NAME'))    define('DB_NAME',    'trainerapp_v2_dev');
 if (!defined('DB_USER'))    define('DB_USER',    'root');
 if (!defined('DB_PASS'))    define('DB_PASS',    '');
 if (!defined('DB_CHARSET')) define('DB_CHARSET', 'utf8mb4');
 if (!defined('DB_CONNECT_TIMEOUT')) define('DB_CONNECT_TIMEOUT', 5);
 if (!defined('DB_AUTO_SCHEMA_UPGRADE')) define('DB_AUTO_SCHEMA_UPGRADE', false);
-
-function isLocalDbHostEntry(string $hostEntry): bool {
-    $host = trim($hostEntry);
-    if ($host === '') {
-        return false;
-    }
-
-    if (preg_match('/^\[(.+)\]:(\d+)$/', $host, $m)) {
-        $host = $m[1];
-    } elseif (preg_match('/^([^:]+):(\d+)$/', $host, $m)) {
-        $host = $m[1];
-    }
-
-    $host = strtolower(trim($host));
-    return in_array($host, ['localhost', '127.0.0.1', '::1'], true);
-}
 
 function getDB(): PDO {
     static $pdo = null;
@@ -67,17 +51,7 @@ function getDB(): PDO {
             }
         }
         if (empty($hosts)) {
-            $hosts[] = 'localhost';
-        }
-
-        // Fallback na druhou local variantu zkus jen tehdy,
-        // kdy konfigurace obsahuje pouze jednu lokalni hodnotu bez portu.
-        if (count($hosts) === 1) {
-            if ($hosts[0] === 'localhost') {
-                $hosts[] = '127.0.0.1';
-            } elseif ($hosts[0] === '127.0.0.1') {
-                $hosts[] = 'localhost';
-            }
+            $hosts[] = 'md433.wedos.net';
         }
 
         $errors = [];

@@ -77,7 +77,7 @@ $cronSecret = getCronSecret();
 $isHttps    = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
     || (($_SERVER['SERVER_PORT'] ?? '') === '443');
 $scheme     = $isHttps ? 'https' : 'http';
-$host       = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? 'localhost');
+$host       = trim((string)($_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? '')));
 $cronUrl    = $scheme . '://' . $host . BASE_URL . '/cron_birthday.php?secret=' . $cronSecret;
 
 // SMTP info

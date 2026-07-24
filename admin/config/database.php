@@ -25,7 +25,7 @@ if (!defined('APP_VERSION')) {
     define('APP_VERSION', '1.1.01');
 }
 
-if (!defined('DB_HOST'))    define('DB_HOST',    'localhost');
+if (!defined('DB_HOST'))    define('DB_HOST',    'md433.wedos.net');
 if (!defined('DB_NAME'))    define('DB_NAME',    'trainerapp_v2_dev');
 if (!defined('DB_USER'))    define('DB_USER',    'root');
 if (!defined('DB_PASS'))    define('DB_PASS',    '');
@@ -46,18 +46,12 @@ function getDB(): PDO {
         $hosts = [];
         foreach (explode(',', (string)DB_HOST) as $h) {
             $h = trim($h);
-            if ($h !== '') {
+            if ($h !== '' && !isLocalDbHostEntry($h)) {
                 $hosts[] = $h;
             }
         }
         if (empty($hosts)) {
-            $hosts[] = 'localhost';
-        }
-        if (!in_array('localhost', $hosts, true)) {
-            $hosts[] = 'localhost';
-        }
-        if (!in_array('127.0.0.1', $hosts, true)) {
-            $hosts[] = '127.0.0.1';
+            $hosts[] = 'md433.wedos.net';
         }
 
         $errors = [];

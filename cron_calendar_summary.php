@@ -15,6 +15,22 @@
 
 $isCli = (php_sapi_name() === 'cli');
 
+function acquireCronLock(string $lockKey): array {
+    $safeKey = preg_replace('/[^a-z0-9_\-]/i', '_', $lockKey) ?: 'default';
+    $lockPath = rtrim((string)sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'trainerapp_' . $safeKey . '.lock';
+    $handle = @fopen($lockPath, 'c');
+    if (!is_resource($handle)) {
+        return ['acquired' => false, 'handle' => null, 'path' => $lockPath, 'reason' => 'lock_file_unavailable'];
+    }
+
+    if (!@flock($handle, LOCK_EX | LOCK_NB)) {
+        @fclose($handle);
+        return ['acquired' => false, 'handle' => null, 'path' => $lockPath, 'reason' => 'already_running'];
+    }
+
+    return ['acquired' => true, 'handle' => $handle, 'path' => $lockPath, 'reason' => 'acquired'];
+}
+
 if ($isCli) {
     require_once __DIR__ . '/config/config.php';
     require_once __DIR__ . '/config/database.php';
@@ -32,27 +48,68 @@ if ($isCli) {
     }
 }
 
-$emailLimitRaw = isset($_GET['email_limit']) ? (int)$_GET['email_limit'] : 300;
-$emailLimit = max(1, min(1000, $emailLimitRaw));
+$queueEnabled = defined('QUEUE_WORKERS_ENABLED') ? (bool)QUEUE_WORKERS_ENABLED : true;
+if (isset($_GET['queue_enabled'])) {
+    $queueEnabled = ((string)$_GET['queue_enabled'] !== '0');
+}
 
-$googleLimitRaw = isset($_GET['google_limit']) ? (int)$_GET['google_limit'] : 120;
-$googleLimit = max(1, min(500, $googleLimitRaw));
+$calendarWorkersEnabled = ((string)($_GET['calendar_workers_enabled'] ?? '1') !== '0');
+$emailWorkerEnabled = ((string)($_GET['email_worker_enabled'] ?? '0') === '1');
+$appleBootstrapEnabled = ((string)($_GET['apple_bootstrap_enabled'] ?? '0') === '1');
 
-$appleLimitRaw = isset($_GET['apple_limit']) ? (int)$_GET['apple_limit'] : 120;
-$appleLimit = max(1, min(500, $appleLimitRaw));
+$emailLimitRaw = isset($_GET['email_limit']) ? (int)$_GET['email_limit'] : 40;
+$emailLimit = max(1, min(80, $emailLimitRaw));
+
+$googleLimitRaw = isset($_GET['google_limit']) ? (int)$_GET['google_limit'] : 8;
+$googleLimit = max(1, min(12, $googleLimitRaw));
+
+$appleLimitRaw = isset($_GET['apple_limit']) ? (int)$_GET['apple_limit'] : 8;
+$appleLimit = max(1, min(12, $appleLimitRaw));
 
 $appleBootstrapCoachLimitRaw = isset($_GET['apple_bootstrap_coach_limit']) ? (int)$_GET['apple_bootstrap_coach_limit'] : 8;
-$appleBootstrapCoachLimit = max(1, min(60, $appleBootstrapCoachLimitRaw));
+$appleBootstrapCoachLimit = max(1, min(20, $appleBootstrapCoachLimitRaw));
 
 $appleBootstrapEventsLimitRaw = isset($_GET['apple_bootstrap_events_limit']) ? (int)$_GET['apple_bootstrap_events_limit'] : 300;
-$appleBootstrapEventsLimit = max(1, min(3000, $appleBootstrapEventsLimitRaw));
+$appleBootstrapEventsLimit = max(1, min(250, $appleBootstrapEventsLimitRaw));
 
-$summaryResults = processCalendarSummaryNotifications();
-$emailResults = processEmailNotificationQueue($emailLimit);
-$googleResults = processCoachGoogleCalendarSyncQueue($googleLimit);
-$appleBootstrap = bootstrapCoachAppleCaldavMissingEvents($appleBootstrapCoachLimit, $appleBootstrapEventsLimit);
-$appleCoachResults = processCoachAppleCaldavSyncQueue($appleLimit);
-$appleAthleteResults = processAthleteAppleCaldavSyncQueue($appleLimit);
+$lock = acquireCronLock('calendar_workers');
+$lockAcquired = (bool)$lock['acquired'];
+$lockReason = (string)$lock['reason'];
+
+$summaryResults = [];
+$emailResults = [];
+$googleResults = [];
+$appleBootstrap = ['coaches_scanned' => 0, 'jobs_enqueued' => 0];
+$appleCoachResults = [];
+$appleAthleteResults = [];
+
+if ($lockAcquired && isset($lock['handle']) && is_resource($lock['handle'])) {
+    register_shutdown_function(static function () use ($lock): void {
+        if (isset($lock['handle']) && is_resource($lock['handle'])) {
+            @flock($lock['handle'], LOCK_UN);
+            @fclose($lock['handle']);
+        }
+    });
+}
+
+if ($lockAcquired) {
+    $summaryResults = processCalendarSummaryNotifications();
+
+    if ($queueEnabled) {
+        if ($emailWorkerEnabled) {
+            $emailResults = processEmailNotificationQueue($emailLimit);
+        }
+
+        if ($calendarWorkersEnabled) {
+            $googleResults = processCoachGoogleCalendarSyncQueue($googleLimit);
+            if ($appleBootstrapEnabled) {
+                $appleBootstrap = bootstrapCoachAppleCaldavMissingEvents($appleBootstrapCoachLimit, $appleBootstrapEventsLimit);
+            }
+            $appleCoachResults = processCoachAppleCaldavSyncQueue($appleLimit);
+            $appleAthleteResults = processAthleteAppleCaldavSyncQueue($appleLimit);
+        }
+    }
+}
 
 if ($isCli) {
     $total = count($summaryResults);
@@ -67,6 +124,7 @@ if ($isCli) {
         . ", apple_coach=" . count($appleCoachResults)
         . ", apple_athlete=" . count($appleAthleteResults)
         . ", apple_bootstrap_jobs=" . (int)($appleBootstrap['jobs_enqueued'] ?? 0)
+        . ", lock=" . $lockReason
         . "\n\n";
 
     foreach ($summaryResults as $row) {
@@ -92,6 +150,13 @@ if ($isCli) {
         'sent' => $sent,
         'results' => $summaryResults,
         'queue' => [
+            'enabled' => $queueEnabled,
+            'calendar_workers_enabled' => $calendarWorkersEnabled,
+            'email_worker_enabled' => $emailWorkerEnabled,
+            'apple_bootstrap_enabled' => $appleBootstrapEnabled,
+            'lock_acquired' => $lockAcquired,
+            'lock_reason' => $lockReason,
+            'lock_path' => (string)($lock['path'] ?? ''),
             'email_processed' => count($emailResults),
             'google_processed' => count($googleResults),
             'apple_bootstrap' => $appleBootstrap,

@@ -6,7 +6,7 @@
 // ============================================================
 
 // Databaze
-define('DB_HOST',    'localhost');
+define('DB_HOST',    'md433.wedos.net');
 define('DB_NAME',    'nazev_databaze');
 define('DB_USER',    'uzivatel_db');
 define('DB_PASS',    'heslo_db');
@@ -44,6 +44,12 @@ define('APPLE_CALDAV_HTTP_TIMEOUT', 12);
 
 // Zapne odesilani notifikacnich emailu pres DB frontu + cron worker
 define('EMAIL_QUEUE_ENABLED', true);
+
+// Nouzovy hybrid: po enqueue zpracuje malou cast sync fronty i v uzivatelskem requestu
+define('CALENDAR_SYNC_INLINE_ENABLED', false);
+
+// Zapne zpracovani queue workeru v cron skriptech (email/google/apple)
+define('QUEUE_WORKERS_ENABLED', false);
 
 // Google Calendar API (OAuth2)
 // Client ID / secret z Google Cloud projektu.

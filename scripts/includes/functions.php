@@ -1482,14 +1482,14 @@ HTML;
 
 /**
  * Nakonfiguruje PHPMailer instanci dle SMTP_HOST:
- * - 'localhost' nebo prázdný host → isMail() (PHP mail(), bez auth, Wedos hosting)
+ * - prázdný host → isMail() (PHP mail(), bez auth, Wedos hosting)
  * - jinak → isSMTP() s STARTTLS a autentizací
  */
 function _configureMail(object $mail): void {
     $host = defined('SMTP_HOST') ? SMTP_HOST : '';
   $smtpTimeout = max(3, (int)(defined('SMTP_TIMEOUT') ? SMTP_TIMEOUT : 8));
 
-    if ($host === '' || $host === 'localhost' || $host === '127.0.0.1') {
+    if ($host === '') {
         $mail->isMail();
         $mail->CharSet = 'UTF-8';
         $mail->setFrom(SMTP_FROM, SMTP_FROM_NAME);
@@ -1533,7 +1533,7 @@ function sendMessageNotificationEmail(string $toEmail, string $coachName, string
 
     $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['SERVER_PORT'] ?? '') === '443');
     $scheme = $isHttps ? 'https' : 'http';
-    $host = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? 'localhost');
+    $host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
     $link = $scheme . '://' . $host . BASE_URL . '/zpravy.php';
 
     $htmlBody = "<p>Dobrý den, <strong>" . htmlspecialchars($coachName, ENT_QUOTES) . "</strong>,</p>"
@@ -1629,7 +1629,7 @@ function sendTestEmail(string $toEmail): string {
     require_once $phpmailerSrc . '/SMTP.php';
 
     $host     = defined('SMTP_HOST') ? SMTP_HOST : '';
-    $useSendmail = ($host === '' || $host === 'localhost' || $host === '127.0.0.1');
+    $useSendmail = ($host === '');
 
     $mail = new PHPMailer\PHPMailer\PHPMailer(true);
     $debugLog = '';

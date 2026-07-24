@@ -129,7 +129,7 @@ $eventsStmt = $pdo->prepare(
 $eventsStmt->execute([(int)$coach['id']]);
 $events = $eventsStmt->fetchAll();
 
-$host = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? 'localhost');
+$host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
 $calendarName = trim((string)($coach['name'] ?? 'Trenér'));
 
 $refreshInterval = 'PT15M';

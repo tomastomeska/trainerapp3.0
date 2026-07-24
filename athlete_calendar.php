@@ -44,7 +44,7 @@ function buildAbsoluteAppUrl(string $path): string
 {
     $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['SERVER_PORT'] ?? '') === '443');
     $scheme = $isHttps ? 'https' : 'http';
-    $host = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? 'localhost');
+    $host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
 
     return $scheme . '://' . $host . BASE_URL . $path;
 }

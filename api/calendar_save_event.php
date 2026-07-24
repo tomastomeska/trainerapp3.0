@@ -651,6 +651,7 @@ if ($eventId > 0) {
             enqueueAthleteAppleCaldavSync($athleteSyncId, $syncEventId, 'upsert');
         }
     }
+    processInlineCalendarSyncQueues(2, 3, 3);
 
     echo json_encode(['success' => true, 'id' => $eventId, 'mode' => 'updated', 'approval_status' => $nextApprovalStatus]);
     exit;
@@ -770,6 +771,7 @@ foreach ($createdIds as $syncEventId) {
         enqueueAthleteAppleCaldavSync((int)$secondAthleteId, (int)$syncEventId, 'upsert');
     }
 }
+processInlineCalendarSyncQueues(2, 3, 3);
 
 echo json_encode([
     'success' => true,

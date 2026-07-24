@@ -196,7 +196,7 @@ renderHeader('Aktivní trénink');
                 <div class="mb-0" style="padding-top:22px">
                     <button type="button"
                             class="btn btn-warning fw-bold"
-                            onclick="addSeries(<?= $ex['exercise_id'] ?>, <?= $sessionId ?>)">
+                            onclick="addSeries(this, <?= $ex['exercise_id'] ?>, <?= $sessionId ?>)">
                         <i class="fas fa-plus me-1"></i>Přidat sérii
                     </button>
                 </div>
@@ -323,8 +323,27 @@ renderHeader('Aktivní trénink');
 </div>
 
 <script>
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(url, options = {}, attempts = 3) {
+    let lastError = null;
+    for (let i = 1; i <= attempts; i++) {
+        try {
+            return await fetch(url, options);
+        } catch (error) {
+            lastError = error;
+            if (i < attempts) {
+                await sleep(i * 250);
+            }
+        }
+    }
+    throw (lastError || new Error('Network request failed'));
+}
+
 // Přidání série přes AJAX
-async function addSeries(exerciseId, sessionId) {
+async function addSeries(button, exerciseId, sessionId) {
     const weight  = parseFloat(document.getElementById('weight-' + exerciseId).value) || 0;
     const reps    = parseInt(document.getElementById('reps-' + exerciseId).value)    || 0;
     const assist  = parseInt(document.getElementById('assist-' + exerciseId).value)  || 0;
@@ -332,12 +351,13 @@ async function addSeries(exerciseId, sessionId) {
     const tbody   = document.getElementById('series-body-' + exerciseId);
     const rowCount = tbody.querySelectorAll('tr').length;
 
-    const btn = event.currentTarget;
+    const btn = button;
+    if (!btn) return;
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Ukládám...';
 
     try {
-        const resp = await fetch('<?= BASE_URL ?>/api/save_series.php', {
+        const resp = await fetchWithRetry('<?= BASE_URL ?>/api/save_series.php', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -393,7 +413,7 @@ async function deleteSeries(seriesId, exerciseId) {
     if (!confirm('Smazat tuto sérii?')) return;
 
     try {
-        const resp = await fetch('<?= BASE_URL ?>/api/delete_series.php', {
+        const resp = await fetchWithRetry('<?= BASE_URL ?>/api/delete_series.php', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({

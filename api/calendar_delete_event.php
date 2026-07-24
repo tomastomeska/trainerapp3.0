@@ -263,6 +263,7 @@ foreach (array_values(array_unique($deletedEventIds)) as $deletedEventId) {
         }
     }
 }
+processInlineCalendarSyncQueues(2, 3, 3);
 
 $participants = [];
 if (!empty($event['athlete_id'])) {

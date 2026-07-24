@@ -5,7 +5,7 @@
 // ============================================================
 
 // Databáze
-define('DB_HOST',    'localhost');        // nebo hostname od hostingu
+define('DB_HOST',    'md433.wedos.net');   // nebo hostname od hostingu
 define('DB_NAME',    'nazev_databaze');
 define('DB_USER',    'uzivatel_db');
 define('DB_PASS',    'heslo_db');

@@ -34,7 +34,7 @@ function normalizeBaseUrlPath(string $baseUrl): string {
 	return rtrim($baseUrl, '/');
 }
 
-if (!defined('DB_HOST')) define('DB_HOST', (string)envValue('TRAINERAPP_DB_HOST', 'localhost,md433.wedos.net'));
+if (!defined('DB_HOST')) define('DB_HOST', (string)envValue('TRAINERAPP_DB_HOST', 'md433.wedos.net'));
 if (!defined('DB_NAME')) define('DB_NAME', (string)envValue('TRAINERAPP_DB_NAME', 'd391857_tplan'));
 if (!defined('DB_USER')) define('DB_USER', (string)envValue('TRAINERAPP_DB_USER', 'a391857_tplan'));
 if (!defined('DB_PASS')) define('DB_PASS', (string)envValue('TRAINERAPP_DB_PASS', 'rfea4txM'));

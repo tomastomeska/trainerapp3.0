@@ -47,12 +47,15 @@ foreach ($sessions as $s) {
     )->execute([$now, $location ?: null, $notes ?: null, $s['id']]);
 }
 
-// Sestaví flash zprávu s odkazy na oba tréninky
-$links = [];
+// Sestaví flash zprávu s názvy sportovců (bez HTML)
+$names = [];
 foreach ($sessions as $s) {
-    $name = h($s['first_name'] . ' ' . $s['last_name']);
-    $links[] = '<a href="' . BASE_URL . '/training_detail.php?id=' . (int)$s['id'] . '" class="alert-link">' . $name . '</a>';
+    $fullName = trim((string)$s['first_name'] . ' ' . (string)$s['last_name']);
+    if ($fullName !== '') {
+        $names[] = $fullName;
+    }
 }
 
-flash('success', 'Párový trénink dokončen! Tréninky uloženy: ' . implode(' a ', $links) . ' 🎉');
+$namesText = !empty($names) ? implode(' a ', $names) : 'sportovci';
+flash('success', 'Párový trénink dokončen! Tréninky uloženy: ' . $namesText . ' 🎉');
 redirect(BASE_URL . '/dashboard.php');

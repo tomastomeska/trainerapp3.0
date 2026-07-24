@@ -3,7 +3,7 @@
 # Replace placeholders before reload.
 
 # Database
-SetEnv TRAINERAPP_DB_HOST "127.0.0.1"
+SetEnv TRAINERAPP_DB_HOST "md433.wedos.net"
 SetEnv TRAINERAPP_DB_NAME "REPLACE_DB_NAME"
 SetEnv TRAINERAPP_DB_USER "trainerapp_app"
 SetEnv TRAINERAPP_DB_PASS "REPLACE_WITH_NEW_STRONG_DB_PASSWORD"

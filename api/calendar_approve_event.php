@@ -81,6 +81,7 @@ if ((int)($event['athlete_id'] ?? 0) > 0) {
 if ((int)($event['second_athlete_id'] ?? 0) > 0) {
     enqueueAthleteAppleCaldavSync((int)$event['second_athlete_id'], $eventId, 'upsert');
 }
+processInlineCalendarSyncQueues(2, 3, 3);
 
 $athleteId = (int)($event['athlete_id'] ?? 0);
 if ($athleteId > 0) {

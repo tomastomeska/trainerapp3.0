@@ -104,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $isHttps  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
                         || (($_SERVER['SERVER_PORT'] ?? '') === '443');
                     $scheme   = $isHttps ? 'https' : 'http';
-                    $host     = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? 'localhost');
+                    $host     = trim((string)($_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? '')));
                     $loginUrl = $scheme . '://' . $host . BASE_URL . '/login.php';
 
                     $sent = sendCoachWelcomeEmail($email, $username, $password, $loginUrl);

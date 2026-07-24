@@ -1,3 +1,4 @@
+                    $host = trim((string)($_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? '')));
 <?php
 // admin/coach_edit.php – editace trenéra
 require_once __DIR__ . '/../includes/admin_auth.php';

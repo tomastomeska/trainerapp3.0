@@ -8,6 +8,16 @@ require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/app_monitor.php';
 
+if (php_sapi_name() !== 'cli' && !headers_sent()) {
+    $hostHeader = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
+    $host = strtolower((string)preg_replace('/:\\d+$/', '', $hostHeader));
+    if ($host === 'reservio.online') {
+        $requestUri = (string)($_SERVER['REQUEST_URI'] ?? '/');
+        header('Location: https://www.reservio.online' . $requestUri, true, 302);
+        exit;
+    }
+}
+
 if (!headers_sent()) {
     header('X-Content-Type-Options: nosniff');
     header('X-Frame-Options: SAMEORIGIN');
@@ -30,6 +40,25 @@ if (session_status() === PHP_SESSION_NONE) {
     ]);
     session_start();
     unset($cookiePath);
+}
+
+if (!function_exists('trainerAppShouldReleaseSessionLock')) {
+    function trainerAppShouldReleaseSessionLock(): bool {
+        if (php_sapi_name() === 'cli' || session_status() !== PHP_SESSION_ACTIVE) {
+            return false;
+        }
+
+        $script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? ''));
+        if ($script === '') {
+            return false;
+        }
+
+        return (bool)preg_match('#/(api|admin/api)/[^/]+\.php$#', $script);
+    }
+}
+
+if (trainerAppShouldReleaseSessionLock()) {
+    session_write_close();
 }
 
 function isAdminLoggedIn(): bool {

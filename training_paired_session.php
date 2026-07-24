@@ -314,7 +314,7 @@ renderHeader('Párový trénink', false, true);
                         <div>
                             <button type="button"
                                     class="btn btn-warning btn-sm fw-bold"
-                                    onclick="addPairedSeries(<?= $sid ?>, <?= $eid ?>)">
+                                    onclick="addPairedSeries(this, <?= $sid ?>, <?= $eid ?>)">
                                 <i class="fas fa-plus me-1"></i>Přidat
                             </button>
                         </div>
@@ -417,9 +417,28 @@ function apiUrl(path) {
     return APP_BASE_PATH + normalizedPath;
 }
 
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(url, options = {}, attempts = 3) {
+    let lastError = null;
+    for (let i = 1; i <= attempts; i++) {
+        try {
+            return await fetch(url, options);
+        } catch (error) {
+            lastError = error;
+            if (i < attempts) {
+                await sleep(i * 250);
+            }
+        }
+    }
+    throw (lastError || new Error('Network request failed'));
+}
+
 async function saveExerciseOrder(sessionId, orderedExerciseIds) {
     try {
-        const response = await fetch(apiUrl('/api/reorder_session_exercises.php'), {
+        const response = await fetchWithRetry(apiUrl('/api/reorder_session_exercises.php'), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -519,7 +538,7 @@ async function updatePairedSessionExercise(button, payload) {
     }
 
     try {
-        const response = await fetch(apiUrl('/api/update_session_exercise.php'), {
+        const response = await fetchWithRetry(apiUrl('/api/update_session_exercise.php'), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -565,7 +584,7 @@ async function addExerciseToPairedSession(button, sessionId) {
     }
 
     try {
-        const resp = await fetch(apiUrl('/api/add_session_exercise.php'), {
+        const resp = await fetchWithRetry(apiUrl('/api/add_session_exercise.php'), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -660,7 +679,7 @@ document.addEventListener('DOMContentLoaded', function() {
     syncLocationInput();
 });
 
-async function addPairedSeries(sessionId, exerciseId) {
+async function addPairedSeries(button, sessionId, exerciseId) {
     const key    = sessionId + '-' + exerciseId;
     const weight = parseFloat(document.getElementById('weight-' + key).value) || 0;
     const reps   = parseInt(document.getElementById('reps-' + key).value)     || 0;
@@ -669,12 +688,13 @@ async function addPairedSeries(sessionId, exerciseId) {
     const tbody    = document.getElementById('series-body-' + key);
     const rowCount = tbody.querySelectorAll('tr').length;
 
-    const btn = event.currentTarget;
+    const btn = button;
+    if (!btn) return;
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
     try {
-        const resp = await fetch(apiUrl('/api/save_series.php'), {
+        const resp = await fetchWithRetry(apiUrl('/api/save_series.php'), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -726,7 +746,7 @@ async function deletePairedSeries(seriesId, sessionId, exerciseId) {
     if (!confirm('Smazat tuto sérii?')) return;
     const key = sessionId + '-' + exerciseId;
     try {
-        const resp = await fetch(apiUrl('/api/delete_series.php'), {
+        const resp = await fetchWithRetry(apiUrl('/api/delete_series.php'), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({

@@ -18,6 +18,17 @@ foreach ($_envCandidates as $_envFile) {
 }
 unset($_envCandidates, $_envFile);
 
+// Canonical host redirect: rezervio.online -> www.reservio.online
+if (php_sapi_name() !== 'cli' && !headers_sent()) {
+    $hostHeader = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
+    $host = strtolower((string)preg_replace('/:\\d+$/', '', $hostHeader));
+    if ($host === 'reservio.online') {
+        $requestUri = (string)($_SERVER['REQUEST_URI'] ?? '/');
+        header('Location: https://www.reservio.online' . $requestUri, true, 302);
+        exit;
+    }
+}
+
 // Zakladni nastaveni aplikace
 if (!defined('APP_NAME')) define('APP_NAME', 'TrainerApp');
 if (!defined('APP_VERSION')) define('APP_VERSION', '1.1.01');
