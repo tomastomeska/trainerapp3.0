@@ -33,6 +33,23 @@ if (!defined('DB_CHARSET')) define('DB_CHARSET', 'utf8mb4');
 if (!defined('DB_CONNECT_TIMEOUT')) define('DB_CONNECT_TIMEOUT', 5);
 if (!defined('DB_AUTO_SCHEMA_UPGRADE')) define('DB_AUTO_SCHEMA_UPGRADE', false);
 
+if (!function_exists('isLocalDbHostEntry')) {
+    function isLocalDbHostEntry(string $host): bool {
+        $host = strtolower(trim($host));
+        if ($host === '') {
+            return false;
+        }
+
+        if (preg_match('/^\[(.+)\](?::\d+)?$/', $host, $m)) {
+            $host = $m[1];
+        } elseif (preg_match('/^([^:]+):\d+$/', $host, $m)) {
+            $host = $m[1];
+        }
+
+        return in_array($host, ['localhost', '127.0.0.1', '::1'], true);
+    }
+}
+
 function getDB(): PDO {
     static $pdo = null;
     if ($pdo === null) {
@@ -182,6 +199,11 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         $pdo->exec('ALTER TABLE athletes ADD COLUMN paired_training_rate DECIMAL(10,2) NULL AFTER training_rate');
     }
 
+    $stmtAthleteSpecialTraining = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'special_training_enabled'");
+    if (!$stmtAthleteSpecialTraining->fetch()) {
+        $pdo->exec('ALTER TABLE athletes ADD COLUMN special_training_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER paired_training_rate');
+    }
+
     // Poslední přihlášení trenéra
     $stmtLogin = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'last_login'");
     if (!$stmtLogin->fetch()) {
@@ -192,6 +214,11 @@ function ensureSchemaUpgrades(PDO $pdo): void {
     $stmtCoachBank = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'bank_account'");
     if (!$stmtCoachBank->fetch()) {
         $pdo->exec('ALTER TABLE coaches ADD COLUMN bank_account VARCHAR(64) NULL AFTER email');
+    }
+
+    $stmtCoachSpecialTraining = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'special_training_enabled'");
+    if (!$stmtCoachSpecialTraining->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN special_training_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER bank_account');
     }
 
     // Tabulka superadminu

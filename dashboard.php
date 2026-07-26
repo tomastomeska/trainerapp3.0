@@ -9,6 +9,18 @@ $coachId = getCurrentCoachId();
 $pdo     = getDB();
 $mustChangePassword = !empty($_SESSION['coach_force_password_change']);
 $forcePasswordError = null;
+$coachSpecialTrainingEnabled = false;
+
+try {
+    $specialTrainingColumnStmt = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'special_training_enabled'");
+    if ($specialTrainingColumnStmt !== false && $specialTrainingColumnStmt->fetch()) {
+        $specialTrainingValueStmt = $pdo->prepare('SELECT special_training_enabled FROM coaches WHERE id = ? LIMIT 1');
+        $specialTrainingValueStmt->execute([$coachId]);
+        $coachSpecialTrainingEnabled = ((int)$specialTrainingValueStmt->fetchColumn()) === 1;
+    }
+} catch (Throwable $e) {
+    $coachSpecialTrainingEnabled = false;
+}
 
 if ($mustChangePassword && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
@@ -433,6 +445,23 @@ renderHeader('Dashboard', false, true);
         font-size: .72rem;
     }
 
+    .coach-dashboard-shortcut.is-disabled {
+        background: #f8fafc;
+        color: #64748b;
+        border-style: dashed;
+        pointer-events: none;
+    }
+
+    .coach-dashboard-shortcut.is-disabled .badge {
+        opacity: .95;
+    }
+
+    .quick-tile.quick-tile-disabled {
+        cursor: not-allowed;
+        opacity: .9;
+        pointer-events: none;
+    }
+
     @media (max-width: 991.98px) {
         .coach-dashboard-toolbar__sort,
         .coach-dashboard-toolbar__actions {
@@ -555,6 +584,16 @@ renderHeader('Dashboard', false, true);
             <a href="<?= BASE_URL ?>/meal_plans.php" class="coach-dashboard-shortcut"><span><i class="fas fa-utensils me-1"></i>Jídelníčky</span></a>
             <a href="<?= BASE_URL ?>/gallery.php" class="coach-dashboard-shortcut"><span><i class="fas fa-images me-1"></i>Galerie</span></a>
             <a href="<?= BASE_URL ?>/profile.php" class="coach-dashboard-shortcut"><span><i class="fas fa-user-tie me-1"></i>Můj profil</span></a>
+            <?php if ($coachSpecialTrainingEnabled): ?>
+            <a href="<?= BASE_URL ?>/special_training.php" class="coach-dashboard-shortcut">
+                <span><i class="fas fa-flag-checkered me-1"></i>Events</span>
+            </a>
+            <?php else: ?>
+            <span class="coach-dashboard-shortcut is-disabled">
+                <span><i class="fas fa-lock me-1"></i>Events</span>
+                <span class="badge bg-secondary">Uzamčeno</span>
+            </span>
+            <?php endif; ?>
             <a href="<?= BASE_URL ?>/coach_manual.php" class="coach-dashboard-shortcut"><span><i class="fas fa-circle-question me-1"></i>Návod</span></a>
             <a href="<?= BASE_URL ?>/coach_terms.php" class="coach-dashboard-shortcut"><span><i class="fas fa-file-contract me-1"></i>Podmínky</span></a>
         </div>
@@ -570,6 +609,17 @@ renderHeader('Dashboard', false, true);
         <span class="quick-tile__label"><i class="fas fa-calendar-alt me-1"></i>Žádosti kalendáře</span>
         <span class="quick-tile__value"><?= (int)$pendingCalendarRequestCount ?></span>
     </a>
+    <?php if ($coachSpecialTrainingEnabled): ?>
+    <a href="<?= BASE_URL ?>/special_training.php" class="quick-tile quick-tile-info">
+        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-flag-checkered me-1"></i>Events</span>
+        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+    </a>
+    <?php else: ?>
+    <div class="quick-tile quick-tile-muted quick-tile-disabled">
+        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-lock me-1"></i>Events <span class="badge rounded-pill bg-secondary">Uzamčeno</span></span>
+        <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
+    </div>
+    <?php endif; ?>
 </div>
 
 <div class="card border-0 shadow-sm mb-3 coach-today-plan-card">

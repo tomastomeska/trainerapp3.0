@@ -539,6 +539,11 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         $pdo->exec('ALTER TABLE athletes ADD COLUMN last_login DATETIME NULL AFTER force_password_change');
     }
 
+    $stmtAthleteSpecialTraining = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'special_training_enabled'");
+    if (!$stmtAthleteSpecialTraining->fetch()) {
+        $pdo->exec('ALTER TABLE athletes ADD COLUMN special_training_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER login_enabled');
+    }
+
     $stmtTrainingRate = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'training_rate'");
     if (!$stmtTrainingRate->fetch()) {
         $pdo->exec('ALTER TABLE athletes ADD COLUMN training_rate DECIMAL(10,2) NULL AFTER email');
@@ -614,6 +619,11 @@ function ensureSchemaUpgrades(PDO $pdo): void {
     } else {
         $pdo->exec('UPDATE coaches SET makeup_booking_deadline_days = 14 WHERE makeup_booking_deadline_days IS NULL OR makeup_booking_deadline_days <= 0');
         $pdo->exec('ALTER TABLE coaches MODIFY COLUMN makeup_booking_deadline_days INT NOT NULL DEFAULT 14');
+    }
+
+    $stmtCoachSpecialTraining = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'special_training_enabled'");
+    if (!$stmtCoachSpecialTraining->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN special_training_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER makeup_booking_deadline_days');
     }
 
     // Soukromý token pro Apple Calendar odběr kalendáře trenéra

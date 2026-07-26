@@ -9,6 +9,17 @@ $athleteId = intParam($_GET, 'id');
 $error     = null;
 
 $pdo  = getDB();
+$stmtSpecialTrainingCol = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'special_training_enabled'");
+$hasSpecialTrainingColumn = $stmtSpecialTrainingCol !== false && (bool)$stmtSpecialTrainingCol->fetch();
+if (!$hasSpecialTrainingColumn) {
+    try {
+        $pdo->exec('ALTER TABLE athletes ADD COLUMN special_training_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER login_enabled');
+        $hasSpecialTrainingColumn = true;
+    } catch (Throwable $e) {
+        $hasSpecialTrainingColumn = false;
+    }
+}
+
 $stmt = $pdo->prepare(
     'SELECT a.*, c.name AS coach_name, c.username AS coach_username
      FROM athletes a
@@ -33,6 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $phone     = trim($_POST['phone_contact'] ?? '');
         $email     = trim($_POST['email'] ?? '');
         $notes     = trim($_POST['notes'] ?? '');
+        $specialTrainingEnabled = isset($_POST['special_training_enabled']) ? 1 : 0;
 
         if ($firstName === '' || $lastName === '') {
             $error = 'Vyplňte jméno a příjmení.';
@@ -46,23 +58,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $newPhoto = saveUploadedPhoto('photo', 'athletes');
             if ($newPhoto !== null) {
                 deleteUploadedPhoto($athlete['photo'] ?? null, 'athletes');
-                $stmt = $pdo->prepare(
-                    'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, phone_contact=?, email=?, notes=?, photo=?
-                     WHERE id=?'
-                );
-                $stmt->execute([
-                    $firstName, $lastName, $birthDate, $phone ?: null, $email ?: null, $notes ?: null,
-                    $newPhoto, $athleteId,
-                ]);
+                if ($hasSpecialTrainingColumn) {
+                    $stmt = $pdo->prepare(
+                        'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, phone_contact=?, email=?, notes=?, photo=?, special_training_enabled=?
+                         WHERE id=?'
+                    );
+                    $stmt->execute([
+                        $firstName, $lastName, $birthDate, $phone ?: null, $email ?: null, $notes ?: null,
+                        $newPhoto, $specialTrainingEnabled, $athleteId,
+                    ]);
+                } else {
+                    $stmt = $pdo->prepare(
+                        'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, phone_contact=?, email=?, notes=?, photo=?
+                         WHERE id=?'
+                    );
+                    $stmt->execute([
+                        $firstName, $lastName, $birthDate, $phone ?: null, $email ?: null, $notes ?: null,
+                        $newPhoto, $athleteId,
+                    ]);
+                }
             } else {
-                $stmt = $pdo->prepare(
-                    'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, phone_contact=?, email=?, notes=?
-                     WHERE id=?'
-                );
-                $stmt->execute([
-                    $firstName, $lastName, $birthDate, $phone ?: null, $email ?: null, $notes ?: null,
-                    $athleteId,
-                ]);
+                if ($hasSpecialTrainingColumn) {
+                    $stmt = $pdo->prepare(
+                        'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, phone_contact=?, email=?, notes=?, special_training_enabled=?
+                         WHERE id=?'
+                    );
+                    $stmt->execute([
+                        $firstName, $lastName, $birthDate, $phone ?: null, $email ?: null, $notes ?: null,
+                        $specialTrainingEnabled, $athleteId,
+                    ]);
+                } else {
+                    $stmt = $pdo->prepare(
+                        'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, phone_contact=?, email=?, notes=?
+                         WHERE id=?'
+                    );
+                    $stmt->execute([
+                        $firstName, $lastName, $birthDate, $phone ?: null, $email ?: null, $notes ?: null,
+                        $athleteId,
+                    ]);
+                }
             }
             flash('success', 'Údaje sportovce byly aktualizovány.');
             redirect(BASE_URL . '/admin/athletes.php');
@@ -147,6 +181,19 @@ renderAdminHeader('Upravit sportovce');
                         <input type="file" name="photo" class="form-control" accept="image/*">
                         <div class="form-text">Nahráním nové fotografie se předchozí nahradí.</div>
                     </div>
+                    <?php if ($hasSpecialTrainingColumn): ?>
+                    <div class="mb-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="special_training_enabled"
+                                   id="specialTrainingEnabled" value="1"
+                                   <?= !empty($d['special_training_enabled']) ? 'checked' : '' ?>>
+                            <label class="form-check-label fw-semibold" for="specialTrainingEnabled">
+                                Povolit sportovci přístup do Events
+                            </label>
+                        </div>
+                        <div class="form-text">Nezaškrtnuto = dlaždice je uzamčená a přímý vstup je zablokován.</div>
+                    </div>
+                    <?php endif; ?>
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-warning fw-bold px-4">
                             <i class="fas fa-save me-1"></i>Uložit změny

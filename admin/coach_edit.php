@@ -21,6 +21,17 @@ if (!$hasMakeupDeadlineColumn) {
     }
 }
 
+$stmtSpecialTrainingCol = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'special_training_enabled'");
+$hasSpecialTrainingColumn = $stmtSpecialTrainingCol !== false && (bool)$stmtSpecialTrainingCol->fetch();
+if (!$hasSpecialTrainingColumn) {
+    try {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN special_training_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER makeup_booking_deadline_days');
+        $hasSpecialTrainingColumn = true;
+    } catch (Throwable $e) {
+        $hasSpecialTrainingColumn = false;
+    }
+}
+
 $stmt = $pdo->prepare('SELECT * FROM coaches WHERE id = ?');
 $stmt->execute([$coachId]);
 $coach = $stmt->fetch();
@@ -41,6 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password  = $_POST['password']  ?? '';
         $password2 = $_POST['password2'] ?? '';
         $isActive  = isset($_POST['is_active']) ? 1 : 0;
+        $specialTrainingEnabled = isset($_POST['special_training_enabled']) ? 1 : 0;
         $makeupDeadlineDaysRaw = trim((string)($_POST['makeup_booking_deadline_days'] ?? ''));
         $makeupDeadlineDays = 14;
         $generateTemporaryPassword = $action === 'generate_password';
@@ -81,13 +93,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $tempPassword = generateRandomPassword(12);
                     $hash = password_hash($tempPassword, PASSWORD_DEFAULT);
                     if ($hasMakeupDeadlineColumn) {
-                        $pdo->prepare(
-                            'UPDATE coaches SET username=?, name=?, email=?, is_active=?, makeup_booking_deadline_days=?, password=?, password_changed_at = NOW(), force_password_change = 1 WHERE id=?'
-                        )->execute([$username, $name ?: null, $email ?: null, $isActive, $makeupDeadlineDays, $hash, $coachId]);
+                        if ($hasSpecialTrainingColumn) {
+                            $pdo->prepare(
+                                'UPDATE coaches SET username=?, name=?, email=?, is_active=?, makeup_booking_deadline_days=?, special_training_enabled=?, password=?, password_changed_at = NOW(), force_password_change = 1 WHERE id=?'
+                            )->execute([$username, $name ?: null, $email ?: null, $isActive, $makeupDeadlineDays, $specialTrainingEnabled, $hash, $coachId]);
+                        } else {
+                            $pdo->prepare(
+                                'UPDATE coaches SET username=?, name=?, email=?, is_active=?, makeup_booking_deadline_days=?, password=?, password_changed_at = NOW(), force_password_change = 1 WHERE id=?'
+                            )->execute([$username, $name ?: null, $email ?: null, $isActive, $makeupDeadlineDays, $hash, $coachId]);
+                        }
                     } else {
-                        $pdo->prepare(
-                            'UPDATE coaches SET username=?, name=?, email=?, is_active=?, password=?, password_changed_at = NOW(), force_password_change = 1 WHERE id=?'
-                        )->execute([$username, $name ?: null, $email ?: null, $isActive, $hash, $coachId]);
+                        if ($hasSpecialTrainingColumn) {
+                            $pdo->prepare(
+                                'UPDATE coaches SET username=?, name=?, email=?, is_active=?, special_training_enabled=?, password=?, password_changed_at = NOW(), force_password_change = 1 WHERE id=?'
+                            )->execute([$username, $name ?: null, $email ?: null, $isActive, $specialTrainingEnabled, $hash, $coachId]);
+                        } else {
+                            $pdo->prepare(
+                                'UPDATE coaches SET username=?, name=?, email=?, is_active=?, password=?, password_changed_at = NOW(), force_password_change = 1 WHERE id=?'
+                            )->execute([$username, $name ?: null, $email ?: null, $isActive, $hash, $coachId]);
+                        }
                     }
 
                     $host = trim((string)($_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? '')));
@@ -110,23 +134,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } elseif ($password !== '') {
                     $hash = password_hash($password, PASSWORD_DEFAULT);
                     if ($hasMakeupDeadlineColumn) {
-                        $pdo->prepare(
-                            'UPDATE coaches SET username=?, name=?, email=?, is_active=?, makeup_booking_deadline_days=?, password=?, password_changed_at = NOW() WHERE id=?'
-                        )->execute([$username, $name ?: null, $email ?: null, $isActive, $makeupDeadlineDays, $hash, $coachId]);
+                        if ($hasSpecialTrainingColumn) {
+                            $pdo->prepare(
+                                'UPDATE coaches SET username=?, name=?, email=?, is_active=?, makeup_booking_deadline_days=?, special_training_enabled=?, password=?, password_changed_at = NOW() WHERE id=?'
+                            )->execute([$username, $name ?: null, $email ?: null, $isActive, $makeupDeadlineDays, $specialTrainingEnabled, $hash, $coachId]);
+                        } else {
+                            $pdo->prepare(
+                                'UPDATE coaches SET username=?, name=?, email=?, is_active=?, makeup_booking_deadline_days=?, password=?, password_changed_at = NOW() WHERE id=?'
+                            )->execute([$username, $name ?: null, $email ?: null, $isActive, $makeupDeadlineDays, $hash, $coachId]);
+                        }
                     } else {
-                        $pdo->prepare(
-                            'UPDATE coaches SET username=?, name=?, email=?, is_active=?, password=?, password_changed_at = NOW() WHERE id=?'
-                        )->execute([$username, $name ?: null, $email ?: null, $isActive, $hash, $coachId]);
+                        if ($hasSpecialTrainingColumn) {
+                            $pdo->prepare(
+                                'UPDATE coaches SET username=?, name=?, email=?, is_active=?, special_training_enabled=?, password=?, password_changed_at = NOW() WHERE id=?'
+                            )->execute([$username, $name ?: null, $email ?: null, $isActive, $specialTrainingEnabled, $hash, $coachId]);
+                        } else {
+                            $pdo->prepare(
+                                'UPDATE coaches SET username=?, name=?, email=?, is_active=?, password=?, password_changed_at = NOW() WHERE id=?'
+                            )->execute([$username, $name ?: null, $email ?: null, $isActive, $hash, $coachId]);
+                        }
                     }
                 } else {
                     if ($hasMakeupDeadlineColumn) {
-                        $pdo->prepare(
-                            'UPDATE coaches SET username=?, name=?, email=?, is_active=?, makeup_booking_deadline_days=? WHERE id=?'
-                        )->execute([$username, $name ?: null, $email ?: null, $isActive, $makeupDeadlineDays, $coachId]);
+                        if ($hasSpecialTrainingColumn) {
+                            $pdo->prepare(
+                                'UPDATE coaches SET username=?, name=?, email=?, is_active=?, makeup_booking_deadline_days=?, special_training_enabled=? WHERE id=?'
+                            )->execute([$username, $name ?: null, $email ?: null, $isActive, $makeupDeadlineDays, $specialTrainingEnabled, $coachId]);
+                        } else {
+                            $pdo->prepare(
+                                'UPDATE coaches SET username=?, name=?, email=?, is_active=?, makeup_booking_deadline_days=? WHERE id=?'
+                            )->execute([$username, $name ?: null, $email ?: null, $isActive, $makeupDeadlineDays, $coachId]);
+                        }
                     } else {
-                        $pdo->prepare(
-                            'UPDATE coaches SET username=?, name=?, email=?, is_active=? WHERE id=?'
-                        )->execute([$username, $name ?: null, $email ?: null, $isActive, $coachId]);
+                        if ($hasSpecialTrainingColumn) {
+                            $pdo->prepare(
+                                'UPDATE coaches SET username=?, name=?, email=?, is_active=?, special_training_enabled=? WHERE id=?'
+                            )->execute([$username, $name ?: null, $email ?: null, $isActive, $specialTrainingEnabled, $coachId]);
+                        } else {
+                            $pdo->prepare(
+                                'UPDATE coaches SET username=?, name=?, email=?, is_active=? WHERE id=?'
+                            )->execute([$username, $name ?: null, $email ?: null, $isActive, $coachId]);
+                        }
                     }
                 }
                 flash('success', 'Trenér byl aktualizován.');
@@ -237,6 +285,19 @@ renderAdminHeader('Upravit trenéra');
                        value="<?= h((string)($d['makeup_booking_deadline_days'] ?? '14')) ?>"
                        placeholder="např. 14">
                 <div class="form-text">Výchozí hodnota je 14 dní. Po zrušení termínu sportovcem musí být náhradní rezervace vytvořena do této lhůty.</div>
+            </div>
+            <?php endif; ?>
+            <?php if ($hasSpecialTrainingColumn): ?>
+            <div class="mb-4">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="special_training_enabled"
+                           id="specialTrainingEnabled" value="1"
+                           <?= !empty($d['special_training_enabled']) ? 'checked' : '' ?>>
+                    <label class="form-check-label fw-semibold" for="specialTrainingEnabled">
+                        Povolit trenérovi přístup do Events
+                    </label>
+                </div>
+                <div class="form-text">Nezaškrtnuto = dlaždice je uzamčená a přímý vstup je zablokován.</div>
             </div>
             <?php endif; ?>
             <div class="d-flex gap-2">

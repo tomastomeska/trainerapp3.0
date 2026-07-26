@@ -166,6 +166,8 @@ if (!$athlete) {
     redirect(BASE_URL . '/login.php');
 }
 
+$athleteSpecialTrainingEnabled = ((int)($athlete['special_training_enabled'] ?? 0)) === 1;
+
 $supportBankAccount = trim(getAppSetting('support_bank_account', ''));
 $supportContributorName = trim((string)($athlete['first_name'] . ' ' . $athlete['last_name']));
 if ($supportContributorName === '') {
@@ -1011,6 +1013,17 @@ renderAthleteHeader('Profil sportovce', false, true);
         <span class="quick-tile__label"><i class="fas fa-video me-1"></i>Videa</span>
         <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
     </a>
+    <?php if ($athleteSpecialTrainingEnabled): ?>
+    <a href="<?= BASE_URL ?>/athlete_special_training.php" class="quick-tile quick-tile-info">
+        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-flag-checkered me-1"></i>Events</span>
+        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+    </a>
+    <?php else: ?>
+    <div class="quick-tile quick-tile-muted">
+        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-lock me-1"></i>Events <span class="badge rounded-pill bg-secondary">Uzamčeno</span></span>
+        <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
+    </div>
+    <?php endif; ?>
     <a href="<?= BASE_URL ?>/athlete_manual.php" class="quick-tile quick-tile-success">
         <span class="quick-tile__label"><i class="fas fa-circle-question me-1"></i>Návod</span>
         <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>

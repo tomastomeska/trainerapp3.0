@@ -28,6 +28,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . '/athlete_zpravy.php');
     }
 
+    if ($action === 'bulk_mark_read') {
+        $notificationIds = array_values(array_filter(array_map('intval', (array)($_POST['notification_ids'] ?? [])), static fn($id) => $id > 0));
+        $notificationIds = array_values(array_unique($notificationIds));
+
+        if ($notificationIds === []) {
+            flash('warning', 'Nevybrali jste žádné zprávy pro hromadné potvrzení.');
+            redirect(BASE_URL . '/athlete_zpravy.php?tab=inbox');
+        }
+
+        $placeholders = implode(',', array_fill(0, count($notificationIds), '?'));
+        $params = array_merge([$athleteId], $notificationIds);
+        $stmtBulk = $pdo->prepare(
+            "UPDATE athlete_notifications
+             SET read_at = NOW()
+             WHERE athlete_id = ?
+               AND read_at IS NULL
+               AND id IN ($placeholders)"
+        );
+        $stmtBulk->execute($params);
+        $updatedCount = $stmtBulk->rowCount();
+
+        if ($updatedCount > 0) {
+            flash('success', "Hromadně potvrzeno přečtení u {$updatedCount} zpráv.");
+        } else {
+            flash('warning', 'Vybrané zprávy už byly přečtené nebo nejsou dostupné.');
+        }
+
+        redirect(BASE_URL . '/athlete_zpravy.php?tab=inbox');
+    }
+
     // Napsat novou zprávu trenérovi
     if ($action === 'send_message') {
         $subject = trim((string)($_POST['subject'] ?? ''));
@@ -115,11 +145,22 @@ renderAthleteHeader('Zprávy', false, true);
 <?php if (empty($inbox)): ?>
 <div class="alert alert-info">Zatím nemáte žádné přijaté zprávy.</div>
 <?php else: ?>
+<form method="post" id="bulkMarkReadAthleteForm" class="d-flex align-items-center flex-wrap gap-2 mb-3">
+    <?= csrfField() ?>
+    <input type="hidden" name="action" value="bulk_mark_read">
+    <button type="submit" class="btn btn-sm btn-primary" id="btnBulkReadAthlete" disabled>
+        <i class="fas fa-check-double me-1"></i>Hromadně potvrdit přečtení
+    </button>
+    <span class="text-muted small">Platí pro vybrané nepřečtené zprávy.</span>
+</form>
 <div class="card border-0 shadow-sm">
     <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle">
             <thead class="table-dark">
             <tr>
+                <th style="width:36px">
+                    <input type="checkbox" class="form-check-input" id="bulkSelectAllAthlete" title="Vybrat vše pro hromadné potvrzení">
+                </th>
                 <th>Předmět a zpráva</th>
                 <th style="width:160px">Datum</th>
                 <th style="width:110px">Stav</th>
@@ -129,6 +170,17 @@ renderAthleteHeader('Zprávy', false, true);
             <tbody>
             <?php foreach ($inbox as $m): ?>
             <tr class="<?= empty($m['read_at']) ? 'table-warning' : '' ?>">
+                <td>
+                    <?php if (empty($m['read_at'])): ?>
+                    <input type="checkbox"
+                           class="form-check-input bulk-read-athlete"
+                           name="notification_ids[]"
+                           value="<?= (int)$m['id'] ?>"
+                           form="bulkMarkReadAthleteForm">
+                    <?php else: ?>
+                    <span class="text-muted small">–</span>
+                    <?php endif; ?>
+                </td>
                 <td>
                     <div class="fw-semibold"><?= h((string)$m['subject']) ?></div>
                     <div class="small text-muted mt-1" style="white-space:pre-wrap"><?= h((string)$m['body']) ?></div>
@@ -230,5 +282,39 @@ renderAthleteHeader('Zprávy', false, true);
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const selectAll = document.getElementById('bulkSelectAllAthlete');
+    const submitBtn = document.getElementById('btnBulkReadAthlete');
+
+    if (!selectAll || !submitBtn) {
+        return;
+    }
+
+    const itemSelector = 'input.bulk-read-athlete';
+    const items = Array.from(document.querySelectorAll(itemSelector));
+
+    const refreshBulkState = function () {
+        const selectedItems = items.filter(function (item) { return item.checked; });
+        submitBtn.disabled = selectedItems.length === 0;
+        selectAll.checked = items.length > 0 && selectedItems.length === items.length;
+        selectAll.indeterminate = selectedItems.length > 0 && selectedItems.length < items.length;
+    };
+
+    selectAll.addEventListener('change', function () {
+        items.forEach(function (item) {
+            item.checked = selectAll.checked;
+        });
+        refreshBulkState();
+    });
+
+    items.forEach(function (item) {
+        item.addEventListener('change', refreshBulkState);
+    });
+
+    refreshBulkState();
+});
+</script>
 
 <?php renderAthleteFooter(); ?>
