@@ -166,6 +166,54 @@ function receiptDecodeSnapshot(?string $raw): ?array
     return is_array($decoded) ? $decoded : null;
 }
 
+function receiptFetchReplacementOrigins(PDO $pdo, int $coachId, int $athleteId): array
+{
+    if (!receiptTableExists($pdo, 'coach_calendar_event_cancellations')) {
+        return ['direct' => [], 'fallback' => []];
+    }
+
+    if (!receiptColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_event_id')
+        || !receiptColumnExists($pdo, 'coach_calendar_event_cancellations', 'starts_at')) {
+        return ['direct' => [], 'fallback' => []];
+    }
+
+    $selectFields = ['replacement_event_id', 'starts_at'];
+    if (receiptColumnExists($pdo, 'coach_calendar_event_cancellations', 'billing_month')) {
+        $selectFields[] = 'billing_month';
+    }
+    if (receiptColumnExists($pdo, 'coach_calendar_event_cancellations', 'canceled_at')) {
+        $selectFields[] = 'canceled_at';
+    }
+
+    $stmt = $pdo->prepare(
+        'SELECT ' . implode(', ', $selectFields) . '
+         FROM coach_calendar_event_cancellations
+         WHERE coach_id = ?
+         ORDER BY canceled_at ASC, id ASC'
+    );
+    $stmt->execute([$coachId]);
+
+    $result = ['direct' => [], 'fallback' => []];
+    foreach ($stmt->fetchAll() as $row) {
+        $replacementEventId = (int)($row['replacement_event_id'] ?? 0);
+        $origin = [
+            'starts_at' => (string)($row['starts_at'] ?? ''),
+            'billing_month' => (string)($row['billing_month'] ?? ''),
+        ];
+
+        if ($replacementEventId > 0 && !isset($result['direct'][$replacementEventId])) {
+            $result['direct'][$replacementEventId] = $origin;
+            continue;
+        }
+
+        if (!empty($origin['starts_at'])) {
+            $result['fallback'][] = $origin;
+        }
+    }
+
+    return $result;
+}
+
 $monthParam = trim((string)($_GET['month'] ?? ''));
 if (!preg_match('/^\d{4}-\d{2}$/', $monthParam)) {
     $monthParam = date('Y-m');
@@ -293,6 +341,9 @@ if ($hasSecondAthlete) {
 $eventsStmt = $pdo->prepare($eventsSql);
 $eventsStmt->execute($eventsParams);
 $eventRows = $eventsStmt->fetchAll();
+$replacementOrigins = receiptFetchReplacementOrigins($pdo, $coachId, $athleteId);
+$replacementOriginsByEventId = $replacementOrigins['direct'] ?? [];
+$replacementOriginsFallback = $replacementOrigins['fallback'] ?? [];
 
 $singleSessions = 0;
 $pairedSessions = 0;
@@ -418,12 +469,25 @@ foreach ($eventRows as $eventRow) {
         ? ($pairedRate ?? $singleRate)
         : $singleRate;
     $isCarryover = $carryoverRemaining > 0;
+    $rowNotes = [];
     $rowCharges[] = [
         'amount' => ($rowRate !== null && !$isCarryover) ? (float)$rowRate : 0.0,
-        'note' => $isCarryover
-            ? 'Hrazeno v předešlém období' . (!empty($paymentRow['paid_at']) ? ' (' . date('m/Y', strtotime((string)$paymentRow['paid_at'])) . ')' : '')
-            : '',
+        'note' => '',
     ];
+    if ($isCarryover) {
+        $rowNotes[] = 'Hrazeno v předešlém období' . (!empty($paymentRow['paid_at']) ? ' (' . date('m/Y', strtotime((string)$paymentRow['paid_at'])) . ')' : '');
+    }
+
+    $replacementOrigin = $replacementOriginsByEventId[(int)($eventRow['id'] ?? 0)] ?? null;
+    if ((!is_array($replacementOrigin) || empty($replacementOrigin['starts_at'])) && (int)($eventRow['is_makeup_session'] ?? 0) === 1 && !empty($replacementOriginsFallback)) {
+        $replacementOrigin = array_shift($replacementOriginsFallback);
+    }
+
+    if (is_array($replacementOrigin) && !empty($replacementOrigin['starts_at'])) {
+        $rowNotes[] = 'Původní termín: ' . formatDate((string)$replacementOrigin['starts_at']);
+    }
+
+    $rowCharges[count($rowCharges) - 1]['note'] = implode('; ', $rowNotes);
     if ($carryoverRemaining > 0) {
         $carryoverRemaining--;
     }

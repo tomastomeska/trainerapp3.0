@@ -1,0 +1,5 @@
+event_slug;tab_key;title;event_date;target_url;sort_order;is_active
+hyrox;evropa-2026;HYROX Prague Open;2026-10-12;https://hyrox.com/event/prague;10;1
+hyrox;evropa-2026;HYROX Brno Qualifier;2026-11-02;https://hyrox.com/event/brno;20;1
+summer-camp-2026;zavody-2026;Summer Camp Registrace;2026-08-18;https://example.com/summer-camp;10;1
+coach-workshop;media;Coach Workshop Live;2026-09-05;/special_training_event.php?event=coach-workshop;10;1

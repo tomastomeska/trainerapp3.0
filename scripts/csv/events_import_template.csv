@@ -1,0 +1,4 @@
+slug;name;icon_class;description;badge_label;tile_image;audience;sort_order;is_active
+hyrox;HYROX;fa-dumbbell;Oficialni priprava na HYROX zavody.;Novinka;/uploads/events/images/hyrox.jpg;both;10;1
+summer-camp-2026;Summer Camp 2026;fa-sun;Letni camp pro sportovce.;Top;/uploads/events/images/summer-camp-2026.jpg;athlete;20;1
+coach-workshop;Coach Workshop;fa-chalkboard-teacher;Interni workshop pro trenery.;;/uploads/events/images/coach-workshop.jpg;coach;30;1

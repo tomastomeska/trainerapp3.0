@@ -9,6 +9,365 @@ if (!function_exists('h')) {
     }
 }
 
+if (!function_exists('loadSpecialEvents')) {
+  function loadSpecialEvents(PDO $pdo, string $audience): array {
+    try {
+      $stmt = $pdo->prepare(
+        "SELECT id, slug, name, icon_class, description, badge_label, tile_image, is_active, sort_order, audience
+         FROM special_events
+         WHERE is_active = 1 AND (audience = 'both' OR audience = ?)
+         ORDER BY sort_order ASC, name ASC"
+      );
+      $stmt->execute([$audience]);
+      return $stmt->fetchAll();
+    } catch (Throwable $e) {
+      return [];
+    }
+  }
+}
+
+if (!function_exists('loadSpecialEventBySlug')) {
+  function loadSpecialEventBySlug(PDO $pdo, string $slug, string $audience): ?array {
+    try {
+      $eventStmt = $pdo->prepare(
+        "SELECT id, slug, name, icon_class, description, badge_label, tile_image, is_active, sort_order, audience
+         FROM special_events
+         WHERE slug = ? AND is_active = 1 AND (audience = 'both' OR audience = ?)
+         LIMIT 1"
+      );
+      $eventStmt->execute([$slug, $audience]);
+      $event = $eventStmt->fetch();
+      if (!$event) {
+        return null;
+      }
+
+      $tabsStmt = $pdo->prepare(
+        "SELECT id, tab_key, title, content_html, is_active, sort_order, audience
+         FROM special_event_tabs
+         WHERE event_id = ? AND is_active = 1 AND (audience = 'both' OR audience = ?)
+         ORDER BY sort_order ASC, id ASC"
+      );
+      $tabsStmt->execute([(int)$event['id'], $audience]);
+      $event['tabs'] = $tabsStmt->fetchAll();
+
+      $event['upcoming_items'] = [];
+      if (specialEventHasUpcomingItemsTable($pdo)) {
+        $itemsSql = specialEventHasUpcomingTabColumn($pdo)
+          ? "SELECT id, event_id, tab_id, title, event_date, target_url, sort_order, is_active
+             FROM special_event_upcoming_items
+             WHERE event_id = ? AND is_active = 1
+              ORDER BY event_date ASC, id ASC"
+          : "SELECT id, event_id, NULL AS tab_id, title, event_date, target_url, sort_order, is_active
+             FROM special_event_upcoming_items
+             WHERE event_id = ? AND is_active = 1
+              ORDER BY event_date ASC, id ASC";
+
+        $itemsStmt = $pdo->prepare($itemsSql);
+        $itemsStmt->execute([(int)$event['id']]);
+        $event['upcoming_items'] = $itemsStmt->fetchAll();
+      }
+
+      return $event;
+    } catch (Throwable $e) {
+      return null;
+    }
+  }
+}
+
+if (!function_exists('specialEventHasUpcomingItemsTable')) {
+  function specialEventHasUpcomingItemsTable(PDO $pdo): bool {
+    static $hasTable = null;
+
+    if ($hasTable !== null) {
+      return $hasTable;
+    }
+
+    try {
+      $stmt = $pdo->query("SHOW TABLES LIKE 'special_event_upcoming_items'");
+      $hasTable = ($stmt !== false && $stmt->fetch()) ? true : false;
+    } catch (Throwable $e) {
+      $hasTable = false;
+    }
+
+    return $hasTable;
+  }
+}
+
+if (!function_exists('specialEventHasUpcomingTabColumn')) {
+  function specialEventHasUpcomingTabColumn(PDO $pdo): bool {
+    static $hasColumn = null;
+
+    if ($hasColumn !== null) {
+      return $hasColumn;
+    }
+
+    if (!specialEventHasUpcomingItemsTable($pdo)) {
+      $hasColumn = false;
+      return $hasColumn;
+    }
+
+    try {
+      $stmt = $pdo->query("SHOW COLUMNS FROM special_event_upcoming_items LIKE 'tab_id'");
+      $hasColumn = ($stmt !== false && $stmt->fetch()) ? true : false;
+    } catch (Throwable $e) {
+      $hasColumn = false;
+    }
+
+    return $hasColumn;
+  }
+}
+
+if (!function_exists('specialEventUpcomingItemState')) {
+  function specialEventUpcomingItemState(string $eventDate): ?array {
+    $date = trim($eventDate);
+    if ($date === '') {
+      return null;
+    }
+
+    try {
+      $eventDay = new DateTimeImmutable($date . ' 00:00:00');
+      $today = new DateTimeImmutable('today');
+      $daysDiff = (int)$today->diff($eventDay)->format('%r%a');
+
+      if ($daysDiff > 0) {
+        return [
+          'visible' => true,
+          'badge_class' => 'special-event-upcoming-status--future',
+          'text' => 'Do začátku události zbývá ' . specialEventDayLabel($daysDiff),
+          'days_diff' => $daysDiff,
+          'is_running' => false,
+          'is_past' => false,
+        ];
+      }
+
+      if ($daysDiff === 0) {
+        return [
+          'visible' => true,
+          'badge_class' => 'special-event-upcoming-status--running',
+          'text' => 'Probíhá',
+          'days_diff' => 0,
+          'is_running' => true,
+          'is_past' => false,
+        ];
+      }
+
+      return [
+        'visible' => true,
+        'badge_class' => 'special-event-upcoming-status--past',
+        'text' => 'Událost již proběhla',
+        'days_diff' => $daysDiff,
+        'is_running' => false,
+        'is_past' => true,
+      ];
+    } catch (Throwable $e) {
+      return null;
+    }
+  }
+}
+
+if (!function_exists('specialEventDayLabel')) {
+  function specialEventDayLabel(int $days): string {
+    if ($days === 1) {
+      return '1 den';
+    }
+
+    $mod100 = $days % 100;
+    $mod10 = $days % 10;
+    if ($mod100 >= 11 && $mod100 <= 14) {
+      return $days . ' dní';
+    }
+    if ($mod10 === 2 || $mod10 === 3 || $mod10 === 4) {
+      return $days . ' dny';
+    }
+
+    return $days . ' dní';
+  }
+}
+
+if (!function_exists('renderSpecialEventUpcomingItems')) {
+  function renderSpecialEventUpcomingItems(array $items): string {
+    $visibleItems = [];
+    foreach ($items as $item) {
+      $eventDate = trim((string)($item['event_date'] ?? ''));
+      $state = specialEventUpcomingItemState($eventDate);
+      if (!$state || !$state['visible']) {
+        continue;
+      }
+      $visibleItems[] = [$item, $state];
+    }
+
+    if (empty($visibleItems)) {
+      return '<div class="alert alert-warning mb-0">Tento event zatím nemá publikované žádné nadcházející události.</div>';
+    }
+
+    ob_start();
+    ?>
+    <div class="special-event-upcoming-list d-grid gap-3">
+        <?php foreach ($visibleItems as [$item, $state]): ?>
+            <?php
+                $title = trim((string)($item['title'] ?? ''));
+                $eventDate = trim((string)($item['event_date'] ?? ''));
+                $targetUrl = trim((string)($item['target_url'] ?? ''));
+            ?>
+            <article class="special-event-upcoming-item border rounded-4 p-3 p-md-4" data-event-date="<?= h($eventDate) ?>">
+                <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+                    <div class="flex-grow-1">
+                  <div class="fw-bold fs-5 mb-1 special-event-upcoming-title"><?= h($title !== '' ? $title : 'Událost') ?></div>
+                  <div class="small mb-0 special-event-upcoming-date">Datum: <?= h(formatDate($eventDate)) ?></div>
+                    </div>
+                <span class="badge px-3 py-2 special-event-upcoming-status <?= h((string)$state['badge_class']) ?>" data-upcoming-status>
+                        <?= h((string)$state['text']) ?>
+                    </span>
+                </div>
+                <?php if ($targetUrl !== ''): ?>
+                    <div class="mt-3">
+                  <a href="<?= h($targetUrl) ?>" class="btn btn-sm special-event-upcoming-link" target="_blank" rel="noopener noreferrer">
+                            Registrace / oficiální stránka
+                        </a>
+                    </div>
+                <?php endif; ?>
+            </article>
+        <?php endforeach; ?>
+    </div>
+    <?php
+    return trim((string)ob_get_clean());
+  }
+}
+
+if (!function_exists('sanitizeSpecialEventHtml')) {
+  function sanitizeSpecialEventHtml(string $html): string {
+    if ($html === '') {
+      return '';
+    }
+
+    $clean = preg_replace('#<script\b[^>]*>.*?</script>#is', '', $html) ?? '';
+    $clean = preg_replace('#<style\b[^>]*>.*?</style>#is', '', $clean) ?? '';
+    $clean = preg_replace('/\son[a-z]+\s*=\s*"[^"]*"/i', '', $clean) ?? '';
+    $clean = preg_replace("/\son[a-z]+\s*=\s*'[^']*'/i", '', $clean) ?? '';
+    $clean = preg_replace('/javascript\s*:/i', '', $clean) ?? '';
+
+    return $clean;
+  }
+}
+
+if (!function_exists('sendSpecialEventFormEmail')) {
+  function sendSpecialEventFormEmail(string $toEmail, string $subject, array $fields, array $context = []): bool {
+    $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
+    if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
+      return false;
+    }
+
+    require_once $phpmailerSrc . '/Exception.php';
+    require_once $phpmailerSrc . '/PHPMailer.php';
+    require_once $phpmailerSrc . '/SMTP.php';
+
+    $safeSubject = trim($subject) !== '' ? trim($subject) : 'Nova prihlaska z Events';
+    $safeSubject = mb_substr($safeSubject, 0, 180, 'UTF-8');
+
+    $rowsHtml = '';
+    foreach ($fields as $key => $value) {
+      $label = trim((string)$key);
+      if ($label === '') {
+        continue;
+      }
+
+      $textValue = is_array($value) ? implode(', ', array_map('strval', $value)) : (string)$value;
+      $textValue = trim($textValue);
+      if ($textValue === '') {
+        continue;
+      }
+
+      $rowsHtml .= '<tr>'
+        . '<td style="padding:8px 10px;border:1px solid #e5e7eb;background:#f8fafc;font-weight:600;vertical-align:top;">' . h($label) . '</td>'
+        . '<td style="padding:8px 10px;border:1px solid #e5e7eb;vertical-align:top;">' . nl2br(h($textValue)) . '</td>'
+        . '</tr>';
+    }
+
+    if ($rowsHtml === '') {
+      $rowsHtml = '<tr><td style="padding:8px 10px;border:1px solid #e5e7eb;" colspan="2">Formular neobsahoval vyplnena pole.</td></tr>';
+    }
+
+    $eventName = trim((string)($context['event_name'] ?? ''));
+    $eventSlug = trim((string)($context['event_slug'] ?? ''));
+    $senderName = trim((string)($context['sender_name'] ?? ''));
+    $senderEmail = trim((string)($context['sender_email'] ?? ''));
+    $senderRole = trim((string)($context['sender_role'] ?? ''));
+
+    $metaHtml = '';
+    if ($eventName !== '') {
+      $metaHtml .= '<li><strong>Event:</strong> ' . h($eventName) . '</li>';
+    }
+    if ($eventSlug !== '') {
+      $metaHtml .= '<li><strong>Slug:</strong> ' . h($eventSlug) . '</li>';
+    }
+    if ($senderName !== '') {
+      $metaHtml .= '<li><strong>Odesilatel:</strong> ' . h($senderName) . '</li>';
+    }
+    if ($senderEmail !== '') {
+      $metaHtml .= '<li><strong>E-mail:</strong> ' . h($senderEmail) . '</li>';
+    }
+    if ($senderRole !== '') {
+      $metaHtml .= '<li><strong>Role:</strong> ' . h($senderRole) . '</li>';
+    }
+
+    $htmlBody = '<h3 style="margin:0 0 12px 0;">Nova odeslana prihlaska z Events</h3>'
+      . ($metaHtml !== '' ? '<ul style="margin:0 0 14px 0;padding-left:18px;">' . $metaHtml . '</ul>' : '')
+      . '<table style="border-collapse:collapse;width:100%;max-width:900px;">'
+      . $rowsHtml
+      . '</table>';
+
+    $plainMeta = [];
+    if ($eventName !== '') {
+      $plainMeta[] = 'Event: ' . $eventName;
+    }
+    if ($eventSlug !== '') {
+      $plainMeta[] = 'Slug: ' . $eventSlug;
+    }
+    if ($senderName !== '') {
+      $plainMeta[] = 'Odesilatel: ' . $senderName;
+    }
+    if ($senderEmail !== '') {
+      $plainMeta[] = 'E-mail: ' . $senderEmail;
+    }
+    if ($senderRole !== '') {
+      $plainMeta[] = 'Role: ' . $senderRole;
+    }
+
+    $plainFields = [];
+    foreach ($fields as $key => $value) {
+      $label = trim((string)$key);
+      if ($label === '') {
+        continue;
+      }
+      $textValue = is_array($value) ? implode(', ', array_map('strval', $value)) : (string)$value;
+      $textValue = trim($textValue);
+      if ($textValue === '') {
+        continue;
+      }
+      $plainFields[] = $label . ': ' . $textValue;
+    }
+
+    $altBody = "Nova odeslana prihlaska z Events\n\n"
+      . (!empty($plainMeta) ? implode("\n", $plainMeta) . "\n\n" : '')
+      . (!empty($plainFields) ? implode("\n", $plainFields) : 'Formular neobsahoval vyplnena pole.');
+
+    $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+    try {
+      _configureMail($mail);
+      $mail->addAddress($toEmail);
+      $mail->isHTML(true);
+      $mail->Subject = $safeSubject;
+      $mail->Body = $htmlBody;
+      $mail->AltBody = $altBody;
+      $mail->send();
+      return true;
+    } catch (Throwable $e) {
+      error_log('sendSpecialEventFormEmail error: ' . $e->getMessage());
+      return false;
+    }
+  }
+}
+
 if (!function_exists('getAppSetting')) {
     function getAppSetting(string $key, string $default = ''): string {
         static $cache = [];

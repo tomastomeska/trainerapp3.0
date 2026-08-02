@@ -91,6 +91,10 @@ function renderAdminHeader(string $title = ''): void {
 				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'venues.php' ? 'active' : '' ?>">
 					<i class="fas fa-map-location-dot me-2"></i>Sportoviště
 				</a>
+				<a href="<?= BASE_URL ?>/admin/events.php"
+				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'events.php' ? 'active' : '' ?>">
+					<i class="fas fa-flag-checkered me-2"></i>Events
+				</a>
 				<a href="<?= BASE_URL ?>/admin/login_message.php"
 				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'login_message.php' ? 'active' : '' ?>">
 					<i class="fas fa-bell me-2"></i>Hláška po přihlášení

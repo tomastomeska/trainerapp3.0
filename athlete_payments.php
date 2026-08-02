@@ -862,7 +862,7 @@ renderAthleteHeader('Platby');
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-end">
-                                    <a href="<?= BASE_URL ?>/payment_receipt.php?month=<?= urlencode((string)date('Y-m', strtotime((string)$row['billing_month']))) ?>" target="_blank" class="btn btn-outline-primary btn-sm me-1 mb-1">
+                                    <a href="<?= BASE_URL ?>/payment_receipt.php?month=<?= urlencode((string)date('Y-m', strtotime((string)$row['billing_month']))) ?>" class="btn btn-outline-primary btn-sm me-1 mb-1">
                                         <i class="fas fa-receipt me-1"></i>Účtenka
                                     </a>
                                     <?php if (!$row['is_paid'] && $row['qr_url'] !== null): ?>

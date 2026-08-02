@@ -29,22 +29,33 @@ if (!coachSpecialTrainingUnlocked($pdo, $coachId)) {
     redirect(BASE_URL . '/dashboard.php');
 }
 
+$introText = trim(getAppSetting('events_intro_text_coach', 'Vyber event a otevri jeho zalozky. Obsah eventu se nyni spravuje centralne v administraci.'));
+
 renderHeader('Events', false, true);
 
-$eventTiles = [
-    [
-        'name' => 'Hyrox',
-        'icon' => 'fa-bolt',
-        'href' => BASE_URL . '/special_training_hyrox.php',
-        'status' => 'První event',
+$eventRows = loadSpecialEvents($pdo, 'coach');
+$eventTiles = [];
+
+foreach ($eventRows as $eventRow) {
+    $slug = (string)($eventRow['slug'] ?? '');
+    $icon = (string)($eventRow['icon_class'] ?? 'fa-bolt');
+    if (!preg_match('/^fa-[a-z0-9-]+$/', $icon)) {
+        $icon = 'fa-bolt';
+    }
+
+    $tileImage = trim((string)($eventRow['tile_image'] ?? ''));
+
+    $eventTiles[] = [
+        'name' => (string)($eventRow['name'] ?? 'Event'),
+        'icon' => $icon,
+        'href' => BASE_URL . '/special_training_event.php?event=' . rawurlencode($slug),
+        'status' => (string)($eventRow['badge_label'] ?? ''),
         'enabled' => true,
-    ],
-    ['name' => 'Spartan', 'icon' => 'fa-mountain', 'href' => '#', 'status' => '', 'enabled' => false],
-    ['name' => 'Maraton', 'icon' => 'fa-person-running', 'href' => '#', 'status' => '', 'enabled' => false],
-    ['name' => 'Triatlon', 'icon' => 'fa-water', 'href' => '#', 'status' => '', 'enabled' => false],
-    ['name' => 'Cross Duatlon', 'icon' => 'fa-road', 'href' => '#', 'status' => '', 'enabled' => false],
-    ['name' => 'OCR', 'icon' => 'fa-dumbbell', 'href' => '#', 'status' => '', 'enabled' => false],
-];
+        'description' => (string)($eventRow['description'] ?? ''),
+        'tile_image' => $tileImage !== '' ? photoUrl($tileImage, 'events') : '',
+    ];
+}
+
 ?>
 
 <style>
@@ -52,16 +63,39 @@ $eventTiles = [
         display: block;
         text-decoration: none;
         color: inherit;
-        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
         border: 1px solid #e2e8f0;
         border-radius: 18px;
         box-shadow: 0 10px 24px rgba(15, 23, 42, .08);
-        padding: 1.25rem;
-        height: 240px;
+        background: #ffffff;
         overflow: hidden;
-        display: flex;
-        flex-direction: column;
+        height: 100%;
         transition: transform .18s ease, box-shadow .18s ease;
+    }
+
+    .special-event-tile__head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: .75rem;
+        padding: 1rem 1rem .65rem;
+    }
+
+    .special-event-tile__title {
+        font-weight: 800;
+        font-size: 1.05rem;
+        line-height: 1.15;
+        color: #0f172a;
+        min-width: 0;
+    }
+
+    .special-event-tile__media {
+        position: relative;
+        height: 210px;
+        background: #f8fafc;
+        overflow: hidden;
+        margin: 0 1rem 1rem;
+        border-radius: 14px;
+        border: 1px solid #e2e8f0;
     }
 
     .special-event-tile:hover {
@@ -74,9 +108,29 @@ $eventTiles = [
         pointer-events: none;
     }
 
+    .special-event-tile__media img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        object-position: center;
+        display: block;
+        background: #ffffff;
+    }
+
+    .special-event-tile__fallback {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #f8fafc;
+        font-size: 2rem;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 45%, #334155 100%);
+    }
+
     .special-event-tile__mark {
-        width: 72px;
-        height: 72px;
+        width: 66px;
+        height: 66px;
         border-radius: 50%;
         border: 3px solid #ffc107;
         background: #111827;
@@ -84,55 +138,56 @@ $eventTiles = [
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-size: 1.8rem;
+        font-size: 1.65rem;
     }
 
-    .special-event-tile__name {
-        font-weight: 800;
-        font-size: 1.25rem;
-        margin-top: .9rem;
-        line-height: 1.2;
-        min-height: 2.4em;
-    }
-
-    .special-event-tile p {
-        margin-top: auto !important;
-        display: -webkit-box;
-        line-clamp: 2;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
+    .special-event-tile__status {
+        align-self: flex-start;
+        position: static;
+        flex-shrink: 0;
     }
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-    <h2 class="mb-0"><i class="fas fa-flag-checkered me-2 text-warning"></i>Events <span class="badge rounded-pill text-bg-secondary align-middle ms-1">Ve vývoji</span></h2>
+    <h2 class="mb-0"><i class="fas fa-flag-checkered me-2 text-warning"></i>Events</h2>
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-body py-4 text-center">
-        <h3 class="fw-bold mb-3">Ve vývoji</h3>
-        <p class="text-muted mb-0">
-            Zde naleznete speciální tréninky pro vaše eventy typu Hyrox, Spartan, Maraton a mnoho dalšího.
-        </p>
+    <div class="card-body py-3">
+        <?php if ($introText !== ''): ?>
+            <p class="text-muted mb-0"><?= h($introText) ?></p>
+        <?php else: ?>
+            <p class="text-muted mb-0">&nbsp;</p>
+        <?php endif; ?>
     </div>
 </div>
 
-<div class="row g-3">
-    <?php foreach ($eventTiles as $tile): ?>
-    <div class="col-12 col-md-6 col-xl-4">
-        <a href="<?= h($tile['href']) ?>" class="special-event-tile<?= $tile['enabled'] ? '' : ' is-disabled' ?>">
-            <div class="d-flex justify-content-between align-items-start gap-2">
-                <span class="special-event-tile__mark"><i class="fas <?= h($tile['icon']) ?>"></i></span>
-                <?php if ($tile['status'] !== ''): ?>
-                <span class="badge <?= $tile['enabled'] ? 'bg-warning text-dark' : 'bg-secondary' ?>"><?= h($tile['status']) ?></span>
-                <?php endif; ?>
-            </div>
-            <div class="special-event-tile__name"><?= h($tile['name']) ?></div>
-            <p class="text-muted mb-0 mt-2">Vstoupit do eventu a evidovat special tréninky.</p>
-        </a>
+<?php if (empty($eventTiles)): ?>
+    <div class="alert alert-light border">Momentálně nejsou publikované žádné aktivní eventy.</div>
+<?php else: ?>
+    <div class="row g-3">
+        <?php foreach ($eventTiles as $tile): ?>
+        <div class="col-12 col-md-6 col-xl-4">
+            <a href="<?= h($tile['href']) ?>" class="special-event-tile<?= $tile['enabled'] ? '' : ' is-disabled' ?>">
+                <div class="special-event-tile__head">
+                    <div class="special-event-tile__title"><?= h($tile['name']) ?></div>
+                    <?php if ($tile['status'] !== ''): ?>
+                        <span class="badge <?= $tile['enabled'] ? 'bg-warning text-dark' : 'bg-secondary' ?> special-event-tile__status"><?= h($tile['status']) ?></span>
+                    <?php endif; ?>
+                </div>
+                <div class="special-event-tile__media">
+                    <?php if ($tile['tile_image'] !== ''): ?>
+                        <img src="<?= h($tile['tile_image']) ?>" alt="<?= h($tile['name']) ?>" loading="lazy">
+                    <?php else: ?>
+                        <div class="special-event-tile__fallback">
+                            <span class="special-event-tile__mark"><i class="fas <?= h($tile['icon']) ?>"></i></span>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </a>
+        </div>
+        <?php endforeach; ?>
     </div>
-    <?php endforeach; ?>
-</div>
+<?php endif; ?>
 
 <?php renderFooter();

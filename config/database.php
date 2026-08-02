@@ -776,6 +776,67 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
 
+    // Eventy a jejich obsahove zalozky (sprava z administrace)
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `special_events` (
+            `id`           INT AUTO_INCREMENT PRIMARY KEY,
+            `slug`         VARCHAR(120) NOT NULL,
+            `name`         VARCHAR(140) NOT NULL,
+            `icon_class`   VARCHAR(80) NOT NULL DEFAULT 'fa-bolt',
+            `description`  TEXT NULL,
+            `badge_label`  VARCHAR(80) NULL,
+            `tile_image`   VARCHAR(255) NULL,
+            `audience`     ENUM('coach','athlete','both') NOT NULL DEFAULT 'both',
+            `sort_order`   INT NOT NULL DEFAULT 100,
+            `is_active`    TINYINT(1) NOT NULL DEFAULT 1,
+            `created_at`   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uq_special_events_slug` (`slug`),
+            KEY `idx_special_events_active_sort` (`is_active`, `sort_order`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $stmtSpecialEventsTileImage = $pdo->query("SHOW COLUMNS FROM special_events LIKE 'tile_image'");
+    if (!$stmtSpecialEventsTileImage->fetch()) {
+        $pdo->exec('ALTER TABLE special_events ADD COLUMN tile_image VARCHAR(255) NULL AFTER badge_label');
+    }
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `special_event_tabs` (
+            `id`           INT AUTO_INCREMENT PRIMARY KEY,
+            `event_id`     INT NOT NULL,
+            `tab_key`      VARCHAR(120) NOT NULL,
+            `title`        VARCHAR(140) NOT NULL,
+            `content_html` LONGTEXT NULL,
+            `audience`     ENUM('coach','athlete','both') NOT NULL DEFAULT 'both',
+            `sort_order`   INT NOT NULL DEFAULT 100,
+            `is_active`    TINYINT(1) NOT NULL DEFAULT 1,
+            `created_at`   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uq_special_event_tab` (`event_id`, `tab_key`, `audience`),
+            KEY `idx_special_event_tabs_active_sort` (`event_id`, `is_active`, `sort_order`),
+            CONSTRAINT `fk_special_event_tabs_event` FOREIGN KEY (`event_id`) REFERENCES `special_events`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `special_event_upcoming_items` (
+            `id`                INT AUTO_INCREMENT PRIMARY KEY,
+            `event_id`          INT NOT NULL,
+            `title`             VARCHAR(180) NOT NULL,
+            `event_date`        DATE NOT NULL,
+            `target_url`        VARCHAR(500) NULL,
+            `sort_order`        INT NOT NULL DEFAULT 100,
+            `is_active`         TINYINT(1) NOT NULL DEFAULT 1,
+            `created_at`        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`        TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_special_event_upcoming_items_event` (`event_id`, `is_active`, `event_date`, `sort_order`),
+            CONSTRAINT `fk_special_event_upcoming_items_event` FOREIGN KEY (`event_id`) REFERENCES `special_events`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    // Eventy se neseeduji automaticky. Obsah i zalozky se spravuji rucne v administraci.
+
     // Kalendář trenéra: plánované tréninky (sloty po 60 minutách)
     $pdo->exec(" 
         CREATE TABLE IF NOT EXISTS `coach_calendar_events` (

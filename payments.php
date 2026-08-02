@@ -1392,7 +1392,7 @@ renderHeader('Platby', false, true);
                             </td>
                             <td class="text-end">
                                 <div class="d-flex justify-content-end gap-2 flex-wrap">
-                                    <a href="<?= BASE_URL ?>/payment_receipt.php?month=<?= urlencode($selectedMonthParam) ?>&athlete_id=<?= $athleteId ?>" target="_blank" class="btn btn-outline-primary btn-sm">
+                                    <a href="<?= BASE_URL ?>/payment_receipt.php?month=<?= urlencode($selectedMonthParam) ?>&athlete_id=<?= $athleteId ?>" class="btn btn-outline-primary btn-sm">
                                         <i class="fas fa-receipt me-1"></i>Účtenka
                                     </a>
                                     <?php if ($paymentQrUrl !== null): ?>
