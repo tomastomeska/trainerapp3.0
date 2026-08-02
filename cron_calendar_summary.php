@@ -72,7 +72,7 @@ $appleBootstrapCoachLimit = max(1, min(20, $appleBootstrapCoachLimitRaw));
 $appleBootstrapEventsLimitRaw = isset($_GET['apple_bootstrap_events_limit']) ? (int)$_GET['apple_bootstrap_events_limit'] : 300;
 $appleBootstrapEventsLimit = max(1, min(250, $appleBootstrapEventsLimitRaw));
 
-$lock = acquireCronLock('calendar_workers');
+$lock = acquireCronLock('calendar_summary');
 $lockAcquired = (bool)$lock['acquired'];
 $lockReason = (string)$lock['reason'];
 

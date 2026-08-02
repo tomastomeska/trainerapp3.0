@@ -3151,7 +3151,23 @@ function sendCalendarSummaryDigestEmail(
     $mail->send();
     return true;
   } catch (\Exception $e) {
-    error_log('sendCalendarSummaryDigestEmail error: ' . $mail->ErrorInfo . ' | ' . $e->getMessage());
+    error_log('sendCalendarSummaryDigestEmail SMTP error: ' . $mail->ErrorInfo . ' | ' . $e->getMessage());
+  }
+
+  try {
+    $fallback = new PHPMailer\PHPMailer\PHPMailer(true);
+    $fallback->isMail();
+    $fallback->CharSet = 'UTF-8';
+    $fallback->setFrom(SMTP_FROM, SMTP_FROM_NAME);
+    $fallback->addAddress($toEmail);
+    $fallback->isHTML(true);
+    $fallback->Subject = $subject;
+    $fallback->Body = $htmlBody;
+    $fallback->AltBody = $altBody;
+    $fallback->send();
+    return true;
+  } catch (\Exception $e) {
+    error_log('sendCalendarSummaryDigestEmail fallback error: ' . $e->getMessage());
     return false;
   }
 }
@@ -3161,8 +3177,9 @@ function processCalendarSummaryNotifications(?DateTimeImmutable $now = null): ar
   $results = [];
   $now = $now ?? new DateTimeImmutable('now');
 
-  $shouldSendWeekly = ((int)$now->format('N') === 7) && ((int)$now->format('G') >= 12);
-  $shouldSendMonthly = ((int)$now->format('j') === 28) && ((int)$now->format('G') >= 12);
+  // Wider windows make cron timing more robust while dedupe stays guaranteed by DB unique keys.
+  $shouldSendWeekly = ((int)$now->format('N') === 7);
+  $shouldSendMonthly = ((int)$now->format('j') >= 28);
 
   if (!$shouldSendWeekly && !$shouldSendMonthly) {
     return $results;
