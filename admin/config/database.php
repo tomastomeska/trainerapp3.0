@@ -204,6 +204,11 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         $pdo->exec('ALTER TABLE athletes ADD COLUMN special_training_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER paired_training_rate');
     }
 
+    $stmtAthleteMyCoach = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'mycoach_enabled'");
+    if (!$stmtAthleteMyCoach->fetch()) {
+        $pdo->exec('ALTER TABLE athletes ADD COLUMN mycoach_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER special_training_enabled');
+    }
+
     // Poslední přihlášení trenéra
     $stmtLogin = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'last_login'");
     if (!$stmtLogin->fetch()) {
@@ -219,6 +224,11 @@ function ensureSchemaUpgrades(PDO $pdo): void {
     $stmtCoachSpecialTraining = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'special_training_enabled'");
     if (!$stmtCoachSpecialTraining->fetch()) {
         $pdo->exec('ALTER TABLE coaches ADD COLUMN special_training_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER bank_account');
+    }
+
+    $stmtCoachMyCoach = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'mycoach_enabled'");
+    if (!$stmtCoachMyCoach->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN mycoach_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER special_training_enabled');
     }
 
     // Tabulka superadminu

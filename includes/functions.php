@@ -26,6 +26,320 @@ if (!function_exists('loadSpecialEvents')) {
   }
 }
 
+if (!function_exists('mycoachWorkoutTypeOptions')) {
+  function mycoachWorkoutTypeOptions(): array {
+    return [
+      'run' => [
+        'label' => 'Běh',
+        'icon' => 'fa-person-running',
+        'description' => 'Když chceš sledovat tempo, vzdálenost a objem.',
+        'fields' => [
+          'distance_km' => ['label' => 'Počet km', 'type' => 'number', 'step' => '0.1', 'min' => 0, 'max' => 100],
+          'pace_min_per_km' => ['label' => 'Tempo (min/km)', 'type' => 'text', 'placeholder' => 'např. 5:15'],
+          'calories_burned' => ['label' => 'Spálené kalorie', 'type' => 'number', 'min' => 0, 'max' => 5000],
+          'avg_heart_rate' => ['label' => 'Průměrný tep', 'type' => 'number', 'min' => 0, 'max' => 300],
+          'max_heart_rate' => ['label' => 'Max tep', 'type' => 'number', 'min' => 0, 'max' => 300],
+        ],
+      ],
+      'hiit' => [
+        'label' => 'HIIT',
+        'icon' => 'fa-bolt',
+        'description' => 'Intervalový trénink s důrazem na délku a energetický výdej.',
+        'fields' => [
+          'duration_minutes' => ['label' => 'Délka cvičení (min)', 'type' => 'number', 'min' => 0, 'max' => 1440],
+          'calories_burned' => ['label' => 'Spálené kalorie', 'type' => 'number', 'min' => 0, 'max' => 5000],
+          'rounds' => ['label' => 'Počet kol', 'type' => 'number', 'min' => 0, 'max' => 100],
+          'work_interval_seconds' => ['label' => 'Práce v intervalu (sek)', 'type' => 'number', 'min' => 0, 'max' => 3600],
+          'rest_interval_seconds' => ['label' => 'Odpočinek v intervalu (sek)', 'type' => 'number', 'min' => 0, 'max' => 3600],
+        ],
+      ],
+      'group_class' => [
+        'label' => 'Skupinová lekce',
+        'icon' => 'fa-people-group',
+        'description' => 'Skupinová lekce s proměnlivou intenzitou.',
+        'fields' => [
+          'duration_minutes' => ['label' => 'Délka cvičení (min)', 'type' => 'number', 'min' => 0, 'max' => 1440],
+          'intensity' => ['label' => 'Intenzita (1–10)', 'type' => 'number', 'min' => 1, 'max' => 10],
+          'calories_burned' => ['label' => 'Spálené kalorie', 'type' => 'number', 'min' => 0, 'max' => 5000],
+        ],
+      ],
+      'trx' => [
+        'label' => 'TRX',
+        'icon' => 'fa-ruler-horizontal',
+        'description' => 'Závěsný trénink s vlastním odporem.',
+        'fields' => [
+          'duration_minutes' => ['label' => 'Délka cvičení (min)', 'type' => 'number', 'min' => 0, 'max' => 1440],
+          'intensity' => ['label' => 'Intenzita (1–10)', 'type' => 'number', 'min' => 1, 'max' => 10],
+          'rounds' => ['label' => 'Počet kol', 'type' => 'number', 'min' => 0, 'max' => 100],
+        ],
+      ],
+      'bodypump' => [
+        'label' => 'BodyPump',
+        'icon' => 'fa-bottle-water',
+        'description' => 'Kondičně-silová skupinová lekce s vyšším počtem opakování.',
+        'fields' => [
+          'duration_minutes' => ['label' => 'Délka cvičení (min)', 'type' => 'number', 'min' => 0, 'max' => 1440],
+          'intensity' => ['label' => 'Intenzita (1–10)', 'type' => 'number', 'min' => 1, 'max' => 10],
+          'calories_burned' => ['label' => 'Spálené kalorie', 'type' => 'number', 'min' => 0, 'max' => 5000],
+        ],
+      ],
+      'bodyattack' => [
+        'label' => 'BodyAttack',
+        'icon' => 'fa-person-dots-from-line',
+        'description' => 'Dynamická kondiční lekce s dopady a intenzivní prací.',
+        'fields' => [
+          'duration_minutes' => ['label' => 'Délka cvičení (min)', 'type' => 'number', 'min' => 0, 'max' => 1440],
+          'intensity' => ['label' => 'Intenzita (1–10)', 'type' => 'number', 'min' => 1, 'max' => 10],
+          'calories_burned' => ['label' => 'Spálené kalorie', 'type' => 'number', 'min' => 0, 'max' => 5000],
+        ],
+      ],
+      'tabata' => [
+        'label' => 'Tabata',
+        'icon' => 'fa-stopwatch',
+        'description' => 'Krátké intervaly s vysokou intenzitou.',
+        'fields' => [
+          'duration_minutes' => ['label' => 'Délka cvičení (min)', 'type' => 'number', 'min' => 0, 'max' => 1440],
+          'rounds' => ['label' => 'Počet kol', 'type' => 'number', 'min' => 0, 'max' => 100],
+          'work_interval_seconds' => ['label' => 'Práce v intervalu (sek)', 'type' => 'number', 'min' => 0, 'max' => 3600],
+          'rest_interval_seconds' => ['label' => 'Odpočinek v intervalu (sek)', 'type' => 'number', 'min' => 0, 'max' => 3600],
+          'calories_burned' => ['label' => 'Spálené kalorie', 'type' => 'number', 'min' => 0, 'max' => 5000],
+        ],
+      ],
+      'hyrox_simulation' => [
+        'label' => 'HYROX simulace',
+        'icon' => 'fa-medal',
+        'description' => 'Simulace závodního formátu HYROX.',
+        'fields' => [
+          'duration_minutes' => ['label' => 'Délka cvičení (min)', 'type' => 'number', 'min' => 0, 'max' => 1440],
+          'rounds' => ['label' => 'Počet stanic', 'type' => 'number', 'min' => 0, 'max' => 20],
+          'distance_km' => ['label' => 'Běžecká vzdálenost (km)', 'type' => 'number', 'step' => '0.1', 'min' => 0, 'max' => 50],
+          'calories_burned' => ['label' => 'Spálené kalorie', 'type' => 'number', 'min' => 0, 'max' => 5000],
+        ],
+      ],
+      'strength' => [
+        'label' => 'Silový trénink',
+        'icon' => 'fa-dumbbell',
+        'description' => 'Síla, série, opakování a váha.',
+        'fields' => [
+          'duration_minutes' => ['label' => 'Délka cvičení (min)', 'type' => 'number', 'min' => 0, 'max' => 1440],
+          'exercise_name' => ['label' => 'Hlavní cvik', 'type' => 'text', 'placeholder' => 'např. dřep'],
+          'sets' => ['label' => 'Počet sérií', 'type' => 'number', 'min' => 0, 'max' => 100],
+          'reps' => ['label' => 'Počet opakování', 'type' => 'number', 'min' => 0, 'max' => 1000],
+          'weight_kg' => ['label' => 'Váha (kg)', 'type' => 'number', 'step' => '0.5', 'min' => 0, 'max' => 500],
+          'calories_burned' => ['label' => 'Spálené kalorie', 'type' => 'number', 'min' => 0, 'max' => 5000],
+        ],
+      ],
+      'recovery' => [
+        'label' => 'Regenerace',
+        'icon' => 'fa-spa',
+        'description' => 'Lehká regenerace, mobilita a uvolnění.',
+        'fields' => [
+          'duration_minutes' => ['label' => 'Délka cvičení (min)', 'type' => 'number', 'min' => 0, 'max' => 1440],
+          'mobility_focus' => ['label' => 'Na co se zaměřit', 'type' => 'text', 'placeholder' => 'např. kyčle, kotníky, záda'],
+        ],
+      ],
+      'massage' => [
+        'label' => 'Masáž',
+        'icon' => 'fa-hand-holding-heart',
+        'description' => 'Regenerační masáž po zátěži.',
+        'fields' => [
+          'duration_minutes' => ['label' => 'Délka masáže (min)', 'type' => 'number', 'min' => 0, 'max' => 240],
+          'mobility_focus' => ['label' => 'Zaměření', 'type' => 'text', 'placeholder' => 'např. nohy, záda'],
+        ],
+      ],
+      'sauna' => [
+        'label' => 'Sauna',
+        'icon' => 'fa-hot-tub-person',
+        'description' => 'Sauna nebo termální regenerace.',
+        'fields' => [
+          'duration_minutes' => ['label' => 'Délka pobytu (min)', 'type' => 'number', 'min' => 0, 'max' => 240],
+          'rounds' => ['label' => 'Počet cyklů', 'type' => 'number', 'min' => 0, 'max' => 20],
+        ],
+      ],
+      'stretching' => [
+        'label' => 'Protahování',
+        'icon' => 'fa-person-walking',
+        'description' => 'Pohybová mobilita a protahování.',
+        'fields' => [
+          'duration_minutes' => ['label' => 'Délka cvičení (min)', 'type' => 'number', 'min' => 0, 'max' => 1440],
+          'mobility_focus' => ['label' => 'Zaměření', 'type' => 'text', 'placeholder' => 'např. hamstringy, kyčle'],
+        ],
+      ],
+      'rest' => [
+        'label' => 'Volno',
+        'icon' => 'fa-bed',
+        'description' => 'Plný odpočinek bez tréninku.',
+        'fields' => [
+          'duration_minutes' => ['label' => 'Délka dne (min)', 'type' => 'number', 'min' => 0, 'max' => 1440],
+          'workout_note' => ['label' => 'Poznámka', 'type' => 'text', 'placeholder' => 'např. úplný odpočinek'],
+        ],
+      ],
+      'mobility' => [
+        'label' => 'Mobilita / regenerace',
+        'icon' => 'fa-spa',
+        'description' => 'Lehký den, mobilita, dech a regenerace.',
+        'fields' => [
+          'duration_minutes' => ['label' => 'Délka cvičení (min)', 'type' => 'number', 'min' => 0, 'max' => 1440],
+          'mobility_focus' => ['label' => 'Na co se zaměřit', 'type' => 'text', 'placeholder' => 'např. kyčle, kotníky, záda'],
+          'calories_burned' => ['label' => 'Spálené kalorie', 'type' => 'number', 'min' => 0, 'max' => 5000],
+        ],
+      ],
+      'bike' => [
+        'label' => 'Kolo',
+        'icon' => 'fa-bicycle',
+        'description' => 'Vytrvalost na kole s časem, vzdáleností a tepem.',
+        'fields' => [
+          'duration_minutes' => ['label' => 'Délka cvičení (min)', 'type' => 'number', 'min' => 0, 'max' => 1440],
+          'distance_km' => ['label' => 'Počet km', 'type' => 'number', 'step' => '0.1', 'min' => 0, 'max' => 500],
+          'calories_burned' => ['label' => 'Spálené kalorie', 'type' => 'number', 'min' => 0, 'max' => 5000],
+          'avg_heart_rate' => ['label' => 'Průměrný tep', 'type' => 'number', 'min' => 0, 'max' => 300],
+        ],
+      ],
+      'swim' => [
+        'label' => 'Plavání',
+        'icon' => 'fa-person-swimming',
+        'description' => 'Bazénové tréninky s časem, vzdáleností a intenzitou.',
+        'fields' => [
+          'duration_minutes' => ['label' => 'Délka cvičení (min)', 'type' => 'number', 'min' => 0, 'max' => 1440],
+          'distance_km' => ['label' => 'Počet km', 'type' => 'number', 'step' => '0.1', 'min' => 0, 'max' => 50],
+          'calories_burned' => ['label' => 'Spálené kalorie', 'type' => 'number', 'min' => 0, 'max' => 5000],
+          'avg_heart_rate' => ['label' => 'Průměrný tep', 'type' => 'number', 'min' => 0, 'max' => 300],
+        ],
+      ],
+      'other' => [
+        'label' => 'Jiné cvičení',
+        'icon' => 'fa-ellipsis',
+        'description' => 'Vlastní typ s obecnými parametry.',
+        'fields' => [
+          'duration_minutes' => ['label' => 'Délka cvičení (min)', 'type' => 'number', 'min' => 0, 'max' => 1440],
+          'workout_note' => ['label' => 'Poznámka', 'type' => 'text', 'placeholder' => 'např. box, gymnastika, tabata...'],
+          'calories_burned' => ['label' => 'Spálené kalorie', 'type' => 'number', 'min' => 0, 'max' => 5000],
+        ],
+      ],
+    ];
+  }
+}
+
+if (!function_exists('mycoachWorkoutTypeLabel')) {
+  function mycoachWorkoutTypeLabel(string $type): string {
+    $options = mycoachWorkoutTypeOptions();
+    return $options[$type]['label'] ?? 'Trénink';
+  }
+}
+
+if (!function_exists('mycoachWorkoutTypeFields')) {
+  function mycoachWorkoutTypeFields(string $type): array {
+    $options = mycoachWorkoutTypeOptions();
+    return $options[$type]['fields'] ?? $options['other']['fields'];
+  }
+}
+
+if (!function_exists('mycoachWorkoutTypeNormalizeMeta')) {
+  function mycoachWorkoutTypeNormalizeMeta(string $type, array $data): array {
+    $fields = mycoachWorkoutTypeFields($type);
+    $meta = [];
+
+    foreach ($fields as $key => $field) {
+      $value = trim((string)($data[$key] ?? ''));
+      if ($value === '') {
+        $meta[$key] = null;
+        continue;
+      }
+
+      $fieldType = (string)($field['type'] ?? 'text');
+      if ($fieldType === 'number') {
+        $normalized = str_replace(',', '.', $value);
+        $meta[$key] = is_numeric($normalized) ? (float)$normalized : null;
+      } else {
+        $meta[$key] = $value;
+      }
+    }
+
+    return $meta;
+  }
+}
+
+if (!function_exists('mycoachWorkoutTypeDerivedMinutes')) {
+  function mycoachWorkoutTypeDerivedMinutes(string $type, array $meta, ?int $fallbackMinutes = null): ?int {
+    $type = trim($type);
+    if ($fallbackMinutes !== null && $fallbackMinutes > 0) {
+      return $fallbackMinutes;
+    }
+
+    if ($type === 'run') {
+      if (!empty($meta['pace_min_per_km']) && !empty($meta['distance_km'])) {
+        $pace = trim((string)$meta['pace_min_per_km']);
+        if (preg_match('/^(\d{1,2}):(\d{2})$/', $pace, $match) === 1) {
+          $paceMinutes = (int)$match[1] + ((int)$match[2] / 60);
+          return (int)round($paceMinutes * (float)$meta['distance_km']);
+        }
+      }
+    }
+
+    return null;
+  }
+}
+
+if (!function_exists('mycoachWorkoutLoadMultiplier')) {
+  function mycoachWorkoutLoadMultiplier(?string $workoutType, ?array $meta = null): float {
+    $workoutType = trim((string)$workoutType);
+    $map = [
+      'run' => 1.00,
+      'bike' => 0.85,
+      'swim' => 0.90,
+      'strength' => 1.15,
+      'hiit' => 1.35,
+      'group_class' => 1.12,
+      'trx' => 1.05,
+      'bodypump' => 1.10,
+      'bodyattack' => 1.18,
+      'tabata' => 1.38,
+      'hyrox_simulation' => 1.30,
+      'recovery' => 0.30,
+      'massage' => 0.10,
+      'sauna' => 0.10,
+      'stretching' => 0.25,
+      'mobility' => 0.25,
+      'rest' => 0.05,
+      'other' => 1.00,
+    ];
+
+    $multiplier = $map[$workoutType] ?? 1.0;
+    if ($meta && isset($meta['intensity']) && is_numeric($meta['intensity'])) {
+      $intensity = max(1.0, min(10.0, (float)$meta['intensity']));
+      $multiplier *= 0.75 + (($intensity - 1.0) / 9.0) * 0.75;
+    }
+
+    return max(0.05, $multiplier);
+  }
+}
+
+if (!function_exists('mycoachWorkoutIsRecoveryLike')) {
+  function mycoachWorkoutIsRecoveryLike(?string $workoutType): bool {
+    return in_array(trim((string)$workoutType), ['recovery', 'massage', 'sauna', 'stretching', 'mobility', 'rest'], true);
+  }
+}
+
+if (!function_exists('mycoachWorkoutLoadScore')) {
+  function mycoachWorkoutLoadScore(array $row): float {
+    $minutes = isset($row['training_duration_minutes']) && $row['training_duration_minutes'] !== null ? (float)$row['training_duration_minutes'] : 0.0;
+    $workoutType = (string)($row['workout_type'] ?? '');
+    $meta = [];
+    if (!empty($row['workout_meta_json'])) {
+      $decoded = json_decode((string)$row['workout_meta_json'], true);
+      if (is_array($decoded)) {
+        $meta = $decoded;
+      }
+    }
+
+    $multiplier = mycoachWorkoutLoadMultiplier($workoutType, $meta);
+    $rpe = isset($row['rpe_score']) && $row['rpe_score'] !== null ? max(0.0, min(10.0, (float)$row['rpe_score'])) : null;
+    $intensityFactor = $rpe !== null ? (0.7 + ($rpe / 10.0) * 0.8) : 1.0;
+
+    return $minutes * $multiplier * $intensityFactor;
+  }
+}
+
 if (!function_exists('loadSpecialEventBySlug')) {
   function loadSpecialEventBySlug(PDO $pdo, string $slug, string $audience): ?array {
     try {
@@ -384,6 +698,1534 @@ if (!function_exists('getAppSetting')) {
         return $cache[$key];
     }
 }
+
+  if (!function_exists('mycoachResolveUser')) {
+    function mycoachResolveUser(PDO $pdo, string $role, int $coachId = 0, int $athleteId = 0, string $displayName = ''): ?array {
+      if (!in_array($role, ['coach', 'athlete'], true)) {
+        return null;
+      }
+
+      try {
+        $tableStmt = $pdo->query("SHOW TABLES LIKE 'mycoach_users'");
+        if ($tableStmt === false || !$tableStmt->fetch()) {
+          return null;
+        }
+
+        if ($role === 'coach') {
+          if ($coachId <= 0) {
+            return null;
+          }
+
+          $lookupStmt = $pdo->prepare('SELECT * FROM mycoach_users WHERE coach_id = ? LIMIT 1');
+          $lookupStmt->execute([$coachId]);
+          $user = $lookupStmt->fetch();
+          if (!$user) {
+            $insertStmt = $pdo->prepare('INSERT INTO mycoach_users (coach_id, role, display_name) VALUES (?, "coach", ?)');
+            $insertStmt->execute([$coachId, $displayName !== '' ? $displayName : null]);
+            $lookupStmt->execute([$coachId]);
+            $user = $lookupStmt->fetch();
+          } elseif ($displayName !== '' && trim((string)($user['display_name'] ?? '')) !== $displayName) {
+            $pdo->prepare('UPDATE mycoach_users SET display_name = ? WHERE coach_id = ?')
+              ->execute([$displayName, $coachId]);
+            $lookupStmt->execute([$coachId]);
+            $user = $lookupStmt->fetch();
+          }
+
+          return $user ?: null;
+        }
+
+        if ($athleteId <= 0) {
+          return null;
+        }
+
+        $lookupStmt = $pdo->prepare('SELECT * FROM mycoach_users WHERE athlete_id = ? LIMIT 1');
+        $lookupStmt->execute([$athleteId]);
+        $user = $lookupStmt->fetch();
+        if (!$user) {
+          $insertStmt = $pdo->prepare('INSERT INTO mycoach_users (athlete_id, role, display_name) VALUES (?, "athlete", ?)');
+          $insertStmt->execute([$athleteId, $displayName !== '' ? $displayName : null]);
+          $lookupStmt->execute([$athleteId]);
+          $user = $lookupStmt->fetch();
+        } elseif ($displayName !== '' && trim((string)($user['display_name'] ?? '')) !== $displayName) {
+          $pdo->prepare('UPDATE mycoach_users SET display_name = ? WHERE athlete_id = ?')
+            ->execute([$displayName, $athleteId]);
+          $lookupStmt->execute([$athleteId]);
+          $user = $lookupStmt->fetch();
+        }
+
+        return $user ?: null;
+      } catch (Throwable $e) {
+        return null;
+      }
+    }
+  }
+
+  if (!function_exists('mycoachGoalOptions')) {
+    function mycoachGoalOptions(): array {
+      return [
+        'hyrox' => 'HYROX',
+        'half_marathon' => 'Půlmaraton',
+        'marathon' => 'Maraton',
+        'spartan_race' => 'Spartan Race',
+        'ocr' => 'OCR',
+        'strength_development' => 'Silový rozvoj',
+        'weight_loss' => 'Redukce hmotnosti',
+        'muscle_gain' => 'Nabírání svalů',
+        'fitness' => 'Kondice',
+        'custom' => 'Vlastní cíl',
+      ];
+    }
+  }
+
+  if (!function_exists('mycoachFetchActiveGoal')) {
+    function mycoachFetchActiveGoal(PDO $pdo, int $userId): ?array {
+      if ($userId <= 0) {
+        return null;
+      }
+
+      try {
+        $stmt = $pdo->prepare(
+          'SELECT id, goal_type, custom_goal_name, target_date, is_active, started_at, ended_at, created_at, updated_at
+           FROM mycoach_goals
+           WHERE user_id = ? AND is_active = 1
+           ORDER BY updated_at DESC, id DESC
+           LIMIT 1'
+        );
+        $stmt->execute([$userId]);
+        $goal = $stmt->fetch();
+        return $goal ?: null;
+      } catch (Throwable $e) {
+        return null;
+      }
+    }
+  }
+
+  if (!function_exists('mycoachGoalLabel')) {
+    function mycoachGoalLabel(?string $goalType, ?string $customGoalName = null): string {
+      $options = mycoachGoalOptions();
+      $goalType = trim((string)$goalType);
+      if ($goalType === 'custom') {
+        $customGoalName = trim((string)$customGoalName);
+        return $customGoalName !== '' ? $customGoalName : 'Vlastní cíl';
+      }
+
+      return $options[$goalType] ?? 'Cíl';
+    }
+  }
+
+  if (!function_exists('mycoachStoreActiveGoal')) {
+    function mycoachStoreActiveGoal(PDO $pdo, int $userId, string $goalType, ?string $customGoalName, ?string $targetDate): bool {
+      if ($userId <= 0) {
+        return false;
+      }
+
+      if (function_exists('ensureSchemaUpgrades')) {
+        try {
+          ensureSchemaUpgrades($pdo);
+        } catch (Throwable $e) {
+          // pokračujeme i bez upgradu; samotné uložení může pořád projít
+        }
+      }
+
+      $goalType = trim($goalType);
+      $customGoalName = $customGoalName !== null ? trim($customGoalName) : null;
+      $targetDate = $targetDate !== null ? trim($targetDate) : null;
+
+      $allowedTypes = array_keys(mycoachGoalOptions());
+      if (!in_array($goalType, $allowedTypes, true)) {
+        return false;
+      }
+
+      if ($goalType === 'custom' && $customGoalName === '') {
+        return false;
+      }
+
+      if ($targetDate !== null && $targetDate !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $targetDate)) {
+        return false;
+      }
+
+      try {
+        $pdo->beginTransaction();
+        $pdo->prepare('UPDATE mycoach_goals SET is_active = 0, ended_at = NOW() WHERE user_id = ? AND is_active = 1')
+          ->execute([$userId]);
+
+        $insertStmt = $pdo->prepare(
+          'INSERT INTO mycoach_goals (user_id, goal_type, custom_goal_name, target_date, is_active, started_at)
+           VALUES (?, ?, ?, ?, 1, NOW())'
+        );
+        $insertStmt->execute([
+          $userId,
+          $goalType,
+          $goalType === 'custom' ? $customGoalName : null,
+          $targetDate !== '' ? $targetDate : null,
+        ]);
+        $pdo->commit();
+        return true;
+      } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+          $pdo->rollBack();
+        }
+        return false;
+      }
+    }
+  }
+
+  if (!function_exists('mycoachQuestionnaireOptions')) {
+    function mycoachQuestionnaireOptions(): array {
+      return [
+        'genders' => [
+          'male' => 'Muž',
+          'female' => 'Žena',
+          'other' => 'Jiné',
+          'prefer_not_say' => 'Nechci uvádět',
+        ],
+        'performance_levels' => [
+          'beginner' => 'Začátečník',
+          'slightly_advanced' => 'Mírně pokročilý',
+          'advanced' => 'Pokročilý',
+          'racer' => 'Závodník',
+        ],
+        'sport_activities' => [
+          'strength_training' => 'Silový trénink',
+          'crossfit' => 'CrossFit',
+          'hyrox' => 'HYROX',
+          'trx' => 'TRX',
+          'tabata' => 'Tabata',
+          'bodypump' => 'BodyPump',
+          'bodyattack' => 'BodyAttack',
+          'running' => 'Běh',
+          'cycling' => 'Cyklistika',
+          'swimming' => 'Plavání',
+          'hiking' => 'Turistika',
+          'yoga' => 'Jóga',
+          'pilates' => 'Pilates',
+          'functional_training' => 'Funkční trénink',
+          'football' => 'Fotbal',
+          'hockey' => 'Hokej',
+          'tennis' => 'Tenis',
+          'golf' => 'Golf',
+          'other' => 'Jiné',
+        ],
+        'health_limits' => [
+          'back' => 'Bolesti zad',
+          'knees' => 'Kolena',
+          'shoulders' => 'Ramena',
+          'ankles' => 'Kotníky',
+          'elbows' => 'Lokty',
+          'hips' => 'Kyčle',
+          'other' => 'Jiné',
+        ],
+        'equipment' => [
+          'gym' => 'Posilovna',
+          'trx' => 'TRX',
+          'jump_rope' => 'Švihadlo',
+          'kettlebell' => 'Kettlebell',
+          'dumbbells' => 'Činky',
+          'ski_erg' => 'SkiErg',
+          'rower' => 'Veslo',
+          'sled' => 'Sáně',
+          'medicine_ball' => 'Medicinbal',
+          'treadmill' => 'Běžecký pás',
+          'home_only' => 'Pouze domácí vybavení',
+        ],
+        'weekly_hours' => [
+          '3' => '3 hodiny',
+          '5' => '5 hodin',
+          '8' => '8 hodin',
+          '10' => '10 hodin',
+          '15' => '15 hodin',
+        ],
+        'rest_days' => [
+          '0' => '0 dní',
+          '1' => '1 den',
+          '2' => '2 dny',
+          '3' => '3 dny',
+          '4' => '4 dny',
+        ],
+        'hyrox_categories' => [
+          'Open' => 'Open',
+          'Pro' => 'Pro',
+          'Doubles' => 'Doubles',
+          'Relay' => 'Relay',
+        ],
+        'hyrox_gender_categories' => [
+          'male' => 'Muž',
+          'female' => 'Žena',
+          'mixed' => 'Mixed',
+        ],
+      ];
+    }
+  }
+
+  if (!function_exists('mycoachNormalizeSelectionList')) {
+    /**
+     * @param mixed $values
+     */
+    function mycoachNormalizeSelectionList($values, array $allowedOptions): array {
+      $input = is_array($values) ? $values : [];
+      $normalized = [];
+
+      foreach ($input as $value) {
+        $value = trim((string)$value);
+        if ($value === '' || !array_key_exists($value, $allowedOptions) || in_array($value, $normalized, true)) {
+          continue;
+        }
+
+        $normalized[] = $value;
+      }
+
+      return $normalized;
+    }
+  }
+
+  if (!function_exists('mycoachPerformanceToPlanLevel')) {
+    function mycoachPerformanceToPlanLevel(?string $performanceLevel): ?string {
+      $performanceLevel = trim((string)$performanceLevel);
+      $map = [
+        'beginner' => 'beginner',
+        'slightly_advanced' => 'intermediate',
+        'advanced' => 'advanced',
+        'racer' => 'pro',
+      ];
+
+      return $map[$performanceLevel] ?? null;
+    }
+  }
+
+  if (!function_exists('mycoachFetchLatestQuestionnaire')) {
+    function mycoachFetchLatestQuestionnaire(PDO $pdo, int $userId): ?array {
+      if ($userId <= 0) {
+        return null;
+      }
+
+      try {
+        $stmt = $pdo->prepare(
+          'SELECT *
+           FROM mycoach_questionnaires
+           WHERE user_id = ? AND questionnaire_type = "onboarding"
+           ORDER BY updated_at DESC, id DESC
+           LIMIT 1'
+        );
+        $stmt->execute([$userId]);
+        $questionnaire = $stmt->fetch();
+        return $questionnaire ?: null;
+      } catch (Throwable $e) {
+        return null;
+      }
+    }
+  }
+
+  if (!function_exists('mycoachFetchAthleteProfileSnapshot')) {
+    function mycoachFetchAthleteProfileSnapshot(PDO $pdo, int $athleteId): ?array {
+      if ($athleteId <= 0) {
+        return null;
+      }
+
+      try {
+        $genderColumnExists = false;
+        $genderStmt = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'gender'");
+        if ($genderStmt !== false && $genderStmt->fetch()) {
+          $genderColumnExists = true;
+        }
+
+        $athleteSql = 'SELECT a.birth_date, c.name AS coach_name, c.username AS coach_username';
+        if ($genderColumnExists) {
+          $athleteSql .= ', a.gender';
+        }
+        $athleteSql .= '
+          FROM athletes a
+          LEFT JOIN coaches c ON c.id = a.coach_id
+          WHERE a.id = ?
+          LIMIT 1';
+
+        $athleteStmt = $pdo->prepare($athleteSql);
+        $athleteStmt->execute([$athleteId]);
+        $athlete = $athleteStmt->fetch();
+        if (!$athlete) {
+          return null;
+        }
+
+        $weightStmt = $pdo->prepare(
+          'SELECT weight_kg
+           FROM athlete_weight_logs
+           WHERE athlete_id = ?
+           ORDER BY measured_at DESC, id DESC
+           LIMIT 1'
+        );
+        $weightStmt->execute([$athleteId]);
+        $currentWeightKg = $weightStmt->fetchColumn();
+
+        $birthDate = trim((string)($athlete['birth_date'] ?? ''));
+        $ageYears = null;
+        if ($birthDate !== '') {
+          try {
+            $birthDateTime = new DateTime($birthDate);
+            $ageYears = (int)$birthDateTime->diff(new DateTime('now'))->y;
+          } catch (Throwable $e) {
+            $ageYears = null;
+          }
+        }
+
+        return [
+          'birth_date' => $birthDate !== '' ? $birthDate : null,
+          'age_years' => $ageYears,
+          'current_weight_kg' => $currentWeightKg !== false ? (float)$currentWeightKg : null,
+          'coach_name' => trim((string)($athlete['coach_name'] ?? '')),
+          'coach_username' => trim((string)($athlete['coach_username'] ?? '')),
+          'gender' => array_key_exists('gender', $athlete) ? trim((string)($athlete['gender'] ?? '')) : null,
+        ];
+      } catch (Throwable $e) {
+        return null;
+      }
+    }
+  }
+
+  if (!function_exists('mycoachFetchDailyTrainerSessions')) {
+    function mycoachFetchDailyTrainerSessions(PDO $pdo, int $athleteId, string $entryDate): array {
+      if ($athleteId <= 0 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $entryDate)) {
+        return [];
+      }
+
+      try {
+        $stmt = $pdo->prepare(
+          'SELECT ts.id AS session_id,
+                  ts.started_at,
+                  ts.completed_at,
+                  ts.location,
+                  ts.notes,
+                  ts.paired_session_id,
+                  ws.name AS set_name,
+                  c.name AS coach_name,
+                  c.username AS coach_username
+           FROM training_sessions ts
+           JOIN athletes a ON a.id = ts.athlete_id
+           LEFT JOIN workout_sets ws ON ws.id = ts.workout_set_id
+           LEFT JOIN coaches c ON c.id = a.coach_id
+           WHERE ts.athlete_id = ?
+             AND ts.deleted_by_coach_at IS NULL
+             AND ts.completed_at IS NOT NULL
+             AND DATE(COALESCE(ts.started_at, ts.completed_at)) = ?
+           ORDER BY COALESCE(ts.started_at, ts.completed_at) ASC, ts.id ASC'
+        );
+        $stmt->execute([$athleteId, $entryDate]);
+        return $stmt->fetchAll() ?: [];
+      } catch (Throwable $e) {
+        return [];
+      }
+    }
+  }
+
+  if (!function_exists('mycoachStoreDailyQuestionnaire')) {
+    function mycoachStoreDailyQuestionnaire(PDO $pdo, int $userId, array $data): bool {
+      if ($userId <= 0) {
+        return false;
+      }
+
+      $entryDate = trim((string)($data['entry_date'] ?? ''));
+      if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $entryDate)) {
+        return false;
+      }
+
+      $workoutId = isset($data['workout_id']) && $data['workout_id'] !== '' ? (int)$data['workout_id'] : null;
+      $workoutType = trim((string)($data['workout_type'] ?? ''));
+      $workoutTypeOptions = mycoachWorkoutTypeOptions();
+      if ($workoutType !== '' && !array_key_exists($workoutType, $workoutTypeOptions)) {
+        $workoutType = null;
+      }
+      $workoutMeta = $workoutType !== null ? mycoachWorkoutTypeNormalizeMeta($workoutType, is_array($data['workout_meta'] ?? null) ? $data['workout_meta'] : []) : [];
+      $derivedMinutes = $workoutType !== null ? mycoachWorkoutTypeDerivedMinutes($workoutType, $workoutMeta, isset($data['training_duration_minutes']) && $data['training_duration_minutes'] !== '' ? (int)$data['training_duration_minutes'] : null) : null;
+      $feelingScore = isset($data['feeling_score']) && $data['feeling_score'] !== '' ? max(1, min(10, (int)$data['feeling_score'])) : null;
+      $rpeScore = isset($data['rpe_score']) && $data['rpe_score'] !== '' ? max(1, min(10, (int)$data['rpe_score'])) : null;
+      $sleepHours = isset($data['sleep_hours']) && $data['sleep_hours'] !== '' ? max(0, (float)str_replace(',', '.', (string)$data['sleep_hours'])) : null;
+      $musclePainScore = isset($data['muscle_pain_score']) && $data['muscle_pain_score'] !== '' ? max(0, min(10, (int)$data['muscle_pain_score'])) : null;
+      $jointPainScore = isset($data['joint_pain_score']) && $data['joint_pain_score'] !== '' ? max(0, min(10, (int)$data['joint_pain_score'])) : null;
+      $motivationScore = isset($data['motivation_score']) && $data['motivation_score'] !== '' ? max(1, min(10, (int)$data['motivation_score'])) : null;
+      $energyScore = isset($data['energy_score']) && $data['energy_score'] !== '' ? max(1, min(10, (int)$data['energy_score'])) : null;
+      $trainingDurationMinutes = isset($data['training_duration_minutes']) && $data['training_duration_minutes'] !== '' ? max(0, (int)$data['training_duration_minutes']) : null;
+      if ($derivedMinutes !== null && $derivedMinutes > 0) {
+        $trainingDurationMinutes = $derivedMinutes;
+      }
+      $avgHeartRate = isset($data['avg_heart_rate']) && $data['avg_heart_rate'] !== '' ? max(0, (int)$data['avg_heart_rate']) : null;
+      $maxHeartRate = isset($data['max_heart_rate']) && $data['max_heart_rate'] !== '' ? max(0, (int)$data['max_heart_rate']) : null;
+
+      try {
+        $stmt = $pdo->prepare(
+          'INSERT INTO mycoach_daily_questionnaires (
+              user_id, workout_id, workout_type, workout_meta_json, entry_date, feeling_score, rpe_score, sleep_hours,
+              muscle_pain_score, joint_pain_score, motivation_score, energy_score,
+              training_duration_minutes, avg_heart_rate, max_heart_rate
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           '
+        );
+        return $stmt->execute([
+          $userId,
+          $workoutId,
+          $workoutType,
+          $workoutType !== null ? json_encode($workoutMeta, JSON_UNESCAPED_UNICODE) : null,
+          $entryDate,
+          $feelingScore,
+          $rpeScore,
+          $sleepHours,
+          $musclePainScore,
+          $jointPainScore,
+          $motivationScore,
+          $energyScore,
+          $trainingDurationMinutes,
+          $avgHeartRate,
+          $maxHeartRate,
+        ]);
+      } catch (Throwable $e) {
+        return false;
+      }
+    }
+  }
+
+  if (!function_exists('mycoachCalculateReadinessScore')) {
+    function mycoachCalculateReadinessScore(array $dailyEntry): int {
+      $feelingScore = isset($dailyEntry['feeling_score']) ? (int)$dailyEntry['feeling_score'] : 0;
+      $energyScore = isset($dailyEntry['energy_score']) ? (int)$dailyEntry['energy_score'] : 0;
+      $motivationScore = isset($dailyEntry['motivation_score']) ? (int)$dailyEntry['motivation_score'] : 0;
+      $sleepHours = isset($dailyEntry['sleep_hours']) ? (float)$dailyEntry['sleep_hours'] : 0.0;
+      $musclePainScore = isset($dailyEntry['muscle_pain_score']) ? (int)$dailyEntry['muscle_pain_score'] : 0;
+      $jointPainScore = isset($dailyEntry['joint_pain_score']) ? (int)$dailyEntry['joint_pain_score'] : 0;
+      $rpeScore = isset($dailyEntry['rpe_score']) ? (int)$dailyEntry['rpe_score'] : 0;
+
+      $score = 50.0;
+      $score += ($feelingScore - 5) * 4.0;
+      $score += ($energyScore - 5) * 4.0;
+      $score += ($motivationScore - 5) * 3.0;
+      $score += min(10.0, max(0.0, $sleepHours - 6.0)) * 2.5;
+      $score -= $musclePainScore * 2.5;
+      $score -= $jointPainScore * 3.0;
+      $score -= max(0, $rpeScore - 6) * 2.0;
+
+      return max(0, min(100, (int)round($score)));
+    }
+  }
+
+  if (!function_exists('mycoachStoreReadinessMetric')) {
+    function mycoachStoreReadinessMetric(PDO $pdo, int $userId, string $metricDate, int $readinessScore): bool {
+      if ($userId <= 0 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $metricDate)) {
+        return false;
+      }
+
+      try {
+        $stmt = $pdo->prepare(
+          'INSERT INTO mycoach_metrics (user_id, metric_date, metric_type, metric_value, unit, source)
+           VALUES (?, ?, "readiness_score", ?, "score", "manual")
+           ON DUPLICATE KEY UPDATE metric_value = VALUES(metric_value), unit = VALUES(unit), source = VALUES(source), updated_at = NOW()'
+        );
+        return $stmt->execute([$userId, $metricDate, $readinessScore]);
+      } catch (Throwable $e) {
+        return false;
+      }
+    }
+  }
+
+  if (!function_exists('mycoachFetchLatestMetricValue')) {
+    function mycoachFetchLatestMetricValue(PDO $pdo, int $userId, string $metricType): ?array {
+      if ($userId <= 0 || trim($metricType) === '') {
+        return null;
+      }
+
+      try {
+        $stmt = $pdo->prepare(
+          'SELECT metric_date, metric_type, metric_value, unit, source, updated_at
+           FROM mycoach_metrics
+           WHERE user_id = ? AND metric_type = ?
+           ORDER BY metric_date DESC, id DESC
+           LIMIT 1'
+        );
+        $stmt->execute([$userId, $metricType]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+      } catch (Throwable $e) {
+        return null;
+      }
+    }
+  }
+
+  if (!function_exists('mycoachFetchDailyTimeline')) {
+    function mycoachFetchDailyTimeline(PDO $pdo, int $userId, int $limit = 30): array {
+      if ($userId <= 0) {
+        return [];
+      }
+
+      $limit = max(1, min(180, $limit));
+
+      try {
+        $stmt = $pdo->prepare(
+          'SELECT dq.entry_date,
+                  dq.workout_id,
+                  dq.workout_type,
+                  dq.workout_meta_json,
+                  dq.feeling_score,
+                  dq.rpe_score,
+                  dq.sleep_hours,
+                  dq.muscle_pain_score,
+                  dq.joint_pain_score,
+                  dq.motivation_score,
+                  dq.energy_score,
+                  dq.training_duration_minutes,
+                  dq.avg_heart_rate,
+                  dq.max_heart_rate,
+                  dq.updated_at,
+                  dq.created_at,
+                  m.metric_value AS readiness_score,
+                  m.updated_at AS readiness_updated_at,
+                  ts.started_at,
+                  ts.completed_at,
+                  ws.name AS workout_name
+           FROM mycoach_daily_questionnaires dq
+           LEFT JOIN mycoach_metrics m
+             ON m.user_id = dq.user_id
+            AND m.metric_type = "readiness_score"
+            AND m.metric_date = dq.entry_date
+           LEFT JOIN training_sessions ts
+             ON ts.id = dq.workout_id
+            AND ts.athlete_id = (
+                SELECT athlete_id FROM mycoach_users WHERE id = dq.user_id LIMIT 1
+            )
+           LEFT JOIN workout_sets ws ON ws.id = ts.workout_set_id
+           WHERE dq.user_id = ?
+           ORDER BY dq.entry_date DESC, dq.id DESC
+           LIMIT ?'
+        );
+        $stmt->bindValue(1, $userId, PDO::PARAM_INT);
+        $stmt->bindValue(2, $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll() ?: [];
+        return array_reverse($rows);
+      } catch (Throwable $e) {
+        return [];
+      }
+    }
+  }
+
+  if (!function_exists('mycoachCalculateAcwr')) {
+    function mycoachCalculateAcwr(array $timeline): ?array {
+      if (empty($timeline)) {
+        return null;
+      }
+
+      $lastRow = end($timeline);
+      if (!$lastRow || empty($lastRow['entry_date'])) {
+        return null;
+      }
+
+      try {
+        $anchorDate = new DateTimeImmutable((string)$lastRow['entry_date'] . ' 00:00:00');
+      } catch (Throwable $e) {
+        return null;
+      }
+
+      $acuteMinutes = 0.0;
+      $chronicMinutes = 0.0;
+      $hasAnyLoad = false;
+
+      foreach ($timeline as $row) {
+        if (empty($row['entry_date'])) {
+          continue;
+        }
+
+        try {
+          $entryDate = new DateTimeImmutable((string)$row['entry_date'] . ' 00:00:00');
+        } catch (Throwable $e) {
+          continue;
+        }
+
+        $daysDiff = (int)$anchorDate->diff($entryDate)->format('%r%a');
+        $load = mycoachWorkoutLoadScore($row);
+
+        if ($load > 0.0) {
+          $hasAnyLoad = true;
+        }
+
+        if ($daysDiff >= -6 && $daysDiff <= 0) {
+          $acuteMinutes += $load;
+        }
+
+        if ($daysDiff >= -27 && $daysDiff <= 0) {
+          $chronicMinutes += $load;
+        }
+      }
+
+      if (!$hasAnyLoad || $chronicMinutes <= 0) {
+        return null;
+      }
+
+      $chronicWeeklyLoad = $chronicMinutes / 4.0;
+      if ($chronicWeeklyLoad <= 0) {
+        return null;
+      }
+
+      $ratio = $acuteMinutes / $chronicWeeklyLoad;
+      $variant = 'success';
+      $label = 'V rovnováze';
+
+      if ($ratio >= 1.5) {
+        $variant = 'danger';
+        $label = 'Vysoké zatížení';
+      } elseif ($ratio >= 1.25) {
+        $variant = 'warning';
+        $label = 'Zvyšující se zátěž';
+      } elseif ($ratio < 0.8) {
+        $variant = 'secondary';
+        $label = 'Nízká akutní zátěž';
+      }
+
+      return [
+        'ratio' => round($ratio, 2),
+        'acute_minutes' => (int)round($acuteMinutes),
+        'chronic_minutes' => (int)round($chronicMinutes),
+        'chronic_weekly_minutes' => (int)round($chronicWeeklyLoad),
+        'label' => $label,
+        'variant' => $variant,
+      ];
+    }
+  }
+
+  if (!function_exists('mycoachBuildAchievementBadges')) {
+    function mycoachBuildAchievementBadges(array $timeline, ?int $readinessScore = null, ?float $acwr = null): array {
+      $badges = [];
+      $entryCount = count($timeline);
+
+      if ($entryCount >= 1) {
+        $badges[] = [
+          'title' => 'První záznam',
+          'text' => 'Vyplněný denní log',
+          'variant' => 'primary',
+          'icon' => 'fa-pen-to-square',
+        ];
+      }
+
+      if ($entryCount >= 7) {
+        $badges[] = [
+          'title' => '7 záznamů',
+          'text' => 'První týden v MyCoach',
+          'variant' => 'success',
+          'icon' => 'fa-calendar-week',
+        ];
+      }
+
+      if ($entryCount >= 14) {
+        $badges[] = [
+          'title' => '14 záznamů',
+          'text' => 'Dva týdny konzistence',
+          'variant' => 'info',
+          'icon' => 'fa-fire-flame-curved',
+        ];
+      }
+
+      if ($readinessScore !== null && $readinessScore >= 80) {
+        $badges[] = [
+          'title' => 'Vysoká připravenost',
+          'text' => 'Readiness 80+',
+          'variant' => 'warning',
+          'icon' => 'fa-bolt',
+        ];
+      }
+
+      if ($acwr !== null) {
+        if ($acwr >= 0.8 && $acwr <= 1.3) {
+          $badges[] = [
+            'title' => 'Zátěž v rovnováze',
+            'text' => 'ACWR v bezpečném pásmu',
+            'variant' => 'success',
+            'icon' => 'fa-scale-balanced',
+          ];
+        } elseif ($acwr > 1.5) {
+          $badges[] = [
+            'title' => 'Pozor na zátěž',
+            'text' => 'ACWR je zvýšené',
+            'variant' => 'danger',
+            'icon' => 'fa-triangle-exclamation',
+          ];
+        }
+      }
+
+      return $badges;
+    }
+  }
+
+  if (!function_exists('mycoachBuildRecommendation')) {
+    function mycoachBuildRecommendation(?int $readinessScore, ?array $dailyEntry = null): array {
+      $readinessScore = $readinessScore !== null ? max(0, min(100, $readinessScore)) : null;
+      $feelingScore = $dailyEntry && isset($dailyEntry['feeling_score']) ? (int)$dailyEntry['feeling_score'] : null;
+      $energyScore = $dailyEntry && isset($dailyEntry['energy_score']) ? (int)$dailyEntry['energy_score'] : null;
+      $rpeScore = $dailyEntry && isset($dailyEntry['rpe_score']) ? (int)$dailyEntry['rpe_score'] : null;
+      $sleepHours = $dailyEntry && isset($dailyEntry['sleep_hours']) ? (float)$dailyEntry['sleep_hours'] : null;
+      $musclePain = $dailyEntry && isset($dailyEntry['muscle_pain_score']) ? (int)$dailyEntry['muscle_pain_score'] : null;
+      $jointPain = $dailyEntry && isset($dailyEntry['joint_pain_score']) ? (int)$dailyEntry['joint_pain_score'] : null;
+
+      if ($readinessScore === null) {
+        return [
+          'title' => 'Vyplň denní záznam',
+          'text' => 'Bez readiness dat MyCoach neumí doporučit další krok. Založ dnešní záznam a hned uvidíš konkrétní návrh.',
+          'variant' => 'secondary',
+        ];
+      }
+
+      if ($readinessScore >= 80) {
+        if ($dailyEntry && (($sleepHours !== null && $sleepHours < 6.5) || ($musclePain !== null && $musclePain >= 6) || ($jointPain !== null && $jointPain >= 6))) {
+          return [
+            'title' => 'Energie je vysoká, hlídej regeneraci',
+            'text' => 'Readiness je dobrý, ale tělo hlásí únavu nebo horší spánek. Zůstaň u kvalitního tréninku bez zbytečného dojezdu do maxima.',
+            'variant' => 'warning',
+          ];
+        }
+
+        return [
+          'title' => 'Dnes je prostor přidat',
+          'text' => 'Připravenost je vysoká. Dej hlavní jednotku, drž techniku a klidně přidej jeden kvalitní blok navíc.',
+          'variant' => 'success',
+        ];
+      }
+
+      if ($readinessScore >= 60) {
+        $text = 'Připravenost je střední. Drž plán, ale nepřidávej další tvrdý blok a sleduj regeneraci.';
+        $title = 'Drž kontrolovaný den';
+        if ($rpeScore !== null && $rpeScore >= 7) {
+          $text = 'Včerejší zátěž byla vyšší. Dnes drž rozumnou intenzitu a zaměř se na kvalitu provedení.';
+        } elseif ($sleepHours !== null && $sleepHours < 6.5) {
+          $text = 'Spánek byl slabší. Dnes má větší smysl technika, mobilita a kratší hlavní blok než přetlačování objemu.';
+        } elseif ($feelingScore !== null && $energyScore !== null && $feelingScore <= 4 && $energyScore <= 4) {
+          $text = 'Subjektivně to dnes nevypadá dobře. Zkrať trénink a nech prostor na regeneraci.';
+        }
+
+        return [
+          'title' => $title,
+          'text' => $text,
+          'variant' => 'warning',
+        ];
+      }
+
+      $text = 'Připravenost je nízká. Dej lehkou aktivitu, mobilitu nebo úplný odpočinek podle toho, jak se cítíš.';
+      if (($musclePain !== null && $musclePain >= 7) || ($jointPain !== null && $jointPain >= 7)) {
+        $text = 'Tělo hlásí vyšší bolest. Dnes je vhodnější regenerace než tvrdý trénink.';
+      } elseif ($sleepHours !== null && $sleepHours < 6.0) {
+        $text = 'Spánek je slabý. Zkrať trénink na minimum nebo zvol jen regenerační pohyb.';
+      } elseif ($feelingScore !== null && $energyScore !== null && $feelingScore <= 4 && $energyScore <= 4) {
+        $text = 'Subjektivně to nevypadá dobře. Přesuň důraz na odpočinek a lehkou aktivitu.';
+      }
+
+      return [
+        'title' => 'Regeneruj',
+        'text' => $text,
+        'variant' => 'danger',
+      ];
+    }
+  }
+
+  if (!function_exists('mycoachBuildInsight')) {
+    function mycoachBuildInsight(array $timeline, ?array $activeGoal = null, ?int $readinessScore = null, ?array $acwr = null): array {
+      if (empty($timeline)) {
+        return [
+          'title' => 'Chybí data pro insight',
+          'text' => 'Vyplň denní záznamy a MyCoach začne ukazovat trend objemu, spánku a připravenosti.',
+          'variant' => 'secondary',
+          'summary' => '0 záznamů',
+        ];
+      }
+
+      $lastRow = end($timeline);
+      if (!$lastRow || empty($lastRow['entry_date'])) {
+        return [
+          'title' => 'Chybí data pro insight',
+          'text' => 'MyCoach zatím neumí vyhodnotit trend bez platných datumových záznamů.',
+          'variant' => 'secondary',
+          'summary' => 'bez trendu',
+        ];
+      }
+
+      try {
+        $anchorDate = new DateTimeImmutable((string)$lastRow['entry_date'] . ' 00:00:00');
+      } catch (Throwable $e) {
+        return [
+          'title' => 'Chybí data pro insight',
+          'text' => 'Datum posledního záznamu je neplatné.',
+          'variant' => 'secondary',
+          'summary' => 'neplatné datum',
+        ];
+      }
+
+      $recentLoad = 0.0;
+      $previousLoad = 0.0;
+      $recentSleep = [];
+      $recentEnergy = [];
+      $recentPain = [];
+      $recentRpe = [];
+      $daysWithoutRecovery = 0;
+      $recoveryCounter = 0;
+
+      foreach ($timeline as $row) {
+        if (empty($row['entry_date'])) {
+          continue;
+        }
+
+        try {
+          $entryDate = new DateTimeImmutable((string)$row['entry_date'] . ' 00:00:00');
+        } catch (Throwable $e) {
+          continue;
+        }
+
+        $daysDiff = (int)$anchorDate->diff($entryDate)->format('%r%a');
+        $load = mycoachWorkoutLoadScore($row);
+        $isRecoveryLike = mycoachWorkoutIsRecoveryLike((string)($row['workout_type'] ?? ''));
+
+        if ($daysDiff >= -6 && $daysDiff <= 0) {
+          $recentLoad += $load;
+          if ($isRecoveryLike) {
+            $recoveryCounter++;
+          }
+          if (isset($row['sleep_hours']) && $row['sleep_hours'] !== null) {
+            $recentSleep[] = (float)$row['sleep_hours'];
+          }
+          if (isset($row['energy_score']) && $row['energy_score'] !== null) {
+            $recentEnergy[] = (float)$row['energy_score'];
+          }
+          if (isset($row['muscle_pain_score']) && $row['muscle_pain_score'] !== null) {
+            $recentPain[] = (float)$row['muscle_pain_score'];
+          }
+          if (isset($row['rpe_score']) && $row['rpe_score'] !== null) {
+            $recentRpe[] = (float)$row['rpe_score'];
+          }
+        } elseif ($daysDiff >= -13 && $daysDiff <= -7) {
+          $previousLoad += $load;
+        }
+      }
+
+      foreach (array_reverse($timeline) as $row) {
+        if (empty($row['entry_date'])) {
+          continue;
+        }
+        if (mycoachWorkoutIsRecoveryLike((string)($row['workout_type'] ?? ''))) {
+          break;
+        }
+        $daysWithoutRecovery++;
+      }
+
+      $sleepAvg = !empty($recentSleep) ? array_sum($recentSleep) / count($recentSleep) : null;
+      $energyAvg = !empty($recentEnergy) ? array_sum($recentEnergy) / count($recentEnergy) : null;
+      $painAvg = !empty($recentPain) ? array_sum($recentPain) / count($recentPain) : null;
+      $rpeAvg = !empty($recentRpe) ? array_sum($recentRpe) / count($recentRpe) : null;
+
+      $goalType = trim((string)($activeGoal['goal_type'] ?? ''));
+      $loadTrend = null;
+      if ($previousLoad > 0) {
+        $loadTrend = $recentLoad / $previousLoad;
+      }
+
+      $title = 'Trend je stabilní';
+      $text = 'MyCoach drží základní rytmus, ale pro přesnější doporučení je vhodné sledovat i další dny.';
+      $variant = 'info';
+
+      if ($acwr && isset($acwr['ratio'])) {
+        $ratio = (float)$acwr['ratio'];
+        if ($ratio >= 1.5) {
+          $title = 'Zpomal zátěž';
+          $text = 'Akutní zátěž je už výrazně nad dlouhodobým průměrem. Na nejbližší dny se hodí regenerace nebo lehčí blok.';
+          $variant = 'danger';
+        } elseif ($ratio >= 1.25) {
+          $title = 'Zátěž roste';
+          $text = 'Objem se zvedá rychleji než obvyklý základ. Hlídáme kvalitu spánku, regeneraci a techniku.';
+          $variant = 'warning';
+        } elseif ($ratio >= 0.8 && $ratio <= 1.3) {
+          $title = 'Zátěž je v pásmu';
+          $text = 'Aktuální load je rozumně navázaný na historii. Tady se dá bezpečně budovat forma.';
+          $variant = 'success';
+        } else {
+          $title = 'Nízký load';
+          $text = 'Tréninkový objem je oproti historii nízký. Pokud je cílem výkon, je prostor k postupnému navýšení.';
+          $variant = 'secondary';
+        }
+      }
+
+      if ($daysWithoutRecovery >= 4 && $variant !== 'danger') {
+        $title = 'Chybí regenerace';
+        $text = 'Poslední dny nemají regenerační blok. Tělo si říká o lehký den, mobilitu nebo úplné volno.';
+        $variant = 'warning';
+      }
+
+      if ($sleepAvg !== null && $sleepAvg < 6.0) {
+        $title = 'Spánek brzdí progres';
+        $text = 'Průměrný spánek je nízký. Výkonnost i regenerace budou lepší, když snížíš intenzitu nebo přidáš odpočinek.';
+        $variant = 'warning';
+      } elseif ($painAvg !== null && $painAvg >= 6.5) {
+        $title = 'Pozor na bolest a únavu';
+        $text = 'Tělo hlásí vyšší míru svalové zátěže. Dnes má větší smysl mobilita, technika a regenerace.';
+        $variant = 'danger';
+      } elseif ($energyAvg !== null && $energyAvg >= 8.0 && $readinessScore !== null && $readinessScore >= 80) {
+        $title = 'Dobrá připravenost';
+        $text = 'Energie i readiness jsou vysoko. Pokud je cíl HYROX nebo výkon, je vhodný kvalitní tréninkový den.';
+        $variant = 'success';
+      }
+
+      if ($goalType === 'hyrox' && $variant !== 'danger' && $readinessScore !== null && $readinessScore >= 75) {
+        $title = 'HYROX tempo dává smysl';
+        $text = 'Na HYROX cíli je vidět dobrá připravenost. Drž techniku, běh a přechody mezi stanovišti a nepřidávej zbytečný objem.';
+        $variant = 'success';
+      }
+
+      $summaryParts = [];
+      $summaryParts[] = '7d ' . (int)round($recentLoad) . ' min';
+      if ($previousLoad > 0) {
+        $summaryParts[] = '7d-1 ' . (int)round($previousLoad) . ' min';
+      }
+      if ($sleepAvg !== null) {
+        $summaryParts[] = 'spánek ' . number_format($sleepAvg, 1, ',', '') . ' h';
+      }
+      if ($rpeAvg !== null) {
+        $summaryParts[] = 'RPE ' . number_format($rpeAvg, 1, ',', '');
+      }
+      if ($loadTrend !== null) {
+        $summaryParts[] = 'trend ' . number_format($loadTrend * 100, 0, ',', '') . '%';
+      }
+
+      return [
+        'title' => $title,
+        'text' => $text,
+        'variant' => $variant,
+        'days_without_recovery' => $daysWithoutRecovery,
+        'recent_load_score' => (int)round($recentLoad),
+        'previous_load_score' => (int)round($previousLoad),
+        'summary' => implode(' · ', $summaryParts),
+      ];
+    }
+  }
+
+if (!function_exists('mycoachBuildTrainingAssessment')) {
+  function mycoachBuildTrainingAssessment(array $timeline, ?array $dailyEntry = null, ?array $activeGoal = null, ?int $readinessScore = null): array {
+    $acwr = mycoachCalculateAcwr($timeline);
+    $insight = mycoachBuildInsight($timeline, $activeGoal, $readinessScore, $acwr);
+
+    $status = [
+      'label' => 'Optimální zátěž',
+      'variant' => 'success',
+      'icon' => 'fa-circle-check',
+      'text' => 'Zátěž a regenerace jsou v rozumné rovnováze.',
+    ];
+
+    $ratio = $acwr['ratio'] ?? null;
+    $daysWithoutRecovery = (int)($insight['days_without_recovery'] ?? 0);
+    $sleepHours = $dailyEntry && isset($dailyEntry['sleep_hours']) ? (float)$dailyEntry['sleep_hours'] : null;
+    $musclePain = $dailyEntry && isset($dailyEntry['muscle_pain_score']) ? (int)$dailyEntry['muscle_pain_score'] : null;
+    $jointPain = $dailyEntry && isset($dailyEntry['joint_pain_score']) ? (int)$dailyEntry['joint_pain_score'] : null;
+    $energyScore = $dailyEntry && isset($dailyEntry['energy_score']) ? (int)$dailyEntry['energy_score'] : null;
+    $motivationScore = $dailyEntry && isset($dailyEntry['motivation_score']) ? (int)$dailyEntry['motivation_score'] : null;
+
+    $highFatigue = ($sleepHours !== null && $sleepHours < 5.8)
+      || ($musclePain !== null && $musclePain >= 7)
+      || ($jointPain !== null && $jointPain >= 7)
+      || ($energyScore !== null && $energyScore <= 3)
+      || ($motivationScore !== null && $motivationScore <= 3);
+
+    if ($ratio !== null && $ratio >= 1.85 || $daysWithoutRecovery >= 6 || $highFatigue) {
+      $status = [
+        'label' => '🔴 Pravděpodobné přetrénování – doporuč regeneraci',
+        'variant' => 'danger',
+        'icon' => 'fa-triangle-exclamation',
+        'text' => 'Tréninkový tlak je vysoký a tělo potřebuje výraznější odpočinek.',
+      ];
+    } elseif (($ratio !== null && $ratio >= 1.45) || $daysWithoutRecovery >= 4 || ($sleepHours !== null && $sleepHours < 6.2) || ($musclePain !== null && $musclePain >= 5) || ($jointPain !== null && $jointPain >= 5) || ($energyScore !== null && $energyScore <= 5)) {
+      $status = [
+        'label' => '🟠 Riziko přetížení',
+        'variant' => 'warning',
+        'icon' => 'fa-circle-exclamation',
+        'text' => 'Zátěž stoupá rychleji než regenerace. Další den drž lehčí.',
+      ];
+    } elseif (($ratio !== null && $ratio >= 1.15) || ($sleepHours !== null && $sleepHours < 6.8) || ($musclePain !== null && $musclePain >= 3) || ($jointPain !== null && $jointPain >= 3) || ($energyScore !== null && $energyScore <= 6)) {
+      $status = [
+        'label' => '🟡 Mírně zvýšená únava',
+        'variant' => 'warning',
+        'icon' => 'fa-battery-half',
+        'text' => 'Organismus je lehce zatížený. Drž kvalitu, ale neždímej objem.',
+      ];
+    }
+
+    return [
+      'status' => $status,
+      'acwr' => $acwr,
+      'insight' => $insight,
+      'days_without_recovery' => $daysWithoutRecovery,
+    ];
+  }
+}
+
+  if (!function_exists('mycoachBuildStarterPlanTemplates')) {
+    function mycoachBuildStarterPlanTemplates(string $goalType, ?string $planLevel): array {
+      $goalType = trim($goalType);
+      $planLevel = trim((string)$planLevel);
+
+      $minutesByLevel = [
+        'beginner' => 45,
+        'intermediate' => 60,
+        'advanced' => 75,
+        'pro' => 90,
+      ];
+      $trainingMinutes = $minutesByLevel[$planLevel] ?? 60;
+      $recoveryMinutes = max(20, (int)round($trainingMinutes * 0.5));
+      $easyMinutes = max(30, (int)round($trainingMinutes * 0.8));
+
+      if ($goalType === 'hyrox') {
+        return [
+          ['day_type' => 'training', 'workout_type' => 'hyrox', 'title' => 'HYROX síla a technika', 'planned_minutes' => $trainingMinutes, 'planned_rpe' => 6.5, 'notes' => 'Silový základ, dýchání a technika.'],
+          ['day_type' => 'recovery', 'workout_type' => 'recovery', 'title' => 'Regenerace a mobilita', 'planned_minutes' => $recoveryMinutes, 'planned_rpe' => 2.5, 'notes' => 'Lehká mobilita, chůze a práce s dechem.'],
+          ['day_type' => 'training', 'workout_type' => 'hyrox', 'title' => 'HYROX engine intervaly', 'planned_minutes' => $trainingMinutes, 'planned_rpe' => 7.0, 'notes' => 'Kondiční intervaly a přechody mezi stanovišti.'],
+          ['day_type' => 'rest', 'workout_type' => 'recovery', 'title' => 'Odpočinek', 'planned_minutes' => null, 'planned_rpe' => null, 'notes' => 'Volný den bez plánované zátěže.'],
+          ['day_type' => 'training', 'workout_type' => 'mixed', 'title' => 'HYROX kombinace', 'planned_minutes' => $trainingMinutes, 'planned_rpe' => 6.8, 'notes' => 'Kombinace síly, běhu a práce na tempu.'],
+          ['day_type' => 'recovery', 'workout_type' => 'mobility', 'title' => 'Mobilita a core', 'planned_minutes' => $recoveryMinutes, 'planned_rpe' => 3.0, 'notes' => 'Stabilita trupu a mobilita kyčlí, kotníků a ramen.'],
+          ['day_type' => 'training', 'workout_type' => 'hyrox', 'title' => 'Dlouhá vytrvalostní jednotka', 'planned_minutes' => $easyMinutes, 'planned_rpe' => 5.8, 'notes' => 'Lehčí vytrvalostní blok pro budování kapacity.'],
+        ];
+      }
+
+      if (in_array($goalType, ['half_marathon', 'marathon'], true)) {
+        return [
+          ['day_type' => 'training', 'workout_type' => 'run', 'title' => 'Běžecký základ', 'planned_minutes' => $trainingMinutes, 'planned_rpe' => 5.8, 'notes' => 'Lehký objem a technika běhu.'],
+          ['day_type' => 'recovery', 'workout_type' => 'mobility', 'title' => 'Mobilita a core', 'planned_minutes' => $recoveryMinutes, 'planned_rpe' => 2.5, 'notes' => 'Stabilita a prevence přetížení.'],
+          ['day_type' => 'training', 'workout_type' => 'run', 'title' => 'Tempové intervaly', 'planned_minutes' => $trainingMinutes, 'planned_rpe' => 6.8, 'notes' => 'Kratší úseky v kontrolovaném tempu.'],
+          ['day_type' => 'rest', 'workout_type' => 'recovery', 'title' => 'Odpočinek', 'planned_minutes' => null, 'planned_rpe' => null, 'notes' => 'Volný den bez plánované zátěže.'],
+          ['day_type' => 'training', 'workout_type' => 'run', 'title' => 'Delší výběh', 'planned_minutes' => $easyMinutes, 'planned_rpe' => 5.5, 'notes' => 'Aerobní základ a práce s ekonomikou běhu.'],
+          ['day_type' => 'recovery', 'workout_type' => 'mobility', 'title' => 'Regenerace', 'planned_minutes' => $recoveryMinutes, 'planned_rpe' => 2.5, 'notes' => 'Lehká regenerace a mobilita.'],
+          ['day_type' => 'training', 'workout_type' => 'run', 'title' => 'Kvalitní běžecká jednotka', 'planned_minutes' => $trainingMinutes, 'planned_rpe' => 6.5, 'notes' => 'Kontrolovaný běh s důrazem na techniku.'],
+        ];
+      }
+
+      if (in_array($goalType, ['strength_development', 'muscle_gain'], true)) {
+        return [
+          ['day_type' => 'training', 'workout_type' => 'strength', 'title' => 'Silový základ', 'planned_minutes' => $trainingMinutes, 'planned_rpe' => 6.8, 'notes' => 'Hlavní silová jednotka s důrazem na techniku.'],
+          ['day_type' => 'recovery', 'workout_type' => 'mobility', 'title' => 'Mobilita a regenerace', 'planned_minutes' => $recoveryMinutes, 'planned_rpe' => 2.5, 'notes' => 'Lehký den pro obnovu.'],
+          ['day_type' => 'training', 'workout_type' => 'strength', 'title' => 'Doplňkový silový blok', 'planned_minutes' => $trainingMinutes, 'planned_rpe' => 7.0, 'notes' => 'Objem a doplňkové cviky.'],
+          ['day_type' => 'rest', 'workout_type' => 'recovery', 'title' => 'Odpočinek', 'planned_minutes' => null, 'planned_rpe' => null, 'notes' => 'Volný den bez plánované zátěže.'],
+          ['day_type' => 'training', 'workout_type' => 'mixed', 'title' => 'Síla a kondice', 'planned_minutes' => $trainingMinutes, 'planned_rpe' => 6.6, 'notes' => 'Kombinace silové a kondiční práce.'],
+          ['day_type' => 'recovery', 'workout_type' => 'mobility', 'title' => 'Mobilita a core', 'planned_minutes' => $recoveryMinutes, 'planned_rpe' => 2.8, 'notes' => 'Stabilita a rozsah pohybu.'],
+          ['day_type' => 'training', 'workout_type' => 'strength', 'title' => 'Technika a objem', 'planned_minutes' => $easyMinutes, 'planned_rpe' => 6.0, 'notes' => 'Lehčí trénink se zaměřením na kvalitu provedení.'],
+        ];
+      }
+
+      return [
+        ['day_type' => 'training', 'workout_type' => 'mixed', 'title' => 'Vstupní kondiční trénink', 'planned_minutes' => $trainingMinutes, 'planned_rpe' => 6.0, 'notes' => 'Kombinace kondice, síly a techniky.'],
+        ['day_type' => 'recovery', 'workout_type' => 'mobility', 'title' => 'Mobilita a core', 'planned_minutes' => $recoveryMinutes, 'planned_rpe' => 2.5, 'notes' => 'Lehká regenerace a stabilita.'],
+        ['day_type' => 'training', 'workout_type' => 'mixed', 'title' => 'Středně intenzivní jednotka', 'planned_minutes' => $trainingMinutes, 'planned_rpe' => 6.5, 'notes' => 'Základní trénink pro budování kapacity.'],
+        ['day_type' => 'rest', 'workout_type' => 'recovery', 'title' => 'Odpočinek', 'planned_minutes' => null, 'planned_rpe' => null, 'notes' => 'Volný den bez plánované zátěže.'],
+        ['day_type' => 'training', 'workout_type' => 'strength', 'title' => 'Silově-kondiční blok', 'planned_minutes' => $trainingMinutes, 'planned_rpe' => 6.4, 'notes' => 'Vyvážený trénink pro další posun.'],
+        ['day_type' => 'recovery', 'workout_type' => 'recovery', 'title' => 'Regenerace', 'planned_minutes' => $recoveryMinutes, 'planned_rpe' => 2.5, 'notes' => 'Lehký den pro obnovu.'],
+        ['day_type' => 'training', 'workout_type' => 'mixed', 'title' => 'Závěrečná kvalitní jednotka', 'planned_minutes' => $easyMinutes, 'planned_rpe' => 6.0, 'notes' => 'Lehčí, ale kvalitní trénink.'],
+      ];
+    }
+  }
+
+  if (!function_exists('mycoachSeedStarterPlanContent')) {
+    function mycoachSeedStarterPlanContent(PDO $pdo, int $planId, int $userId, array $questionnaire, ?array $activeGoal = null): bool {
+      if ($planId <= 0 || $userId <= 0) {
+        return false;
+      }
+
+      $ownsTransaction = false;
+
+      try {
+        $existingStmt = $pdo->prepare('SELECT COUNT(*) FROM mycoach_training_days WHERE plan_id = ?');
+        $existingStmt->execute([$planId]);
+        if ((int)$existingStmt->fetchColumn() > 0) {
+          return true;
+        }
+
+        $planStmt = $pdo->prepare('SELECT id, started_on FROM mycoach_training_plans WHERE id = ? AND user_id = ? LIMIT 1');
+        $planStmt->execute([$planId, $userId]);
+        $planRow = $planStmt->fetch();
+        if (!$planRow) {
+          return false;
+        }
+
+        $goalType = trim((string)($activeGoal['goal_type'] ?? ($questionnaire['goal_snapshot_type'] ?? 'fitness')));
+        $planLevel = trim((string)($questionnaire['performance_level'] ?? ''));
+        $templates = mycoachBuildStarterPlanTemplates($goalType, $planLevel !== '' ? $planLevel : null);
+        if (empty($templates)) {
+          return false;
+        }
+
+        $startDate = !empty($planRow['started_on']) ? (string)$planRow['started_on'] : date('Y-m-d');
+        $baseDate = new DateTimeImmutable($startDate . ' 00:00:00');
+
+        if (!$pdo->inTransaction()) {
+          $pdo->beginTransaction();
+          $ownsTransaction = true;
+        }
+        $dayStmt = $pdo->prepare(
+          'INSERT INTO mycoach_training_days (plan_id, training_date, day_type, planned_minutes, planned_intensity)
+           VALUES (?, ?, ?, ?, ?)'
+        );
+        $workoutStmt = $pdo->prepare(
+          'INSERT INTO mycoach_workouts (
+              user_id, training_day_id, title, workout_type, status,
+              planned_duration_minutes, planned_rpe, notes
+           ) VALUES (?, ?, ?, ?, "planned", ?, ?, ?)'
+        );
+
+        foreach ($templates as $offset => $template) {
+          $dayDate = $baseDate->modify('+' . $offset . ' day')->format('Y-m-d');
+          $plannedMinutes = isset($template['planned_minutes']) ? (int)$template['planned_minutes'] : null;
+          $plannedIntensity = isset($template['planned_rpe']) ? (float)$template['planned_rpe'] : null;
+
+          $dayStmt->execute([
+            $planId,
+            $dayDate,
+            (string)$template['day_type'],
+            $plannedMinutes,
+            $plannedIntensity,
+          ]);
+          $trainingDayId = (int)$pdo->lastInsertId();
+
+          if ((string)$template['day_type'] !== 'rest') {
+            $workoutStmt->execute([
+              $userId,
+              $trainingDayId,
+              (string)$template['title'],
+              (string)$template['workout_type'],
+              $plannedMinutes,
+              $plannedIntensity,
+              (string)($template['notes'] ?? ''),
+            ]);
+          }
+        }
+
+        if ($ownsTransaction && $pdo->inTransaction()) {
+          $pdo->commit();
+        }
+        return true;
+      } catch (Throwable $e) {
+        if ($ownsTransaction && $pdo->inTransaction()) {
+          $pdo->rollBack();
+        }
+        error_log('mycoachSeedStarterPlanContent failed: ' . $e->getMessage());
+        return false;
+      }
+    }
+  }
+
+  if (!function_exists('mycoachStoreQuestionnaire')) {
+    function mycoachStoreQuestionnaire(PDO $pdo, int $userId, array $data): bool {
+      if ($userId <= 0) {
+        return false;
+      }
+
+      if (function_exists('ensureSchemaUpgrades')) {
+        try {
+          ensureSchemaUpgrades($pdo);
+        } catch (Throwable $e) {
+          // pokračujeme i bez upgradu; tabulka už může být připravená
+        }
+      }
+
+      $options = mycoachQuestionnaireOptions();
+
+      $ageYears = isset($data['age_years']) && $data['age_years'] !== '' ? max(0, (int)$data['age_years']) : null;
+      $gender = trim((string)($data['gender'] ?? ''));
+      if (!array_key_exists($gender, $options['genders'])) {
+        $gender = null;
+      }
+
+      $heightCm = isset($data['height_cm']) && $data['height_cm'] !== '' ? max(0, (int)$data['height_cm']) : null;
+      $weightKg = isset($data['weight_kg']) && $data['weight_kg'] !== '' ? max(0, (float)str_replace(',', '.', (string)$data['weight_kg'])) : null;
+      $performanceLevel = trim((string)($data['performance_level'] ?? ''));
+      if (!array_key_exists($performanceLevel, $options['performance_levels'])) {
+        $performanceLevel = null;
+      }
+
+      $sportYears = trim((string)($data['sport_years'] ?? ''));
+      $sportFrequency = isset($data['sport_frequency_per_week']) && $data['sport_frequency_per_week'] !== '' ? max(0, (int)$data['sport_frequency_per_week']) : null;
+      $sportTypes = mycoachNormalizeSelectionList($data['sport_types'] ?? [], $options['sport_activities']);
+      $sportsText = trim((string)($data['sports_text'] ?? ''));
+      $healthLimits = mycoachNormalizeSelectionList($data['health_limits'] ?? [], $options['health_limits']);
+      $weeklyHours = isset($data['weekly_training_hours_target']) && $data['weekly_training_hours_target'] !== '' ? max(0, (float)str_replace(',', '.', (string)$data['weekly_training_hours_target'])) : null;
+      $restDays = isset($data['rest_days_per_week']) && $data['rest_days_per_week'] !== '' ? max(0, (int)$data['rest_days_per_week']) : null;
+      $equipment = mycoachNormalizeSelectionList($data['equipment'] ?? [], $options['equipment']);
+      $hasTrainer = !empty($data['has_trainer']) ? 1 : 0;
+      $trainerName = trim((string)($data['trainer_name'] ?? ''));
+      if ($hasTrainer === 0) {
+        $trainerName = null;
+      } elseif ($trainerName === '') {
+        $trainerName = null;
+      }
+
+      $goalSnapshotType = trim((string)($data['goal_snapshot_type'] ?? ''));
+      $goalSnapshotName = trim((string)($data['goal_snapshot_name'] ?? ''));
+      $hyroxRegistered = !empty($data['hyrox_registered']) ? 1 : 0;
+      $hyroxRaceDate = trim((string)($data['hyrox_race_date'] ?? ''));
+      if ($hyroxRaceDate !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $hyroxRaceDate)) {
+        $hyroxRaceDate = '';
+      }
+      $hyroxRaceName = trim((string)($data['hyrox_race_name'] ?? ''));
+      $hyroxRacePlace = trim((string)($data['hyrox_race_place'] ?? ''));
+      $hyroxCategory = trim((string)($data['hyrox_category'] ?? ''));
+      if (!array_key_exists($hyroxCategory, $options['hyrox_categories'])) {
+        $hyroxCategory = null;
+      }
+      $hyroxGenderCategory = trim((string)($data['hyrox_gender_category'] ?? ''));
+      if (!array_key_exists($hyroxGenderCategory, $options['hyrox_gender_categories'])) {
+        $hyroxGenderCategory = null;
+      }
+
+      $daysToRace = null;
+      if ($hyroxRegistered && $hyroxRaceDate !== '') {
+        try {
+          $raceDate = new DateTimeImmutable($hyroxRaceDate . ' 00:00:00');
+          $today = new DateTimeImmutable('today');
+          $daysToRace = (int)$today->diff($raceDate)->format('%r%a');
+        } catch (Throwable $e) {
+          $daysToRace = null;
+        }
+      }
+
+      try {
+        $pdo->beginTransaction();
+        $stmt = $pdo->prepare(
+          'INSERT INTO mycoach_questionnaires (
+              user_id, questionnaire_type, age_years, gender, height_cm, weight_kg,
+              performance_level, sport_years, sport_frequency_per_week, sport_types_json,
+              sports_text, health_limits_json, weekly_training_hours_target, rest_days_per_week,
+              equipment_json, has_trainer, trainer_name, goal_snapshot_type, goal_snapshot_name,
+              hyrox_registered, hyrox_race_date, hyrox_race_name, hyrox_race_place, hyrox_category,
+              hyrox_gender_category, days_to_race, completed_at
+           ) VALUES (
+              ?, "onboarding", ?, ?, ?, ?,
+              ?, ?, ?, ?,
+              ?, ?, ?, ?,
+              ?, ?, ?, ?, ?,
+              ?, ?, ?, ?, ?,
+              ?, ?, NOW()
+           )
+           ON DUPLICATE KEY UPDATE
+              age_years = VALUES(age_years),
+              gender = VALUES(gender),
+              height_cm = VALUES(height_cm),
+              weight_kg = VALUES(weight_kg),
+              performance_level = VALUES(performance_level),
+              sport_years = VALUES(sport_years),
+              sport_frequency_per_week = VALUES(sport_frequency_per_week),
+              sport_types_json = VALUES(sport_types_json),
+              sports_text = VALUES(sports_text),
+              health_limits_json = VALUES(health_limits_json),
+              weekly_training_hours_target = VALUES(weekly_training_hours_target),
+              rest_days_per_week = VALUES(rest_days_per_week),
+              equipment_json = VALUES(equipment_json),
+              has_trainer = VALUES(has_trainer),
+              trainer_name = VALUES(trainer_name),
+              goal_snapshot_type = VALUES(goal_snapshot_type),
+              goal_snapshot_name = VALUES(goal_snapshot_name),
+              hyrox_registered = VALUES(hyrox_registered),
+              hyrox_race_date = VALUES(hyrox_race_date),
+              hyrox_race_name = VALUES(hyrox_race_name),
+              hyrox_race_place = VALUES(hyrox_race_place),
+              hyrox_category = VALUES(hyrox_category),
+              hyrox_gender_category = VALUES(hyrox_gender_category),
+              days_to_race = VALUES(days_to_race),
+              completed_at = NOW(),
+              updated_at = NOW()'
+        );
+        $stmt->execute([
+          $userId,
+          $ageYears,
+          $gender,
+          $heightCm,
+          $weightKg,
+          $performanceLevel,
+          $sportYears !== '' ? $sportYears : null,
+          $sportFrequency,
+          json_encode($sportTypes, JSON_UNESCAPED_UNICODE),
+          $sportsText !== '' ? $sportsText : null,
+          json_encode($healthLimits, JSON_UNESCAPED_UNICODE),
+          $weeklyHours,
+          $restDays,
+          json_encode($equipment, JSON_UNESCAPED_UNICODE),
+          $hasTrainer,
+          $trainerName,
+          $goalSnapshotType !== '' ? $goalSnapshotType : null,
+          $goalSnapshotName !== '' ? $goalSnapshotName : null,
+          $hyroxRegistered,
+          $hyroxRaceDate !== '' ? $hyroxRaceDate : null,
+          $hyroxRaceName !== '' ? $hyroxRaceName : null,
+          $hyroxRacePlace !== '' ? $hyroxRacePlace : null,
+          $hyroxCategory,
+          $hyroxGenderCategory,
+          $daysToRace,
+        ]);
+        $pdo->commit();
+        return true;
+      } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+          $pdo->rollBack();
+        }
+        error_log('mycoachStoreQuestionnaire failed: ' . $e->getMessage());
+        return false;
+      }
+    }
+  }
+
+  if (!function_exists('mycoachEnsureStarterPlan')) {
+    function mycoachEnsureStarterPlan(PDO $pdo, int $userId, array $questionnaire, ?array $activeGoal = null, string $createdByRole = 'user'): bool {
+      if ($userId <= 0) {
+        return false;
+      }
+
+      $goalLabel = $activeGoal ? mycoachGoalLabel((string)($activeGoal['goal_type'] ?? ''), (string)($activeGoal['custom_goal_name'] ?? '')) : 'Plán';
+      $planName = 'MyCoach – ' . $goalLabel;
+      $planLevel = mycoachPerformanceToPlanLevel((string)($questionnaire['performance_level'] ?? ''));
+      $weeklyHours = isset($questionnaire['weekly_training_hours_target']) && $questionnaire['weekly_training_hours_target'] !== ''
+        ? max(0, (float)$questionnaire['weekly_training_hours_target'])
+        : null;
+      $restDays = isset($questionnaire['rest_days_per_week']) && $questionnaire['rest_days_per_week'] !== ''
+        ? max(0, (int)$questionnaire['rest_days_per_week'])
+        : null;
+      $goalId = $activeGoal ? (int)$activeGoal['id'] : null;
+      $startedOn = date('Y-m-d');
+      $endsOn = ($activeGoal && !empty($activeGoal['target_date'])) ? (string)$activeGoal['target_date'] : null;
+
+      try {
+        $pdo->beginTransaction();
+        $existingStmt = $pdo->prepare(
+          'SELECT id
+           FROM mycoach_training_plans
+           WHERE user_id = ? AND status IN ("draft", "active", "paused")
+           ORDER BY updated_at DESC, id DESC
+           LIMIT 1'
+        );
+        $existingStmt->execute([$userId]);
+        $planId = (int)$existingStmt->fetchColumn();
+
+        if ($planId > 0) {
+          $updateStmt = $pdo->prepare(
+            'UPDATE mycoach_training_plans
+             SET goal_id = ?, plan_name = ?, status = "active", level = ?, weekly_hours_target = ?, rest_days_target = ?, started_on = COALESCE(started_on, ?), ends_on = ?, created_by_role = ?, updated_at = NOW()
+             WHERE id = ?'
+          );
+          $updateStmt->execute([
+            $goalId,
+            $planName,
+            $planLevel,
+            $weeklyHours,
+            $restDays,
+            $startedOn,
+            $endsOn,
+            $createdByRole,
+            $planId,
+          ]);
+        } else {
+          $insertStmt = $pdo->prepare(
+            'INSERT INTO mycoach_training_plans (
+                user_id, goal_id, plan_name, status, level, weekly_hours_target, rest_days_target,
+                started_on, ends_on, created_by_role
+             ) VALUES (?, ?, ?, "active", ?, ?, ?, ?, ?, ?)'
+          );
+          $insertStmt->execute([
+            $userId,
+            $goalId,
+            $planName,
+            $planLevel,
+            $weeklyHours,
+            $restDays,
+            $startedOn,
+            $endsOn,
+            $createdByRole,
+          ]);
+          $planId = (int)$pdo->lastInsertId();
+        }
+
+        if (!mycoachSeedStarterPlanContent($pdo, $planId, $userId, $questionnaire, $activeGoal)) {
+          throw new RuntimeException('Starter plan content se nepodarilo zalozit.');
+        }
+
+        $pdo->commit();
+        return true;
+      } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+          $pdo->rollBack();
+        }
+        error_log('mycoachEnsureStarterPlan failed: ' . $e->getMessage());
+        return false;
+      }
+    }
+  }
+
+  if (!function_exists('mycoachStoreHyroxRace')) {
+    function mycoachStoreHyroxRace(PDO $pdo, int $userId, ?int $goalId, array $questionnaire): bool {
+      if ($userId <= 0) {
+        return false;
+      }
+
+      if (function_exists('ensureSchemaUpgrades')) {
+        try {
+          ensureSchemaUpgrades($pdo);
+        } catch (Throwable $e) {
+          // pokračujeme i bez upgradu; schema může být už hotové
+        }
+      }
+
+      $hyroxRegistered = !empty($questionnaire['hyrox_registered']) ? 1 : 0;
+      if ($hyroxRegistered === 0) {
+        return true;
+      }
+
+      $hyroxRaceDate = trim((string)($questionnaire['hyrox_race_date'] ?? ''));
+      if ($hyroxRaceDate !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $hyroxRaceDate)) {
+        $hyroxRaceDate = '';
+      }
+
+      $hyroxRaceName = trim((string)($questionnaire['hyrox_race_name'] ?? ''));
+      $hyroxRacePlace = trim((string)($questionnaire['hyrox_race_place'] ?? ''));
+      $hyroxCategory = trim((string)($questionnaire['hyrox_category'] ?? ''));
+      $hyroxGenderCategory = trim((string)($questionnaire['hyrox_gender_category'] ?? ''));
+
+      try {
+        $existingStmt = $pdo->prepare(
+          'SELECT id
+           FROM mycoach_races
+           WHERE user_id = ? AND ((goal_id IS NULL AND ? IS NULL) OR goal_id = ?)
+           ORDER BY race_date DESC, id DESC
+           LIMIT 1'
+        );
+        $existingStmt->execute([$userId, $goalId, $goalId]);
+        $raceId = (int)$existingStmt->fetchColumn();
+
+        if ($raceId > 0) {
+          $updateStmt = $pdo->prepare(
+            'UPDATE mycoach_races
+             SET goal_id = ?, race_type = "hyrox", race_name = ?, race_place = ?, race_date = ?, category_primary = ?, category_secondary = ?, registration_confirmed = 1, updated_at = NOW()
+             WHERE id = ?'
+          );
+          $updateStmt->execute([
+            $goalId,
+            $hyroxRaceName !== '' ? $hyroxRaceName : 'HYROX závod',
+            $hyroxRacePlace !== '' ? $hyroxRacePlace : null,
+            $hyroxRaceDate !== '' ? $hyroxRaceDate : date('Y-m-d'),
+            $hyroxCategory !== '' ? $hyroxCategory : null,
+            $hyroxGenderCategory !== '' ? $hyroxGenderCategory : null,
+            $raceId,
+          ]);
+        } else {
+          $insertStmt = $pdo->prepare(
+            'INSERT INTO mycoach_races (
+                user_id, goal_id, race_type, race_name, race_place, race_date,
+                category_primary, category_secondary, registration_confirmed
+             ) VALUES (?, ?, "hyrox", ?, ?, ?, ?, ?, 1)'
+          );
+          $insertStmt->execute([
+            $userId,
+            $goalId,
+            $hyroxRaceName !== '' ? $hyroxRaceName : 'HYROX závod',
+            $hyroxRacePlace !== '' ? $hyroxRacePlace : null,
+            $hyroxRaceDate !== '' ? $hyroxRaceDate : date('Y-m-d'),
+            $hyroxCategory !== '' ? $hyroxCategory : null,
+            $hyroxGenderCategory !== '' ? $hyroxGenderCategory : null,
+          ]);
+        }
+
+        return true;
+      } catch (Throwable $e) {
+        return false;
+      }
+    }
+  }
 
 if (!function_exists('formatDate')) {
     function formatDate(?string $dt): string {

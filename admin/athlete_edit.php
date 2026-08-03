@@ -20,6 +20,17 @@ if (!$hasSpecialTrainingColumn) {
     }
 }
 
+$stmtMyCoachCol = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'mycoach_enabled'");
+$hasMyCoachColumn = $stmtMyCoachCol !== false && (bool)$stmtMyCoachCol->fetch();
+if (!$hasMyCoachColumn) {
+    try {
+        $pdo->exec('ALTER TABLE athletes ADD COLUMN mycoach_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER special_training_enabled');
+        $hasMyCoachColumn = true;
+    } catch (Throwable $e) {
+        $hasMyCoachColumn = false;
+    }
+}
+
 $stmt = $pdo->prepare(
     'SELECT a.*, c.name AS coach_name, c.username AS coach_username
      FROM athletes a
@@ -45,6 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $email     = trim($_POST['email'] ?? '');
         $notes     = trim($_POST['notes'] ?? '');
         $specialTrainingEnabled = isset($_POST['special_training_enabled']) ? 1 : 0;
+        $myCoachEnabled = isset($_POST['mycoach_enabled']) ? 1 : 0;
 
         if ($firstName === '' || $lastName === '') {
             $error = 'Vyplňte jméno a příjmení.';
@@ -98,6 +110,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]);
                 }
             }
+
+            if ($hasMyCoachColumn) {
+                $pdo->prepare('UPDATE athletes SET mycoach_enabled = ? WHERE id = ?')
+                    ->execute([$myCoachEnabled, $athleteId]);
+            }
+
             flash('success', 'Údaje sportovce byly aktualizovány.');
             redirect(BASE_URL . '/admin/athletes.php');
         }
@@ -192,6 +210,19 @@ renderAdminHeader('Upravit sportovce');
                             </label>
                         </div>
                         <div class="form-text">Nezaškrtnuto = dlaždice je uzamčená a přímý vstup je zablokován.</div>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($hasMyCoachColumn): ?>
+                    <div class="mb-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="mycoach_enabled"
+                                   id="myCoachEnabled" value="1"
+                                   <?= !empty($d['mycoach_enabled']) ? 'checked' : '' ?>>
+                            <label class="form-check-label fw-semibold" for="myCoachEnabled">
+                                Povolit sportovci přístup do MyCoach
+                            </label>
+                        </div>
+                        <div class="form-text">Nezaškrtnuto = dlaždice MyCoach je uzamčená a přímý vstup je zablokován.</div>
                     </div>
                     <?php endif; ?>
                     <div class="d-flex gap-2">

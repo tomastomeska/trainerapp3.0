@@ -544,6 +544,11 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         $pdo->exec('ALTER TABLE athletes ADD COLUMN special_training_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER login_enabled');
     }
 
+    $stmtAthleteMyCoach = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'mycoach_enabled'");
+    if (!$stmtAthleteMyCoach->fetch()) {
+        $pdo->exec('ALTER TABLE athletes ADD COLUMN mycoach_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER special_training_enabled');
+    }
+
     $stmtTrainingRate = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'training_rate'");
     if (!$stmtTrainingRate->fetch()) {
         $pdo->exec('ALTER TABLE athletes ADD COLUMN training_rate DECIMAL(10,2) NULL AFTER email');
@@ -624,6 +629,11 @@ function ensureSchemaUpgrades(PDO $pdo): void {
     $stmtCoachSpecialTraining = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'special_training_enabled'");
     if (!$stmtCoachSpecialTraining->fetch()) {
         $pdo->exec('ALTER TABLE coaches ADD COLUMN special_training_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER makeup_booking_deadline_days');
+    }
+
+    $stmtCoachMyCoach = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'mycoach_enabled'");
+    if (!$stmtCoachMyCoach->fetch()) {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN mycoach_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER special_training_enabled');
     }
 
     // Soukromý token pro Apple Calendar odběr kalendáře trenéra
@@ -742,6 +752,26 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         $pdo->exec('ALTER TABLE coaches ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1');
     }
 
+    $stmtDailyWorkoutType = $pdo->query("SHOW COLUMNS FROM mycoach_daily_questionnaires LIKE 'workout_type'");
+    if (!$stmtDailyWorkoutType->fetch()) {
+        $pdo->exec('ALTER TABLE mycoach_daily_questionnaires ADD COLUMN workout_type VARCHAR(40) NULL AFTER workout_id');
+    }
+
+    $stmtDailyWorkoutMeta = $pdo->query("SHOW COLUMNS FROM mycoach_daily_questionnaires LIKE 'workout_meta_json'");
+    if (!$stmtDailyWorkoutMeta->fetch()) {
+        $pdo->exec('ALTER TABLE mycoach_daily_questionnaires ADD COLUMN workout_meta_json JSON NULL AFTER workout_type');
+    }
+
+    $stmtDailyUnique = $pdo->query("SHOW INDEX FROM mycoach_daily_questionnaires WHERE Key_name = 'uq_mycoach_daily_questionnaires_user_date'");
+    if ($stmtDailyUnique->fetch()) {
+        $pdo->exec('ALTER TABLE mycoach_daily_questionnaires DROP INDEX uq_mycoach_daily_questionnaires_user_date');
+    }
+
+    $stmtDailyDateIndex = $pdo->query("SHOW INDEX FROM mycoach_daily_questionnaires WHERE Key_name = 'idx_mycoach_daily_questionnaires_user_date_created'");
+    if (!$stmtDailyDateIndex->fetch()) {
+        $pdo->exec('CREATE INDEX idx_mycoach_daily_questionnaires_user_date_created ON mycoach_daily_questionnaires (user_id, entry_date, created_at, id)');
+    }
+
     // Globalni cviky
     $stmtGlob = $pdo->query("SHOW COLUMNS FROM exercises LIKE 'is_global'");
     if (!$stmtGlob->fetch()) {
@@ -832,6 +862,730 @@ function ensureSchemaUpgrades(PDO $pdo): void {
             `updated_at`        TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             KEY `idx_special_event_upcoming_items_event` (`event_id`, `is_active`, `event_date`, `sort_order`),
             CONSTRAINT `fk_special_event_upcoming_items_event` FOREIGN KEY (`event_id`) REFERENCES `special_events`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    // MyCoach: uzivatele a planovaci modul inteligentni pripravy
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_users` (
+            `id`            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `coach_id`      INT NULL,
+            `athlete_id`    INT NULL,
+            `role`          ENUM('coach','athlete') NOT NULL,
+            `display_name`  VARCHAR(190) NULL,
+            `created_at`    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uq_mycoach_coach` (`coach_id`),
+            UNIQUE KEY `uq_mycoach_athlete` (`athlete_id`),
+            KEY `idx_mycoach_users_role` (`role`),
+            CONSTRAINT `fk_mycoach_user_coach` FOREIGN KEY (`coach_id`) REFERENCES `coaches`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_mycoach_user_athlete` FOREIGN KEY (`athlete_id`) REFERENCES `athletes`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_questionnaires` (
+            `id`                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `user_id`                BIGINT UNSIGNED NOT NULL,
+            `questionnaire_type`     ENUM('onboarding') NOT NULL DEFAULT 'onboarding',
+            `age_years`              SMALLINT UNSIGNED NULL,
+            `gender`                 ENUM('male','female','other','prefer_not_say') NULL,
+            `height_cm`              SMALLINT UNSIGNED NULL,
+            `weight_kg`              DECIMAL(5,2) NULL,
+            `performance_level`      ENUM('beginner','slightly_advanced','advanced','racer') NULL,
+            `sport_years`            VARCHAR(60) NULL,
+            `sport_frequency_per_week` TINYINT UNSIGNED NULL,
+            `sport_types_json`       JSON NULL,
+            `sports_text`            TEXT NULL,
+            `health_limits_json`     JSON NULL,
+            `weekly_training_hours_target` DECIMAL(4,1) NULL,
+            `rest_days_per_week`     TINYINT UNSIGNED NULL,
+            `equipment_json`         JSON NULL,
+            `has_trainer`            TINYINT(1) NOT NULL DEFAULT 0,
+            `trainer_name`           VARCHAR(190) NULL,
+            `goal_snapshot_type`     VARCHAR(60) NULL,
+            `goal_snapshot_name`     VARCHAR(190) NULL,
+            `hyrox_registered`       TINYINT(1) NOT NULL DEFAULT 0,
+            `hyrox_race_date`        DATE NULL,
+            `hyrox_race_name`        VARCHAR(190) NULL,
+            `hyrox_race_place`       VARCHAR(190) NULL,
+            `hyrox_category`         VARCHAR(40) NULL,
+            `hyrox_gender_category`  VARCHAR(40) NULL,
+            `days_to_race`           INT NULL,
+            `completed_at`           DATETIME NULL,
+            `created_at`             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`             TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uq_mycoach_questionnaire_user_type` (`user_id`, `questionnaire_type`),
+            KEY `idx_mycoach_questionnaires_goal` (`goal_snapshot_type`, `hyrox_registered`),
+            CONSTRAINT `fk_mycoach_questionnaires_user` FOREIGN KEY (`user_id`) REFERENCES `mycoach_users`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_goals` (
+            `id`                   BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `user_id`              BIGINT UNSIGNED NOT NULL,
+            `goal_type`            ENUM('hyrox','half_marathon','marathon','spartan_race','ocr','strength_development','weight_loss','muscle_gain','fitness','custom') NOT NULL,
+            `custom_goal_name`     VARCHAR(190) NULL,
+            `target_date`          DATE NULL,
+            `is_active`            TINYINT(1) NOT NULL DEFAULT 1,
+            `started_at`           DATETIME NULL,
+            `ended_at`             DATETIME NULL,
+            `created_at`           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`           TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_mycoach_goals_user_active` (`user_id`, `is_active`),
+            KEY `idx_mycoach_goals_type` (`goal_type`),
+            CONSTRAINT `fk_mycoach_goals_user` FOREIGN KEY (`user_id`) REFERENCES `mycoach_users`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_events` (
+            `id`                  BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `user_id`             BIGINT UNSIGNED NOT NULL,
+            `goal_id`             BIGINT UNSIGNED NULL,
+            `title`               VARCHAR(190) NOT NULL,
+            `event_type`          ENUM('strength','group_class','trx','bodypump','bodyattack','tabata','run','bike','swim','hyrox_simulation','recovery','massage','sauna','stretching','rest','other') NOT NULL DEFAULT 'other',
+            `starts_at`           DATETIME NOT NULL,
+            `ends_at`             DATETIME NULL,
+            `duration_minutes`    INT NULL,
+            `planned_intensity`   DECIMAL(4,2) NULL,
+            `rpe`                 DECIMAL(4,2) NULL,
+            `status`              ENUM('planned','completed','skipped','moved') NOT NULL DEFAULT 'planned',
+            `source`              ENUM('user','coach','ai') NOT NULL DEFAULT 'user',
+            `notes`               TEXT NULL,
+            `created_at`          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_mycoach_events_user_starts` (`user_id`, `starts_at`),
+            KEY `idx_mycoach_events_user_status` (`user_id`, `status`),
+            CONSTRAINT `fk_mycoach_events_user` FOREIGN KEY (`user_id`) REFERENCES `mycoach_users`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_mycoach_events_goal` FOREIGN KEY (`goal_id`) REFERENCES `mycoach_goals`(`id`) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_races` (
+            `id`                      BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `user_id`                 BIGINT UNSIGNED NOT NULL,
+            `goal_id`                 BIGINT UNSIGNED NULL,
+            `race_type`               ENUM('hyrox','running','ocr','spartan','other') NOT NULL DEFAULT 'other',
+            `race_name`               VARCHAR(190) NOT NULL,
+            `race_place`              VARCHAR(190) NULL,
+            `race_date`               DATE NOT NULL,
+            `category_primary`        VARCHAR(80) NULL,
+            `category_secondary`      VARCHAR(80) NULL,
+            `registration_confirmed`  TINYINT(1) NOT NULL DEFAULT 0,
+            `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_mycoach_races_user_date` (`user_id`, `race_date`),
+            CONSTRAINT `fk_mycoach_races_user` FOREIGN KEY (`user_id`) REFERENCES `mycoach_users`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_mycoach_races_goal` FOREIGN KEY (`goal_id`) REFERENCES `mycoach_goals`(`id`) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_training_plans` (
+            `id`                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `user_id`                BIGINT UNSIGNED NOT NULL,
+            `goal_id`                BIGINT UNSIGNED NULL,
+            `plan_name`              VARCHAR(190) NOT NULL,
+            `status`                 ENUM('draft','active','paused','completed','archived') NOT NULL DEFAULT 'draft',
+            `level`                  ENUM('beginner','intermediate','advanced','pro') NULL,
+            `weekly_hours_target`    DECIMAL(5,2) NULL,
+            `rest_days_target`       TINYINT UNSIGNED NULL,
+            `notes`                  TEXT NULL,
+            `started_on`             DATE NULL,
+            `ends_on`                DATE NULL,
+            `created_by_role`        ENUM('user','coach','ai') NOT NULL DEFAULT 'user',
+            `created_at`             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`             TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_mycoach_plans_user_status` (`user_id`, `status`),
+            KEY `idx_mycoach_plans_dates` (`started_on`, `ends_on`),
+            CONSTRAINT `fk_mycoach_plans_user` FOREIGN KEY (`user_id`) REFERENCES `mycoach_users`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_mycoach_plans_goal` FOREIGN KEY (`goal_id`) REFERENCES `mycoach_goals`(`id`) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_training_days` (
+            `id`                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `plan_id`                BIGINT UNSIGNED NOT NULL,
+            `event_id`               BIGINT UNSIGNED NULL,
+            `training_date`          DATE NOT NULL,
+            `day_type`               ENUM('training','recovery','rest') NOT NULL DEFAULT 'training',
+            `planned_minutes`        INT NULL,
+            `completed_minutes`      INT NULL,
+            `planned_intensity`      DECIMAL(4,2) NULL,
+            `completed_intensity`    DECIMAL(4,2) NULL,
+            `created_at`             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`             TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uq_mycoach_training_day` (`plan_id`, `training_date`),
+            KEY `idx_mycoach_training_days_date` (`training_date`),
+            CONSTRAINT `fk_mycoach_training_days_plan` FOREIGN KEY (`plan_id`) REFERENCES `mycoach_training_plans`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_mycoach_training_days_event` FOREIGN KEY (`event_id`) REFERENCES `mycoach_events`(`id`) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_exercise_categories` (
+            `id`                     BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `slug`                   VARCHAR(120) NOT NULL,
+            `name`                   VARCHAR(140) NOT NULL,
+            `description`            TEXT NULL,
+            `is_active`              TINYINT(1) NOT NULL DEFAULT 1,
+            `sort_order`             INT NOT NULL DEFAULT 100,
+            `created_at`             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`             TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uq_mycoach_exercise_categories_slug` (`slug`),
+            KEY `idx_mycoach_exercise_categories_active_sort` (`is_active`, `sort_order`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_exercises` (
+            `id`                      BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `owner_user_id`           BIGINT UNSIGNED NULL,
+            `category_id`             BIGINT UNSIGNED NULL,
+            `name`                    VARCHAR(190) NOT NULL,
+            `description`             TEXT NULL,
+            `video_url`               VARCHAR(500) NULL,
+            `photo_path`              VARCHAR(255) NULL,
+            `muscle_groups`           JSON NULL,
+            `difficulty`              ENUM('beginner','intermediate','advanced','pro') NULL,
+            `exercise_type`           VARCHAR(120) NULL,
+            `recommended_reps`        VARCHAR(60) NULL,
+            `recommended_sets`        VARCHAR(60) NULL,
+            `recommended_intensity`   VARCHAR(80) NULL,
+            `is_public`               TINYINT(1) NOT NULL DEFAULT 0,
+            `is_system`               TINYINT(1) NOT NULL DEFAULT 0,
+            `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_mycoach_exercises_owner` (`owner_user_id`),
+            KEY `idx_mycoach_exercises_category` (`category_id`),
+            KEY `idx_mycoach_exercises_public` (`is_public`, `is_system`),
+            CONSTRAINT `fk_mycoach_exercises_owner` FOREIGN KEY (`owner_user_id`) REFERENCES `mycoach_users`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_mycoach_exercises_category` FOREIGN KEY (`category_id`) REFERENCES `mycoach_exercise_categories`(`id`) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_hyrox_standards` (
+            `id`                      BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `discipline_key`          VARCHAR(120) NOT NULL,
+            `discipline_name`         VARCHAR(190) NOT NULL,
+            `version_label`           VARCHAR(60) NOT NULL DEFAULT 'current',
+            `category_group`          VARCHAR(80) NOT NULL,
+            `category_gender`         ENUM('male','female','mixed','any') NOT NULL DEFAULT 'any',
+            `distance_or_reps`        VARCHAR(120) NOT NULL,
+            `official_weight_kg`      DECIMAL(6,2) NULL,
+            `technical_notes`         TEXT NULL,
+            `common_mistakes`         TEXT NULL,
+            `training_variants`       TEXT NULL,
+            `valid_from`              DATE NULL,
+            `valid_to`                DATE NULL,
+            `is_active`               TINYINT(1) NOT NULL DEFAULT 1,
+            `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_mycoach_hyrox_key_version` (`discipline_key`, `version_label`),
+            KEY `idx_mycoach_hyrox_validity` (`is_active`, `valid_from`, `valid_to`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_hyrox_standard_weights` (
+            `id`                 BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `standard_id`        BIGINT UNSIGNED NOT NULL,
+            `division`           ENUM('open','pro','doubles','relay') NOT NULL,
+            `gender_category`    ENUM('male','female','mixed','any') NOT NULL DEFAULT 'any',
+            `weight_label`       VARCHAR(120) NOT NULL,
+            `weight_kg`          DECIMAL(6,2) NULL,
+            `notes`              TEXT NULL,
+            `sort_order`         INT NOT NULL DEFAULT 100,
+            `created_at`         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`         TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_mycoach_hyrox_standard_weights_standard` (`standard_id`, `division`, `gender_category`),
+            CONSTRAINT `fk_mycoach_hyrox_standard_weights_standard` FOREIGN KEY (`standard_id`) REFERENCES `mycoach_hyrox_standards`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $hyroxStandardCount = 0;
+    try {
+        $hyroxStandardCount = (int)$pdo->query('SELECT COUNT(*) FROM mycoach_hyrox_standards')->fetchColumn();
+    } catch (Throwable $e) {
+        $hyroxStandardCount = 0;
+    }
+
+    if ($hyroxStandardCount === 0) {
+        $hyroxStandards = [
+            [
+                'discipline_key' => 'run_1km',
+                'discipline_name' => 'Běh 1000 m',
+                'category_group' => 'run',
+                'distance_or_reps' => '8 × 1000 m',
+                'technical_notes' => 'Drž stejné tempo mezi úseky, nevyhoř už na prvním kilometru.',
+                'common_mistakes' => 'Příliš rychlý start, rozpad tempa, neefektivní přechod do stanovišť.',
+                'training_variants' => 'Pacing, intervaly 1 km, brick tréninky po silové části.',
+                'valid_from' => '2026-01-01',
+            ],
+            [
+                'discipline_key' => 'ski_erg_1000',
+                'discipline_name' => 'SkiErg 1000 m',
+                'category_group' => 'erg',
+                'distance_or_reps' => '1000 m',
+                'technical_notes' => 'Zapoj latissimy, ne jen paže. Udrž plynulý rytmus a výdech.',
+                'common_mistakes' => 'Tah z rukou, přepálený začátek, hrbení zad.',
+                'training_variants' => 'Pulsní intervaly, tempo úseky, technické série 250-500 m.',
+                'valid_from' => '2026-01-01',
+            ],
+            [
+                'discipline_key' => 'sled_push',
+                'discipline_name' => 'Sled Push',
+                'category_group' => 'sled',
+                'distance_or_reps' => '50 m',
+                'technical_notes' => 'Nastav trup pevně, krátký krok a konzistentní tlak do země.',
+                'common_mistakes' => 'Příliš vysoké těžiště, lámání zad, přetlačení špičkami.',
+                'training_variants' => 'Krátké úseky na saních, tempo po 10 m, síla dolních končetin.',
+                'valid_from' => '2026-01-01',
+            ],
+            [
+                'discipline_key' => 'sled_pull',
+                'discipline_name' => 'Sled Pull',
+                'category_group' => 'sled',
+                'distance_or_reps' => '50 m',
+                'technical_notes' => 'Pracuj celým tělem, drž tah z kyčlí a zad, ne jen z rukou.',
+                'common_mistakes' => 'Rozpad postoje, tah pouze pažemi, krátký dosah lana.',
+                'training_variants' => 'Tahové série s lanem, přítahy, intervaly na saních.',
+                'valid_from' => '2026-01-01',
+            ],
+            [
+                'discipline_key' => 'burpee_broad_jumps',
+                'discipline_name' => 'Burpee Broad Jumps',
+                'category_group' => 'bodyweight',
+                'distance_or_reps' => '80 m',
+                'technical_notes' => 'Rozděl práci na udržitelné úseky, hlídej rytmus a dech.',
+                'common_mistakes' => 'Rozpad techniky, přepálený první blok, neefektivní dopad.',
+                'training_variants' => 'Opakování 10-20 m, kombinace s během a core.',
+                'valid_from' => '2026-01-01',
+            ],
+            [
+                'discipline_key' => 'row_1000',
+                'discipline_name' => 'Row 1000 m',
+                'category_group' => 'erg',
+                'distance_or_reps' => '1000 m',
+                'technical_notes' => 'Nastav tah nohy-trup-ruka a drž konzistentní split.',
+                'common_mistakes' => 'Příliš rychlý začátek, přetažené ruce, ztráta kadence.',
+                'training_variants' => 'Intervaly 250-500 m, tempo pod únavou, technika tahu.',
+                'valid_from' => '2026-01-01',
+            ],
+            [
+                'discipline_key' => 'farmer_carry',
+                'discipline_name' => 'Farmer Carry',
+                'category_group' => 'carry',
+                'distance_or_reps' => '200 m',
+                'technical_notes' => 'Střed těla pevný, ramena dolů, krok krátký a stabilní.',
+                'common_mistakes' => 'Naklánění do stran, přehnaný švih, ztráta úchopu.',
+                'training_variants' => 'Chůze s jednoručkami/kettlebells, grip work, úseky 25-50 m.',
+                'valid_from' => '2026-01-01',
+            ],
+            [
+                'discipline_key' => 'sandbag_lunges',
+                'discipline_name' => 'Sandbag Lunges',
+                'category_group' => 'carry',
+                'distance_or_reps' => '100 m',
+                'technical_notes' => 'Dlouhý krok, koleno stabilní, trup vzpřímený.',
+                'common_mistakes' => 'Předklon, krátký krok, koleno padá dovnitř.',
+                'training_variants' => 'Výpady s vakem, chůze v tempu, silová vytrvalost nohou.',
+                'valid_from' => '2026-01-01',
+            ],
+            [
+                'discipline_key' => 'wall_balls',
+                'discipline_name' => 'Wall Balls',
+                'category_group' => 'throw',
+                'distance_or_reps' => '100 reps',
+                'technical_notes' => 'Najdi rytmus dřep-odhoz-catch a drž dech pod kontrolou.',
+                'common_mistakes' => 'Krátký dřep, nepřesný hod, rozpad tempa v druhé polovině.',
+                'training_variants' => 'Série 10-20 opakování, technika hodu, únavové blocíky.',
+                'valid_from' => '2026-01-01',
+            ],
+        ];
+
+        $hyroxWeights = [
+            'run_1km' => [],
+            'ski_erg_1000' => [],
+            'sled_push' => [
+                ['division' => 'open', 'gender_category' => 'male', 'weight_label' => 'Open men', 'weight_kg' => 152.0],
+                ['division' => 'pro', 'gender_category' => 'male', 'weight_label' => 'Pro men', 'weight_kg' => 202.0],
+                ['division' => 'doubles', 'gender_category' => 'male', 'weight_label' => 'Doubles men', 'weight_kg' => 152.0],
+                ['division' => 'doubles', 'gender_category' => 'female', 'weight_label' => 'Doubles women', 'weight_kg' => 102.0],
+                ['division' => 'relay', 'gender_category' => 'mixed', 'weight_label' => 'Relay', 'weight_kg' => 102.0],
+                ['division' => 'open', 'gender_category' => 'female', 'weight_label' => 'Open women', 'weight_kg' => 102.0],
+                ['division' => 'pro', 'gender_category' => 'female', 'weight_label' => 'Pro women', 'weight_kg' => 152.0],
+            ],
+            'sled_pull' => [
+                ['division' => 'open', 'gender_category' => 'male', 'weight_label' => 'Open men', 'weight_kg' => 103.0],
+                ['division' => 'pro', 'gender_category' => 'male', 'weight_label' => 'Pro men', 'weight_kg' => 153.0],
+                ['division' => 'doubles', 'gender_category' => 'male', 'weight_label' => 'Doubles men', 'weight_kg' => 103.0],
+                ['division' => 'doubles', 'gender_category' => 'female', 'weight_label' => 'Doubles women', 'weight_kg' => 78.0],
+                ['division' => 'relay', 'gender_category' => 'mixed', 'weight_label' => 'Relay', 'weight_kg' => 78.0],
+                ['division' => 'open', 'gender_category' => 'female', 'weight_label' => 'Open women', 'weight_kg' => 78.0],
+                ['division' => 'pro', 'gender_category' => 'female', 'weight_label' => 'Pro women', 'weight_kg' => 103.0],
+            ],
+            'burpee_broad_jumps' => [],
+            'row_1000' => [],
+            'farmer_carry' => [
+                ['division' => 'open', 'gender_category' => 'male', 'weight_label' => 'Open men', 'weight_kg' => 24.0],
+                ['division' => 'pro', 'gender_category' => 'male', 'weight_label' => 'Pro men', 'weight_kg' => 32.0],
+                ['division' => 'doubles', 'gender_category' => 'male', 'weight_label' => 'Doubles men', 'weight_kg' => 24.0],
+                ['division' => 'doubles', 'gender_category' => 'female', 'weight_label' => 'Doubles women', 'weight_kg' => 16.0],
+                ['division' => 'relay', 'gender_category' => 'mixed', 'weight_label' => 'Relay', 'weight_kg' => 16.0],
+                ['division' => 'open', 'gender_category' => 'female', 'weight_label' => 'Open women', 'weight_kg' => 16.0],
+                ['division' => 'pro', 'gender_category' => 'female', 'weight_label' => 'Pro women', 'weight_kg' => 24.0],
+            ],
+            'sandbag_lunges' => [
+                ['division' => 'open', 'gender_category' => 'male', 'weight_label' => 'Open men', 'weight_kg' => 20.0],
+                ['division' => 'pro', 'gender_category' => 'male', 'weight_label' => 'Pro men', 'weight_kg' => 30.0],
+                ['division' => 'doubles', 'gender_category' => 'male', 'weight_label' => 'Doubles men', 'weight_kg' => 20.0],
+                ['division' => 'doubles', 'gender_category' => 'female', 'weight_label' => 'Doubles women', 'weight_kg' => 10.0],
+                ['division' => 'relay', 'gender_category' => 'mixed', 'weight_label' => 'Relay', 'weight_kg' => 10.0],
+                ['division' => 'open', 'gender_category' => 'female', 'weight_label' => 'Open women', 'weight_kg' => 10.0],
+                ['division' => 'pro', 'gender_category' => 'female', 'weight_label' => 'Pro women', 'weight_kg' => 20.0],
+            ],
+            'wall_balls' => [
+                ['division' => 'open', 'gender_category' => 'male', 'weight_label' => 'Open men', 'weight_kg' => 6.0],
+                ['division' => 'pro', 'gender_category' => 'male', 'weight_label' => 'Pro men', 'weight_kg' => 9.0],
+                ['division' => 'doubles', 'gender_category' => 'male', 'weight_label' => 'Doubles men', 'weight_kg' => 6.0],
+                ['division' => 'doubles', 'gender_category' => 'female', 'weight_label' => 'Doubles women', 'weight_kg' => 4.0],
+                ['division' => 'relay', 'gender_category' => 'mixed', 'weight_label' => 'Relay', 'weight_kg' => 4.0],
+                ['division' => 'open', 'gender_category' => 'female', 'weight_label' => 'Open women', 'weight_kg' => 4.0],
+                ['division' => 'pro', 'gender_category' => 'female', 'weight_label' => 'Pro women', 'weight_kg' => 6.0],
+            ],
+        ];
+
+        try {
+            $pdo->beginTransaction();
+            $insertStandard = $pdo->prepare(
+                'INSERT INTO mycoach_hyrox_standards (
+                    discipline_key, discipline_name, version_label, category_group, category_gender,
+                    distance_or_reps, official_weight_kg, technical_notes, common_mistakes, training_variants,
+                    valid_from, valid_to, is_active
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)'
+            );
+            $insertWeight = $pdo->prepare(
+                'INSERT INTO mycoach_hyrox_standard_weights (
+                    standard_id, division, gender_category, weight_label, weight_kg, notes, sort_order
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?)'
+            );
+
+            foreach ($hyroxStandards as $index => $standard) {
+                $insertStandard->execute([
+                    $standard['discipline_key'],
+                    $standard['discipline_name'],
+                    'current',
+                    $standard['category_group'],
+                    'any',
+                    $standard['distance_or_reps'],
+                    null,
+                    $standard['technical_notes'],
+                    $standard['common_mistakes'],
+                    $standard['training_variants'],
+                    $standard['valid_from'] ?? null,
+                    null,
+                ]);
+                $standardId = (int)$pdo->lastInsertId();
+                foreach ($hyroxWeights[$standard['discipline_key']] ?? [] as $weightIndex => $weightRow) {
+                    $insertWeight->execute([
+                        $standardId,
+                        $weightRow['division'],
+                        $weightRow['gender_category'],
+                        $weightRow['weight_label'],
+                        $weightRow['weight_kg'],
+                        $standard['discipline_name'] . ' · ' . $weightRow['weight_label'],
+                        ($index * 100) + $weightIndex,
+                    ]);
+                }
+            }
+
+            $exerciseCategoryMap = [
+                'strength' => ['Název' => 'Silové cviky', 'description' => 'Základní pohybové vzory a silové cviky.', 'sort_order' => 10],
+                'conditioning' => ['Název' => 'Kondiční cviky', 'description' => 'Intervalové a výkonnostní cviky.', 'sort_order' => 20],
+                'running' => ['Název' => 'Běžecké cviky', 'description' => 'Běh, technika a tempo.', 'sort_order' => 30],
+                'hyrox' => ['Název' => 'HYROX', 'description' => 'Disciplíny a jejich specifické varianty.', 'sort_order' => 40],
+                'trx' => ['Název' => 'TRX', 'description' => 'Závěsný trénink a core.', 'sort_order' => 50],
+                'group_class' => ['Název' => 'Skupinové lekce', 'description' => 'BodyPump, BodyAttack a podobně.', 'sort_order' => 60],
+                'mobility' => ['Název' => 'Mobilita', 'description' => 'Protahování, regenerace a rozsahy.', 'sort_order' => 70],
+                'cardio' => ['Název' => 'Kardio', 'description' => 'Kolo, plavání a aerobní práce.', 'sort_order' => 80],
+                'core' => ['Název' => 'Core', 'description' => 'Střed těla a stabilita.', 'sort_order' => 90],
+            ];
+
+            $exerciseSeedCount = (int)$pdo->query('SELECT COUNT(*) FROM mycoach_exercises')->fetchColumn();
+            if ($exerciseSeedCount === 0) {
+                $catStmt = $pdo->prepare('SELECT id FROM mycoach_exercise_categories WHERE slug = ? LIMIT 1');
+                $insertExercise = $pdo->prepare(
+                    'INSERT INTO mycoach_exercises (
+                        owner_user_id, category_id, name, description, video_url, photo_path, muscle_groups,
+                        difficulty, exercise_type, recommended_reps, recommended_sets, recommended_intensity,
+                        is_public, is_system
+                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1)'
+                );
+
+                $exerciseSeeds = [
+                    ['category' => 'strength', 'name' => 'Back Squat', 'description' => 'Základní dřep pro sílu nohou a trupu.', 'muscles' => ['quadriceps', 'glutes', 'core'], 'difficulty' => 'intermediate', 'type' => 'compound', 'reps' => '3-8', 'sets' => '3-6', 'intensity' => '70-90 % 1RM'],
+                    ['category' => 'strength', 'name' => 'Front Squat', 'description' => 'Dřep s důrazem na trup a kvadricepsy.', 'muscles' => ['quadriceps', 'core', 'glutes'], 'difficulty' => 'advanced', 'type' => 'compound', 'reps' => '3-6', 'sets' => '3-5', 'intensity' => '70-88 % 1RM'],
+                    ['category' => 'strength', 'name' => 'Deadlift', 'description' => 'Tahový cvik pro zadní řetězec.', 'muscles' => ['hamstrings', 'glutes', 'back'], 'difficulty' => 'intermediate', 'type' => 'compound', 'reps' => '3-6', 'sets' => '3-5', 'intensity' => '75-90 % 1RM'],
+                    ['category' => 'strength', 'name' => 'Romanian Deadlift', 'description' => 'Hip hinge pro hamstringy a hýždě.', 'muscles' => ['hamstrings', 'glutes', 'back'], 'difficulty' => 'intermediate', 'type' => 'hinge', 'reps' => '6-10', 'sets' => '3-4', 'intensity' => '60-80 % 1RM'],
+                    ['category' => 'strength', 'name' => 'Bench Press', 'description' => 'Tlak na hrudník, triceps a ramena.', 'muscles' => ['chest', 'triceps', 'shoulders'], 'difficulty' => 'intermediate', 'type' => 'compound', 'reps' => '3-8', 'sets' => '3-6', 'intensity' => '70-90 % 1RM'],
+                    ['category' => 'strength', 'name' => 'Overhead Press', 'description' => 'Tlak nad hlavu pro ramena a core.', 'muscles' => ['shoulders', 'triceps', 'core'], 'difficulty' => 'intermediate', 'type' => 'compound', 'reps' => '3-8', 'sets' => '3-5', 'intensity' => '65-85 % 1RM'],
+                    ['category' => 'strength', 'name' => 'Pull-Up', 'description' => 'Tahový cvik s vahou těla.', 'muscles' => ['back', 'biceps', 'forearms'], 'difficulty' => 'advanced', 'type' => 'bodyweight', 'reps' => '4-12', 'sets' => '3-5', 'intensity' => 'vlastní váha'],
+                    ['category' => 'strength', 'name' => 'Bent-Over Row', 'description' => 'Tah pro záda a lopatky.', 'muscles' => ['back', 'biceps', 'core'], 'difficulty' => 'intermediate', 'type' => 'compound', 'reps' => '6-10', 'sets' => '3-4', 'intensity' => '65-85 % 1RM'],
+                    ['category' => 'strength', 'name' => 'Thruster', 'description' => 'Kombinace dřepu a tlaku nad hlavu.', 'muscles' => ['quadriceps', 'shoulders', 'core'], 'difficulty' => 'advanced', 'type' => 'hybrid', 'reps' => '6-15', 'sets' => '3-5', 'intensity' => 'střední až vysoká'],
+                    ['category' => 'conditioning', 'name' => 'Kettlebell Swing', 'description' => 'Kyčelní hinge pro kondici a sílu zadního řetězce.', 'muscles' => ['glutes', 'hamstrings', 'core'], 'difficulty' => 'beginner', 'type' => 'ballistic', 'reps' => '12-20', 'sets' => '3-6', 'intensity' => 'střední'],
+                    ['category' => 'conditioning', 'name' => 'Burpee', 'description' => 'Celotělový kondiční cvik.', 'muscles' => ['chest', 'core', 'shoulders', 'legs'], 'difficulty' => 'intermediate', 'type' => 'conditioning', 'reps' => '8-20', 'sets' => '3-5', 'intensity' => 'vysoká'],
+                    ['category' => 'conditioning', 'name' => 'Burpee Broad Jump', 'description' => 'Burpee s odskokem vpřed.', 'muscles' => ['legs', 'core', 'chest'], 'difficulty' => 'advanced', 'type' => 'hyrox', 'reps' => '6-12', 'sets' => '3-5', 'intensity' => 'vysoká'],
+                    ['category' => 'conditioning', 'name' => 'Wall Ball', 'description' => 'Dřep s výhozem medicinbalu do stěny.', 'muscles' => ['quadriceps', 'shoulders', 'core'], 'difficulty' => 'intermediate', 'type' => 'hyrox', 'reps' => '15-30', 'sets' => '3-6', 'intensity' => 'střední až vysoká'],
+                    ['category' => 'conditioning', 'name' => 'Farmer Carry', 'description' => 'Chůze se závažím v rukách.', 'muscles' => ['core', 'forearms', 'shoulders'], 'difficulty' => 'intermediate', 'type' => 'carry', 'reps' => '30-100 m', 'sets' => '3-6', 'intensity' => 'střední'],
+                    ['category' => 'conditioning', 'name' => 'Sandbag Lunge', 'description' => 'Výpady s vakem nebo sandbagem.', 'muscles' => ['glutes', 'quadriceps', 'core'], 'difficulty' => 'advanced', 'type' => 'hyrox', 'reps' => '20-40', 'sets' => '2-4', 'intensity' => 'střední až vysoká'],
+                    ['category' => 'conditioning', 'name' => 'SkiErg Intervals', 'description' => 'Intervaly na SkiErgu pro závodní kapacitu.', 'muscles' => ['back', 'shoulders', 'core'], 'difficulty' => 'intermediate', 'type' => 'erg', 'reps' => '250-1000 m', 'sets' => '4-8', 'intensity' => 'střední až vysoká'],
+                    ['category' => 'conditioning', 'name' => 'Row Intervals', 'description' => 'Intervaly na veslařském trenažéru.', 'muscles' => ['back', 'legs', 'core'], 'difficulty' => 'intermediate', 'type' => 'erg', 'reps' => '250-1000 m', 'sets' => '4-8', 'intensity' => 'střední až vysoká'],
+                    ['category' => 'running', 'name' => 'Interval Run', 'description' => 'Běžecké intervaly pro rychlost a tempo.', 'muscles' => ['legs', 'core'], 'difficulty' => 'intermediate', 'type' => 'run', 'reps' => '200-1000 m', 'sets' => '4-10', 'intensity' => 'střední až vysoká'],
+                    ['category' => 'running', 'name' => 'Tempo Run', 'description' => 'Kontrolovaný běh v závodním tempu.', 'muscles' => ['legs', 'core'], 'difficulty' => 'intermediate', 'type' => 'run', 'reps' => '10-40 min', 'sets' => '1-2', 'intensity' => 'střední'],
+                    ['category' => 'cardio', 'name' => 'Bike Endurance', 'description' => 'Vytrvalostní práce na kole.', 'muscles' => ['legs', 'cardio'], 'difficulty' => 'beginner', 'type' => 'bike', 'reps' => '20-90 min', 'sets' => '1-3', 'intensity' => 'nízká až střední'],
+                    ['category' => 'cardio', 'name' => 'Swim Intervals', 'description' => 'Plavecké intervaly pro kapacitu i techniku.', 'muscles' => ['shoulders', 'back', 'core'], 'difficulty' => 'intermediate', 'type' => 'swim', 'reps' => '50-400 m', 'sets' => '4-10', 'intensity' => 'střední'],
+                    ['category' => 'trx', 'name' => 'TRX Row', 'description' => 'Tah na TRX pro záda a core.', 'muscles' => ['back', 'biceps', 'core'], 'difficulty' => 'beginner', 'type' => 'trx', 'reps' => '8-15', 'sets' => '3-4', 'intensity' => 'střední'],
+                    ['category' => 'group_class', 'name' => 'BodyPump Squat Track', 'description' => 'Kondičně-silová sekce s vyšším počtem opakování.', 'muscles' => ['quadriceps', 'glutes', 'core'], 'difficulty' => 'beginner', 'type' => 'group_class', 'reps' => '15-25', 'sets' => '3-5', 'intensity' => 'střední'],
+                    ['category' => 'group_class', 'name' => 'BodyAttack Cardio Track', 'description' => 'Dynamická kondiční sekce s dopady a výpady.', 'muscles' => ['legs', 'cardio', 'core'], 'difficulty' => 'intermediate', 'type' => 'group_class', 'reps' => '20-40 min', 'sets' => '1-2', 'intensity' => 'vysoká'],
+                    ['category' => 'mobility', 'name' => 'Thoracic Mobility Flow', 'description' => 'Mobilita hrudní páteře a ramen.', 'muscles' => ['back', 'shoulders', 'core'], 'difficulty' => 'beginner', 'type' => 'mobility', 'reps' => '5-10 min', 'sets' => '1-3', 'intensity' => 'nízká'],
+                    ['category' => 'mobility', 'name' => 'Hip Mobility Flow', 'description' => 'Mobilita kyčlí a kotníků.', 'muscles' => ['hips', 'glutes', 'calves'], 'difficulty' => 'beginner', 'type' => 'mobility', 'reps' => '5-15 min', 'sets' => '1-3', 'intensity' => 'nízká'],
+                    ['category' => 'mobility', 'name' => 'Stretching Routine', 'description' => 'Regenerační protažení po zátěži.', 'muscles' => ['full_body'], 'difficulty' => 'beginner', 'type' => 'mobility', 'reps' => '10-20 min', 'sets' => '1-2', 'intensity' => 'nízká'],
+                ];
+
+                foreach ($exerciseSeeds as $seed) {
+                    $catStmt->execute([$seed['category']]);
+                    $categoryId = (int)$catStmt->fetchColumn();
+                    $insertExercise->execute([
+                        null,
+                        $categoryId > 0 ? $categoryId : null,
+                        $seed['name'],
+                        $seed['description'],
+                        null,
+                        null,
+                        json_encode($seed['muscles'], JSON_UNESCAPED_UNICODE),
+                        $seed['difficulty'],
+                        $seed['type'],
+                        $seed['reps'],
+                        $seed['sets'],
+                        $seed['intensity'],
+                    ]);
+                }
+            }
+
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            error_log('MyCoach exercise / HYROX seed failed: ' . $e->getMessage());
+        }
+    }
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_workouts` (
+            `id`                      BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `user_id`                 BIGINT UNSIGNED NOT NULL,
+            `training_day_id`         BIGINT UNSIGNED NULL,
+            `event_id`                BIGINT UNSIGNED NULL,
+            `title`                   VARCHAR(190) NOT NULL,
+            `workout_type`            ENUM('strength','hyrox','run','bike','swim','mobility','recovery','mixed','other') NOT NULL DEFAULT 'other',
+            `status`                  ENUM('planned','completed','skipped') NOT NULL DEFAULT 'planned',
+            `planned_duration_minutes` INT NULL,
+            `actual_duration_minutes` INT NULL,
+            `planned_rpe`             DECIMAL(4,2) NULL,
+            `actual_rpe`              DECIMAL(4,2) NULL,
+            `avg_hr`                  SMALLINT UNSIGNED NULL,
+            `max_hr`                  SMALLINT UNSIGNED NULL,
+            `notes`                   TEXT NULL,
+            `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_mycoach_workouts_user_status` (`user_id`, `status`),
+            KEY `idx_mycoach_workouts_day` (`training_day_id`),
+            CONSTRAINT `fk_mycoach_workouts_user` FOREIGN KEY (`user_id`) REFERENCES `mycoach_users`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_mycoach_workouts_day` FOREIGN KEY (`training_day_id`) REFERENCES `mycoach_training_days`(`id`) ON DELETE SET NULL,
+            CONSTRAINT `fk_mycoach_workouts_event` FOREIGN KEY (`event_id`) REFERENCES `mycoach_events`(`id`) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_workout_exercises` (
+            `id`                      BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `workout_id`              BIGINT UNSIGNED NOT NULL,
+            `exercise_id`             BIGINT UNSIGNED NULL,
+            `custom_exercise_name`    VARCHAR(190) NULL,
+            `exercise_order`          INT NOT NULL DEFAULT 100,
+            `planned_sets`            VARCHAR(60) NULL,
+            `planned_reps`            VARCHAR(60) NULL,
+            `planned_intensity`       VARCHAR(80) NULL,
+            `completed_sets`          VARCHAR(60) NULL,
+            `completed_reps`          VARCHAR(60) NULL,
+            `completed_intensity`     VARCHAR(80) NULL,
+            `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_mycoach_workout_exercises_workout_order` (`workout_id`, `exercise_order`),
+            CONSTRAINT `fk_mycoach_workout_exercises_workout` FOREIGN KEY (`workout_id`) REFERENCES `mycoach_workouts`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_mycoach_workout_exercises_exercise` FOREIGN KEY (`exercise_id`) REFERENCES `mycoach_exercises`(`id`) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_group_classes` (
+            `id`                      BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `user_id`                 BIGINT UNSIGNED NOT NULL,
+            `event_id`                BIGINT UNSIGNED NULL,
+            `class_name`              VARCHAR(190) NOT NULL,
+            `class_type`              VARCHAR(120) NULL,
+            `started_at`              DATETIME NOT NULL,
+            `duration_minutes`        INT NULL,
+            `intensity`               DECIMAL(4,2) NULL,
+            `notes`                   TEXT NULL,
+            `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_mycoach_group_classes_user_date` (`user_id`, `started_at`),
+            CONSTRAINT `fk_mycoach_group_classes_user` FOREIGN KEY (`user_id`) REFERENCES `mycoach_users`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_mycoach_group_classes_event` FOREIGN KEY (`event_id`) REFERENCES `mycoach_events`(`id`) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_recovery_entries` (
+            `id`                      BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `user_id`                 BIGINT UNSIGNED NOT NULL,
+            `entry_date`              DATE NOT NULL,
+            `recovery_type`           ENUM('rest','sauna','massage','stretching','sleep','other') NOT NULL DEFAULT 'rest',
+            `duration_minutes`        INT NULL,
+            `quality_score`           TINYINT UNSIGNED NULL,
+            `notes`                   TEXT NULL,
+            `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_mycoach_recovery_user_date` (`user_id`, `entry_date`),
+            CONSTRAINT `fk_mycoach_recovery_user` FOREIGN KEY (`user_id`) REFERENCES `mycoach_users`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_daily_questionnaires` (
+            `id`                      BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `user_id`                 BIGINT UNSIGNED NOT NULL,
+            `workout_id`              BIGINT UNSIGNED NULL,
+            `workout_type`            VARCHAR(40) NULL,
+            `workout_meta_json`       JSON NULL,
+            `entry_date`              DATE NOT NULL,
+            `feeling_score`           TINYINT UNSIGNED NULL,
+            `rpe_score`               TINYINT UNSIGNED NULL,
+            `sleep_hours`             DECIMAL(4,2) NULL,
+            `muscle_pain_score`       TINYINT UNSIGNED NULL,
+            `joint_pain_score`        TINYINT UNSIGNED NULL,
+            `motivation_score`        TINYINT UNSIGNED NULL,
+            `energy_score`            TINYINT UNSIGNED NULL,
+            `training_duration_minutes` INT NULL,
+            `avg_heart_rate`          SMALLINT UNSIGNED NULL,
+            `max_heart_rate`          SMALLINT UNSIGNED NULL,
+            `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uq_mycoach_daily_questionnaires_user_date` (`user_id`, `entry_date`),
+            KEY `idx_mycoach_daily_questionnaires_workout` (`workout_id`),
+            KEY `idx_mycoach_daily_questionnaires_type` (`workout_type`),
+            CONSTRAINT `fk_mycoach_daily_questionnaires_user` FOREIGN KEY (`user_id`) REFERENCES `mycoach_users`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_mycoach_daily_questionnaires_workout` FOREIGN KEY (`workout_id`) REFERENCES `mycoach_workouts`(`id`) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_metrics` (
+            `id`                      BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `user_id`                 BIGINT UNSIGNED NOT NULL,
+            `metric_date`             DATE NOT NULL,
+            `metric_type`             VARCHAR(120) NOT NULL,
+            `metric_value`            DECIMAL(12,4) NOT NULL,
+            `unit`                    VARCHAR(40) NULL,
+            `source`                  ENUM('manual','import','wearable','ai') NOT NULL DEFAULT 'manual',
+            `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_mycoach_metrics_user_date` (`user_id`, `metric_date`),
+            KEY `idx_mycoach_metrics_type` (`metric_type`),
+            CONSTRAINT `fk_mycoach_metrics_user` FOREIGN KEY (`user_id`) REFERENCES `mycoach_users`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_personal_records` (
+            `id`                      BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `user_id`                 BIGINT UNSIGNED NOT NULL,
+            `exercise_id`             BIGINT UNSIGNED NULL,
+            `record_type`             VARCHAR(120) NOT NULL,
+            `record_value`            DECIMAL(12,4) NOT NULL,
+            `unit`                    VARCHAR(40) NULL,
+            `recorded_on`             DATE NOT NULL,
+            `notes`                   TEXT NULL,
+            `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_mycoach_pr_user_type` (`user_id`, `record_type`),
+            KEY `idx_mycoach_pr_recorded_on` (`recorded_on`),
+            CONSTRAINT `fk_mycoach_pr_user` FOREIGN KEY (`user_id`) REFERENCES `mycoach_users`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_mycoach_pr_exercise` FOREIGN KEY (`exercise_id`) REFERENCES `mycoach_exercises`(`id`) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_achievements` (
+            `id`                      BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `user_id`                 BIGINT UNSIGNED NOT NULL,
+            `achievement_key`         VARCHAR(120) NOT NULL,
+            `title`                   VARCHAR(190) NOT NULL,
+            `description`             TEXT NULL,
+            `awarded_at`              DATETIME NOT NULL,
+            `progress_value`          DECIMAL(12,4) NULL,
+            `target_value`            DECIMAL(12,4) NULL,
+            `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_mycoach_achievements_user_awarded` (`user_id`, `awarded_at`),
+            UNIQUE KEY `uq_mycoach_achievement_user_key_awarded` (`user_id`, `achievement_key`, `awarded_at`),
+            CONSTRAINT `fk_mycoach_achievements_user` FOREIGN KEY (`user_id`) REFERENCES `mycoach_users`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_notifications` (
+            `id`                      BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `user_id`                 BIGINT UNSIGNED NOT NULL,
+            `notification_type`       ENUM('recommendation','fatigue_alert','plan_update','achievement','system') NOT NULL DEFAULT 'system',
+            `title`                   VARCHAR(190) NOT NULL,
+            `body`                    TEXT NOT NULL,
+            `severity`                ENUM('info','warning','danger','success') NOT NULL DEFAULT 'info',
+            `is_read`                 TINYINT(1) NOT NULL DEFAULT 0,
+            `related_date`            DATE NULL,
+            `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_mycoach_notifications_user_read` (`user_id`, `is_read`, `created_at`),
+            CONSTRAINT `fk_mycoach_notifications_user` FOREIGN KEY (`user_id`) REFERENCES `mycoach_users`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `mycoach_attachments` (
+            `id`                      BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            `user_id`                 BIGINT UNSIGNED NOT NULL,
+            `workout_id`              BIGINT UNSIGNED NULL,
+            `event_id`                BIGINT UNSIGNED NULL,
+            `attachment_type`         ENUM('photo','video','document','other') NOT NULL DEFAULT 'other',
+            `file_path`               VARCHAR(255) NOT NULL,
+            `original_name`           VARCHAR(255) NULL,
+            `mime_type`               VARCHAR(120) NULL,
+            `file_size`               BIGINT UNSIGNED NULL,
+            `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_mycoach_attachments_user` (`user_id`, `created_at`),
+            KEY `idx_mycoach_attachments_workout` (`workout_id`),
+            CONSTRAINT `fk_mycoach_attachments_user` FOREIGN KEY (`user_id`) REFERENCES `mycoach_users`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_mycoach_attachments_workout` FOREIGN KEY (`workout_id`) REFERENCES `mycoach_workouts`(`id`) ON DELETE SET NULL,
+            CONSTRAINT `fk_mycoach_attachments_event` FOREIGN KEY (`event_id`) REFERENCES `mycoach_events`(`id`) ON DELETE SET NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
 

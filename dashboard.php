@@ -10,6 +10,7 @@ $pdo     = getDB();
 $mustChangePassword = !empty($_SESSION['coach_force_password_change']);
 $forcePasswordError = null;
 $coachSpecialTrainingEnabled = false;
+$coachMyCoachEnabled = false;
 
 try {
     $specialTrainingColumnStmt = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'special_training_enabled'");
@@ -20,6 +21,17 @@ try {
     }
 } catch (Throwable $e) {
     $coachSpecialTrainingEnabled = false;
+}
+
+try {
+    $myCoachColumnStmt = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'mycoach_enabled'");
+    if ($myCoachColumnStmt !== false && $myCoachColumnStmt->fetch()) {
+        $myCoachValueStmt = $pdo->prepare('SELECT mycoach_enabled FROM coaches WHERE id = ? LIMIT 1');
+        $myCoachValueStmt->execute([$coachId]);
+        $coachMyCoachEnabled = ((int)$myCoachValueStmt->fetchColumn()) === 1;
+    }
+} catch (Throwable $e) {
+    $coachMyCoachEnabled = false;
 }
 
 if ($mustChangePassword && $_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -594,6 +606,16 @@ renderHeader('Dashboard', false, true);
                 <span class="badge bg-secondary">Uzamčeno</span>
             </span>
             <?php endif; ?>
+            <?php if ($coachMyCoachEnabled): ?>
+            <a href="<?= BASE_URL ?>/mycoach.php" class="coach-dashboard-shortcut">
+                <span><i class="fas fa-brain me-1"></i>MyCoach</span>
+            </a>
+            <?php else: ?>
+            <span class="coach-dashboard-shortcut is-disabled">
+                <span><i class="fas fa-lock me-1"></i>MyCoach</span>
+                <span class="badge bg-secondary">Uzamčeno</span>
+            </span>
+            <?php endif; ?>
             <a href="<?= BASE_URL ?>/coach_manual.php" class="coach-dashboard-shortcut"><span><i class="fas fa-circle-question me-1"></i>Návod</span></a>
             <a href="<?= BASE_URL ?>/coach_terms.php" class="coach-dashboard-shortcut"><span><i class="fas fa-file-contract me-1"></i>Podmínky</span></a>
         </div>
@@ -617,6 +639,17 @@ renderHeader('Dashboard', false, true);
     <?php else: ?>
     <div class="quick-tile quick-tile-muted quick-tile-disabled">
         <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-lock me-1"></i>Events <span class="badge rounded-pill bg-secondary">Uzamčeno</span></span>
+        <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
+    </div>
+    <?php endif; ?>
+    <?php if ($coachMyCoachEnabled): ?>
+    <a href="<?= BASE_URL ?>/mycoach.php" class="quick-tile quick-tile-info">
+        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-brain me-1"></i>MyCoach</span>
+        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+    </a>
+    <?php else: ?>
+    <div class="quick-tile quick-tile-muted quick-tile-disabled">
+        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-lock me-1"></i>MyCoach <span class="badge rounded-pill bg-secondary">Uzamčeno</span></span>
         <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
     </div>
     <?php endif; ?>

@@ -32,6 +32,17 @@ if (!$hasSpecialTrainingColumn) {
     }
 }
 
+$stmtMyCoachCol = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'mycoach_enabled'");
+$hasMyCoachColumn = $stmtMyCoachCol !== false && (bool)$stmtMyCoachCol->fetch();
+if (!$hasMyCoachColumn) {
+    try {
+        $pdo->exec('ALTER TABLE coaches ADD COLUMN mycoach_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER special_training_enabled');
+        $hasMyCoachColumn = true;
+    } catch (Throwable $e) {
+        $hasMyCoachColumn = false;
+    }
+}
+
 $stmt = $pdo->prepare('SELECT * FROM coaches WHERE id = ?');
 $stmt->execute([$coachId]);
 $coach = $stmt->fetch();
@@ -53,9 +64,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password2 = $_POST['password2'] ?? '';
         $isActive  = isset($_POST['is_active']) ? 1 : 0;
         $specialTrainingEnabled = isset($_POST['special_training_enabled']) ? 1 : 0;
+        $myCoachEnabled = isset($_POST['mycoach_enabled']) ? 1 : 0;
         $makeupDeadlineDaysRaw = trim((string)($_POST['makeup_booking_deadline_days'] ?? ''));
         $makeupDeadlineDays = 14;
         $generateTemporaryPassword = $action === 'generate_password';
+        $saveCoachMyCoachAccess = static function () use ($pdo, $hasMyCoachColumn, $myCoachEnabled, $coachId): void {
+            if (!$hasMyCoachColumn) {
+                return;
+            }
+
+            $pdo->prepare('UPDATE coaches SET mycoach_enabled = ? WHERE id = ?')
+                ->execute([$myCoachEnabled, $coachId]);
+        };
 
         if ($hasMakeupDeadlineColumn) {
             if ($makeupDeadlineDaysRaw !== '') {
@@ -113,6 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             )->execute([$username, $name ?: null, $email ?: null, $isActive, $hash, $coachId]);
                         }
                     }
+                    $saveCoachMyCoachAccess();
 
                     $host = trim((string)($_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? '')));
                     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
@@ -154,6 +175,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             )->execute([$username, $name ?: null, $email ?: null, $isActive, $hash, $coachId]);
                         }
                     }
+                    $saveCoachMyCoachAccess();
                 } else {
                     if ($hasMakeupDeadlineColumn) {
                         if ($hasSpecialTrainingColumn) {
@@ -176,6 +198,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             )->execute([$username, $name ?: null, $email ?: null, $isActive, $coachId]);
                         }
                     }
+                    $saveCoachMyCoachAccess();
                 }
                 flash('success', 'Trenér byl aktualizován.');
                 redirect(BASE_URL . '/admin/coaches.php');
@@ -298,6 +321,19 @@ renderAdminHeader('Upravit trenéra');
                     </label>
                 </div>
                 <div class="form-text">Nezaškrtnuto = dlaždice je uzamčená a přímý vstup je zablokován.</div>
+            </div>
+            <?php endif; ?>
+            <?php if ($hasMyCoachColumn): ?>
+            <div class="mb-4">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" name="mycoach_enabled"
+                           id="myCoachEnabled" value="1"
+                           <?= !empty($d['mycoach_enabled']) ? 'checked' : '' ?>>
+                    <label class="form-check-label fw-semibold" for="myCoachEnabled">
+                        Povolit trenérovi přístup do MyCoach
+                    </label>
+                </div>
+                <div class="form-text">Nezaškrtnuto = dlaždice MyCoach je uzamčená a přímý vstup je zablokován.</div>
             </div>
             <?php endif; ?>
             <div class="d-flex gap-2">
