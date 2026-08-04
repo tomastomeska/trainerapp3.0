@@ -160,6 +160,13 @@ $stmt = $pdo->prepare(
 $stmt->execute([$coachId]);
 $athletes = $stmt->fetchAll();
 
+$athleteMyCoachMetaById = [];
+if ($coachMyCoachEnabled) {
+    foreach (mycoachFetchCoachAthleteProgress($pdo, $coachId, 500) as $progressRow) {
+        $athleteMyCoachMetaById[(int)($progressRow['athlete_id'] ?? 0)] = $progressRow;
+    }
+}
+
 $activeSessionsStmt = $pdo->prepare(
     'SELECT ts.id AS session_id,
             ts.athlete_id,
@@ -903,6 +910,18 @@ renderHeader('Dashboard', false, true);
                     <span class="badge bg-light text-dark border me-1">
                         <i class="fas fa-utensils me-1"></i>Jídelníčky: <?= (int)$a['active_meal_plan_count'] ?>
                     </span>
+                    <?php if ($coachMyCoachEnabled): ?>
+                        <?php $myCoachMeta = $athleteMyCoachMetaById[(int)$a['id']] ?? null; ?>
+                        <?php if ($myCoachMeta && (int)($myCoachMeta['active_plan_count'] ?? 0) > 0): ?>
+                        <span class="badge bg-success me-1">
+                            <i class="fas fa-brain me-1"></i>MyCoach plán běží
+                        </span>
+                        <?php elseif ($myCoachMeta && !empty($myCoachMeta['mycoach_enabled'])): ?>
+                        <span class="badge bg-info text-dark me-1">
+                            <i class="fas fa-brain me-1"></i>MyCoach aktivní
+                        </span>
+                        <?php endif; ?>
+                    <?php endif; ?>
                     <?php if ($a['last_session_date']): ?>
                     <span class="badge bg-light text-dark border me-1">
                         <i class="fas fa-clock me-1"></i>Poslední trénink: <?= formatDate($a['last_session_date']) ?>

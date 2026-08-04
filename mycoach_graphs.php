@@ -71,9 +71,17 @@ renderHeader('MyCoach grafy', true, true);
     <div class="d-flex gap-2 flex-wrap">
         <a href="<?= BASE_URL ?>/dashboard.php" class="btn btn-outline-secondary btn-sm fw-semibold"><i class="fas fa-house me-1"></i>Domů</a>
         <a href="<?= BASE_URL ?>/mycoach.php" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i>Zpět do MyCoach</a>
+        <a href="<?= BASE_URL ?>/mycoach_athletes.php" class="btn btn-outline-light btn-sm fw-semibold"><i class="fas fa-users me-1"></i>Sportovci</a>
         <a href="<?= BASE_URL ?>/mycoach_export.php" class="btn btn-outline-primary btn-sm fw-semibold"><i class="fas fa-file-csv me-1"></i>Export CSV</a>
     </div>
 </div>
+
+<ul class="nav nav-pills mb-4 flex-wrap gap-2">
+    <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/mycoach.php"><i class="fas fa-house me-1"></i>Přehled</a></li>
+    <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/mycoach_questionnaire.php"><i class="fas fa-clipboard-list me-1"></i>Dotazník</a></li>
+    <li class="nav-item"><span class="nav-link active"><i class="fas fa-chart-line me-1"></i>Grafy</span></li>
+    <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/mycoach_athletes.php"><i class="fas fa-users me-1"></i>Sportovci</a></li>
+</ul>
 
 <div class="row g-3 mb-4">
     <div class="col-12 col-md-4">

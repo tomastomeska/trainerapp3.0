@@ -163,6 +163,7 @@ renderHeader('MyCoach dotazník', false, true);
     <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/mycoach.php"><i class="fas fa-house me-1"></i>Přehled</a></li>
     <li class="nav-item"><span class="nav-link active"><i class="fas fa-clipboard-list me-1"></i>Dotazník</span></li>
     <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/mycoach_graphs.php"><i class="fas fa-chart-line me-1"></i>Grafy</a></li>
+    <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/mycoach_athletes.php"><i class="fas fa-users me-1"></i>Sportovci</a></li>
 </ul>
 
 <div class="card border-0 shadow-sm mb-4">

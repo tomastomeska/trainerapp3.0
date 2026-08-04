@@ -762,14 +762,40 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         $pdo->exec('ALTER TABLE mycoach_daily_questionnaires ADD COLUMN workout_meta_json JSON NULL AFTER workout_type');
     }
 
-    $stmtDailyUnique = $pdo->query("SHOW INDEX FROM mycoach_daily_questionnaires WHERE Key_name = 'uq_mycoach_daily_questionnaires_user_date'");
-    if ($stmtDailyUnique->fetch()) {
-        $pdo->exec('ALTER TABLE mycoach_daily_questionnaires DROP INDEX uq_mycoach_daily_questionnaires_user_date');
+    $stmtDailyCalories = $pdo->query("SHOW COLUMNS FROM mycoach_daily_questionnaires LIKE 'calories_burned'");
+    if (!$stmtDailyCalories->fetch()) {
+        $pdo->exec('ALTER TABLE mycoach_daily_questionnaires ADD COLUMN calories_burned INT NULL AFTER training_duration_minutes');
+    }
+
+    $stmtDailyAthleteNote = $pdo->query("SHOW COLUMNS FROM mycoach_daily_questionnaires LIKE 'athlete_note'");
+    if (!$stmtDailyAthleteNote->fetch()) {
+        $pdo->exec('ALTER TABLE mycoach_daily_questionnaires ADD COLUMN athlete_note TEXT NULL AFTER max_heart_rate');
+    }
+
+    $stmtDailyUserIndex = $pdo->query("SHOW INDEX FROM mycoach_daily_questionnaires WHERE Key_name = 'idx_mycoach_daily_questionnaires_user'");
+    if (!$stmtDailyUserIndex->fetch()) {
+        $pdo->exec('CREATE INDEX idx_mycoach_daily_questionnaires_user ON mycoach_daily_questionnaires (user_id)');
     }
 
     $stmtDailyDateIndex = $pdo->query("SHOW INDEX FROM mycoach_daily_questionnaires WHERE Key_name = 'idx_mycoach_daily_questionnaires_user_date_created'");
     if (!$stmtDailyDateIndex->fetch()) {
         $pdo->exec('CREATE INDEX idx_mycoach_daily_questionnaires_user_date_created ON mycoach_daily_questionnaires (user_id, entry_date, created_at, id)');
+    }
+
+    $stmtDailyUnique = $pdo->query("SHOW INDEX FROM mycoach_daily_questionnaires WHERE Key_name = 'uq_mycoach_daily_questionnaires_user_date'");
+    if ($stmtDailyUnique->fetch()) {
+        $pdo->exec('ALTER TABLE mycoach_daily_questionnaires DROP INDEX uq_mycoach_daily_questionnaires_user_date');
+    }
+
+    try {
+        $stmtDailyWorkoutFk = $pdo->query("SELECT REFERENCED_TABLE_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'mycoach_daily_questionnaires' AND CONSTRAINT_NAME = 'fk_mycoach_daily_questionnaires_workout' LIMIT 1");
+        $dailyWorkoutFkTarget = $stmtDailyWorkoutFk ? $stmtDailyWorkoutFk->fetchColumn() : false;
+        if ($dailyWorkoutFkTarget && mb_strtolower((string)$dailyWorkoutFkTarget, 'UTF-8') !== 'training_sessions') {
+            $pdo->exec('ALTER TABLE mycoach_daily_questionnaires DROP FOREIGN KEY fk_mycoach_daily_questionnaires_workout');
+            $pdo->exec('ALTER TABLE mycoach_daily_questionnaires ADD CONSTRAINT fk_mycoach_daily_questionnaires_workout FOREIGN KEY (workout_id) REFERENCES training_sessions(id) ON DELETE SET NULL');
+        }
+    } catch (Throwable $e) {
+        error_log('MyCoach daily questionnaire FK upgrade failed: ' . $e->getMessage());
     }
 
     // Globalni cviky
@@ -1485,15 +1511,17 @@ function ensureSchemaUpgrades(PDO $pdo): void {
             `motivation_score`        TINYINT UNSIGNED NULL,
             `energy_score`            TINYINT UNSIGNED NULL,
             `training_duration_minutes` INT NULL,
+            `calories_burned`         INT NULL,
             `avg_heart_rate`          SMALLINT UNSIGNED NULL,
             `max_heart_rate`          SMALLINT UNSIGNED NULL,
+            `athlete_note`            TEXT NULL,
             `created_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             `updated_at`              TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY `uq_mycoach_daily_questionnaires_user_date` (`user_id`, `entry_date`),
             KEY `idx_mycoach_daily_questionnaires_workout` (`workout_id`),
             KEY `idx_mycoach_daily_questionnaires_type` (`workout_type`),
+            KEY `idx_mycoach_daily_questionnaires_user_date_created` (`user_id`, `entry_date`, `created_at`, `id`),
             CONSTRAINT `fk_mycoach_daily_questionnaires_user` FOREIGN KEY (`user_id`) REFERENCES `mycoach_users`(`id`) ON DELETE CASCADE,
-            CONSTRAINT `fk_mycoach_daily_questionnaires_workout` FOREIGN KEY (`workout_id`) REFERENCES `mycoach_workouts`(`id`) ON DELETE SET NULL
+            CONSTRAINT `fk_mycoach_daily_questionnaires_workout` FOREIGN KEY (`workout_id`) REFERENCES `training_sessions`(`id`) ON DELETE SET NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
 

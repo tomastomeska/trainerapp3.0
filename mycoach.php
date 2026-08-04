@@ -85,11 +85,18 @@ $latestDailyEntry = !empty($timeline) ? end($timeline) : null;
 $latestRecommendation = mycoachBuildRecommendation($latestReadinessScore, $latestDailyEntry ?: null);
 $trainingAssessment = mycoachBuildTrainingAssessment($timeline, $latestDailyEntry ?: null, $activeGoal, $latestReadinessScore);
 $trainingAcwrRatio = $trainingAssessment['acwr']['ratio'] ?? null;
+$athleteProgressRows = mycoachFetchCoachAthleteProgress($pdo, $coachId, 250);
+$athletePlanRunningCount = 0;
+foreach ($athleteProgressRows as $athleteProgressRow) {
+    if ((int)($athleteProgressRow['active_plan_count'] ?? 0) > 0) {
+        $athletePlanRunningCount++;
+    }
+}
 $planCount = 0;
 $workoutCount = 0;
 $questionnaireCount = 0;
 try {
-    $planStmt = $pdo->prepare('SELECT COUNT(*) FROM mycoach_training_plans WHERE user_id = ? AND status IN ("draft", "active", "paused")');
+    $planStmt = $pdo->prepare('SELECT COUNT(*) FROM mycoach_training_plans WHERE user_id = ? AND (status IS NULL OR LOWER(status) NOT IN ("completed", "archived", "done", "finished", "cancelled", "canceled"))');
     $planStmt->execute([$myCoachUserId]);
     $planCount = (int)$planStmt->fetchColumn();
 
@@ -121,6 +128,9 @@ renderHeader('MyCoach', false, true);
         <a href="<?= BASE_URL ?>/mycoach_graphs.php" class="btn btn-outline-light btn-sm fw-semibold">
             <i class="fas fa-chart-line me-1"></i>Grafy
         </a>
+        <a href="<?= BASE_URL ?>/mycoach_athletes.php" class="btn btn-outline-light btn-sm fw-semibold">
+            <i class="fas fa-users me-1"></i>Sportovci
+        </a>
         <a href="<?= BASE_URL ?>/mycoach_questionnaire.php" class="btn btn-primary btn-sm fw-semibold">
             <i class="fas fa-clipboard-list me-1"></i>Úvodní dotazník
         </a>
@@ -131,6 +141,7 @@ renderHeader('MyCoach', false, true);
     <li class="nav-item"><span class="nav-link active"><i class="fas fa-house me-1"></i>Přehled</span></li>
     <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/mycoach_questionnaire.php"><i class="fas fa-clipboard-list me-1"></i>Dotazník <?php if (!$latestQuestionnaire || empty($latestQuestionnaire['completed_at'])): ?><span class="badge rounded-pill bg-danger ms-1" style="font-size:.65rem">!</span><?php endif; ?></a></li>
     <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/mycoach_graphs.php"><i class="fas fa-chart-line me-1"></i>Grafy</a></li>
+    <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/mycoach_athletes.php"><i class="fas fa-users me-1"></i>Sportovci</a></li>
 </ul>
 
 <div class="card border-0 shadow-sm mb-4">
@@ -174,6 +185,15 @@ renderHeader('MyCoach', false, true);
                 <div class="text-muted small text-uppercase fw-bold">Readiness</div>
                 <div class="fs-3 fw-bold text-success"><?= $latestReadinessScore !== null ? (int)$latestReadinessScore . ' / 100' : 'zatím bez dat' ?></div>
                 <div class="text-muted small"><?= h($latestRecommendation['title']) ?></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small text-uppercase fw-bold">Sportovci v MyCoach</div>
+                <div class="fs-3 fw-bold text-success"><?= (int)$athletePlanRunningCount ?></div>
+                <div class="text-muted small">běžících plánů z <?= (int)count($athleteProgressRows) ?> sportovců</div>
             </div>
         </div>
     </div>
@@ -247,6 +267,19 @@ renderHeader('MyCoach', false, true);
                 </a>
             </div>
         </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <div>
+            <div class="text-muted small text-uppercase fw-bold mb-1">Sportovci v MyCoach</div>
+            <div class="fw-semibold">Detailní přehled sportovců je přesunutý do samostatné karty.</div>
+            <div class="small text-muted">Uvidíš tam status plánů, readiness, poslední denní záznam i rychlé odkazy.</div>
+        </div>
+        <a href="<?= BASE_URL ?>/mycoach_athletes.php" class="btn btn-primary fw-semibold">
+            <i class="fas fa-users me-1"></i>Otevřít kartu Sportovci
+        </a>
     </div>
 </div>
 

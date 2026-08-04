@@ -122,11 +122,12 @@ $activeGoal = mycoachFetchActiveGoal($pdo, $myCoachUserId);
 $latestQuestionnaire = mycoachFetchLatestQuestionnaire($pdo, $myCoachUserId);
 $questionnaireCompleted = $latestQuestionnaire && !empty($latestQuestionnaire['completed_at']);
 $timeline = mycoachFetchDailyTimeline($pdo, $myCoachUserId, 45);
+$latestTrainerSessionPreview = mycoachFetchLatestTrainerSessionPreview($pdo, $athleteId, 10);
 $questionnaireCount = 0;
 $planCount = 0;
 $workoutCount = 0;
 try {
-    $planStmt = $pdo->prepare('SELECT COUNT(*) FROM mycoach_training_plans WHERE user_id = ? AND status IN ("draft", "active", "paused")');
+    $planStmt = $pdo->prepare('SELECT COUNT(*) FROM mycoach_training_plans WHERE user_id = ? AND (status IS NULL OR LOWER(status) NOT IN ("completed", "archived", "done", "finished", "cancelled", "canceled"))');
     $planStmt->execute([$myCoachUserId]);
     $planCount = (int)$planStmt->fetchColumn();
 
@@ -154,16 +155,31 @@ if ($latestQuestionnaire) {
 }
 
 $latestReadinessMetric = mycoachFetchLatestMetricValue($pdo, $myCoachUserId, 'readiness_score');
-$latestReadinessScore = $latestReadinessMetric && isset($latestReadinessMetric['metric_value'])
-    ? (int)round((float)$latestReadinessMetric['metric_value'])
-    : null;
+$latestDailyEntry = !empty($timeline) ? end($timeline) : null;
+$readinessPreviewEntry = $latestDailyEntry ?: null;
+$readinessPreviewDate = $latestDailyEntry['entry_date'] ?? null;
+if (!$readinessPreviewEntry && $latestTrainerSessionPreview) {
+    $readinessPreviewEntry = [
+        'entry_date' => $latestTrainerSessionPreview['entry_date'] ?? date('Y-m-d'),
+        'training_duration_minutes' => $latestTrainerSessionPreview['training_duration_minutes'] ?? null,
+        'rpe_score' => 6,
+        'workout_type' => 'strength',
+        'workout_name' => $latestTrainerSessionPreview['workout_name'] ?? 'Trénink od trenéra',
+    ];
+    $readinessPreviewDate = $readinessPreviewEntry['entry_date'];
+}
+
+$latestReadinessScore = $readinessPreviewEntry
+    ? mycoachCalculateReadinessScore($readinessPreviewEntry)
+    : ($latestReadinessMetric && isset($latestReadinessMetric['metric_value']) ? (int)round((float)$latestReadinessMetric['metric_value']) : null);
 $latestAcwr = mycoachCalculateAcwr($timeline);
 $achievementBadges = mycoachBuildAchievementBadges($timeline, $latestReadinessScore, $latestAcwr['ratio'] ?? null);
 $athleteInsight = mycoachBuildInsight($timeline, $activeGoal, $latestReadinessScore, $latestAcwr);
-$latestDailyEntry = !empty($timeline) ? end($timeline) : null;
-$latestRecommendation = mycoachBuildRecommendation($latestReadinessScore, $latestDailyEntry ?: null);
-$trainingAssessment = mycoachBuildTrainingAssessment($timeline, $latestDailyEntry ?: null, $activeGoal, $latestReadinessScore);
+$latestRecommendation = mycoachBuildRecommendation($latestReadinessScore, $readinessPreviewEntry, $latestQuestionnaire, $timeline, $activeGoal);
+$readinessGuidance = $latestReadinessScore !== null ? mycoachBuildReadinessGuidance($latestReadinessScore, $readinessPreviewEntry, $latestQuestionnaire, $timeline, $activeGoal) : null;
+$trainingAssessment = mycoachBuildTrainingAssessment($timeline, $readinessPreviewEntry, $activeGoal, $latestReadinessScore);
 $trainingAcwrRatio = $trainingAssessment['acwr']['ratio'] ?? null;
+$recommendationSourceText = $readinessPreviewDate ? 'pro ' . formatDate((string)$readinessPreviewDate) : 'bez dat';
 
 renderAthleteHeader('MyCoach dotazník', false, true);
 ?>
@@ -256,20 +272,34 @@ renderAthleteHeader('MyCoach dotazník', false, true);
             <div class="card-body">
                 <div class="text-muted small text-uppercase fw-bold">Readiness</div>
                 <div class="fs-3 fw-bold text-success"><?= $latestReadinessScore !== null ? (int)$latestReadinessScore . ' / 100' : 'zatím bez dat' ?></div>
-                <div class="text-muted small"><?= $latestReadinessMetric && !empty($latestReadinessMetric['metric_date']) ? 'poslední záznam ' . h(formatDate((string)$latestReadinessMetric['metric_date'])) : 'Vyplň denní záznam a hodnota se objeví zde.' ?></div>
+                <div class="text-muted small"><?= $readinessPreviewDate ? 'počítáno pro ' . h(formatDate((string)$readinessPreviewDate)) : 'Vyplň denní záznam a hodnota se objeví zde.' ?></div>
             </div>
         </div>
     </div>
     <div class="col-12 col-md-8">
         <div class="card border-0 shadow-sm h-100 border-start border-4 border-<?= h($latestRecommendation['variant']) ?>">
             <div class="card-body">
-                <div class="text-muted small text-uppercase fw-bold">Dnešní doporučení</div>
+                <div class="text-muted small text-uppercase fw-bold">Doporučení (<?= h($recommendationSourceText) ?>)</div>
                 <div class="fs-5 fw-bold"><?= h($latestRecommendation['title']) ?></div>
                 <div class="text-muted"><?= h($latestRecommendation['text']) ?></div>
             </div>
         </div>
     </div>
 </div>
+
+<?php if ($readinessGuidance): ?>
+<div class="card border-0 shadow-sm mb-4 border-start border-4 border-<?= h($readinessGuidance['variant']) ?>">
+    <div class="card-body">
+        <div class="text-muted small text-uppercase fw-bold">Co readiness znamená</div>
+        <div class="fs-5 fw-bold"><?= h($readinessGuidance['label']) ?></div>
+        <div class="text-muted mb-2"><?= h($readinessGuidance['detail']) ?></div>
+        <div class="small text-muted">Dnešní režim: <?= h($readinessGuidance['trainability']) ?> · doporučený strop <?= (int)$readinessGuidance['session_cap_minutes'] ?> min · <?= h($readinessGuidance['intensity_hint']) ?></div>
+        <?php if (!empty($readinessGuidance['reasons'])): ?>
+        <div class="small text-muted mt-1">Zohledněno: <?= h(implode(' · ', $readinessGuidance['reasons'])) ?></div>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
 
 <div class="row g-3 mb-4">
     <div class="col-12 col-md-4">

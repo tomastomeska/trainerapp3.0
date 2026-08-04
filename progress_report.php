@@ -26,6 +26,211 @@ $emailSent  = false;
 $athleteId = intParam($_GET, 'athlete_id');
 $dateFrom  = preg_replace('/[^0-9\-]/', '', $_GET['date_from'] ?? '');
 $dateTo    = preg_replace('/[^0-9\-]/', '', $_GET['date_to']   ?? '');
+$period    = preg_replace('/[^a-z0-9_\-]/', '', (string)($_GET['period'] ?? ''));
+$scope     = preg_replace('/[^a-z_\-]/', '', (string)($_GET['scope'] ?? 'all'));
+
+$periodOptions = [
+    'plan' => 'Celý plán',
+    'today' => 'Dnes',
+    'yesterday' => 'Včera',
+    'last7' => '7 dní',
+    'last30' => '30 dní',
+    'this_month' => 'Tento měsíc',
+    'custom' => 'Vlastní',
+];
+if (!isset($periodOptions[$period])) {
+    $period = ($dateFrom !== '' || $dateTo !== '') ? 'custom' : 'last7';
+}
+if (!in_array($scope, ['all', 'mycoach'], true)) {
+        $scope = 'all';
+}
+
+$fetchReportSessions = static function (PDO $pdo, int $athleteId, string $dateFrom, string $dateTo, string $scope): array {
+        $mycoachOnly = ($scope === 'mycoach');
+        if ($mycoachOnly) {
+        $workoutTypeOptions = mycoachWorkoutTypeOptions();
+                $stmt = $pdo->prepare(
+                        'SELECT DISTINCT ts.*, ws.name AS set_name
+                         FROM training_sessions ts
+                         JOIN workout_sets ws ON ts.workout_set_id = ws.id
+                         JOIN mycoach_users mu ON mu.athlete_id = ts.athlete_id
+                         JOIN mycoach_daily_questionnaires dq
+                             ON dq.user_id = mu.id
+                            AND dq.workout_id = ts.id
+                         WHERE ts.athlete_id = ?
+                             AND ts.completed_at IS NOT NULL
+                             AND ts.deleted_by_coach_at IS NULL
+                             AND DATE(ts.completed_at) BETWEEN ? AND ?
+                         ORDER BY ts.completed_at ASC'
+                );
+                $stmt->execute([$athleteId, $dateFrom, $dateTo]);
+                $sessions = $stmt->fetchAll() ?: [];
+                foreach ($sessions as &$sessionRow) {
+                    $sessionRow['source_type'] = 'coach_session';
+                }
+                unset($sessionRow);
+
+                $manualStmt = $pdo->prepare(
+                    'SELECT dq.id,
+                        dq.entry_date,
+                        dq.workout_type,
+                        dq.training_duration_minutes,
+                        dq.calories_burned,
+                        dq.avg_heart_rate,
+                        dq.max_heart_rate,
+                        dq.rpe_score,
+                        dq.athlete_note,
+                        dq.created_at
+                     FROM mycoach_daily_questionnaires dq
+                     JOIN mycoach_users mu ON mu.id = dq.user_id
+                     WHERE mu.athlete_id = ?
+                       AND dq.workout_id IS NULL
+                       AND dq.entry_date BETWEEN ? AND ?
+                     ORDER BY dq.entry_date ASC, dq.id ASC'
+                );
+                $manualStmt->execute([$athleteId, $dateFrom, $dateTo]);
+                $manualRows = $manualStmt->fetchAll() ?: [];
+
+                foreach ($manualRows as $manualRow) {
+                    $manualType = trim((string)($manualRow['workout_type'] ?? ''));
+                    $manualLabel = $manualType !== '' && isset($workoutTypeOptions[$manualType]['label'])
+                        ? (string)$workoutTypeOptions[$manualType]['label']
+                        : ($manualType !== '' ? $manualType : 'Vlastní trénink');
+                    $manualCompletedAt = (string)($manualRow['entry_date'] ?? '') . ' 12:00:00';
+                    $sessions[] = [
+                        'id' => -1 * (int)$manualRow['id'],
+                        'workout_set_id' => 0,
+                        'set_name' => 'MyCoach: ' . $manualLabel,
+                        'location' => null,
+                        'completed_at' => $manualCompletedAt,
+                        'source_type' => 'mycoach_manual',
+                        'athlete_note' => (string)($manualRow['athlete_note'] ?? ''),
+                        'training_duration_minutes' => isset($manualRow['training_duration_minutes']) ? (int)$manualRow['training_duration_minutes'] : null,
+                    ];
+                }
+
+                usort($sessions, static function (array $a, array $b): int {
+                    return strcmp((string)($a['completed_at'] ?? ''), (string)($b['completed_at'] ?? ''));
+                });
+
+                return $sessions;
+        }
+
+        $stmt = $pdo->prepare(
+                'SELECT ts.*, ws.name AS set_name
+                 FROM training_sessions ts
+                 JOIN workout_sets ws ON ts.workout_set_id = ws.id
+                 WHERE ts.athlete_id = ?
+                     AND ts.completed_at IS NOT NULL
+                     AND ts.deleted_by_coach_at IS NULL
+                     AND DATE(ts.completed_at) BETWEEN ? AND ?
+                 ORDER BY ts.completed_at ASC'
+        );
+        $stmt->execute([$athleteId, $dateFrom, $dateTo]);
+        return $stmt->fetchAll() ?: [];
+};
+
+$resolveAthletePlanWindow = static function (PDO $pdo, int $athleteId): ?array {
+    if ($athleteId <= 0) {
+        return null;
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT p.started_on,
+                    p.ends_on,
+                    p.created_at,
+                    p.updated_at,
+                    p.status
+             FROM mycoach_training_plans p
+             JOIN mycoach_users mu ON mu.id = p.user_id
+             WHERE mu.athlete_id = ?
+               AND (p.status IS NULL OR LOWER(p.status) NOT IN ("completed", "archived", "done", "finished", "cancelled", "canceled"))
+             ORDER BY CASE WHEN LOWER(COALESCE(p.status, "")) = "active" THEN 0 ELSE 1 END,
+                      COALESCE(p.started_on, DATE(p.created_at)) DESC,
+                      p.id DESC
+             LIMIT 1'
+        );
+        $stmt->execute([$athleteId]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            return null;
+        }
+
+        $start = trim((string)($row['started_on'] ?? ''));
+        if ($start === '') {
+            $start = substr((string)($row['created_at'] ?? ''), 0, 10);
+        }
+
+        $end = trim((string)($row['ends_on'] ?? ''));
+        if ($end === '') {
+            $end = date('Y-m-d');
+        }
+
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start)) {
+            return null;
+        }
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
+            $end = date('Y-m-d');
+        }
+
+        return ['start' => $start, 'end' => $end];
+    } catch (Throwable $e) {
+        return null;
+    }
+};
+
+$resolvePeriodDates = static function (string $period, ?array $planWindow = null): array {
+    $today = new DateTimeImmutable('today');
+
+    switch ($period) {
+        case 'today':
+            $from = $today;
+            $to = $today;
+            break;
+        case 'yesterday':
+            $from = $today->modify('-1 day');
+            $to = $from;
+            break;
+        case 'last30':
+            $to = $today;
+            $from = $today->modify('-29 days');
+            break;
+        case 'this_month':
+            $to = $today;
+            $from = $today->modify('first day of this month');
+            break;
+        case 'plan':
+            if ($planWindow && !empty($planWindow['start'])) {
+                return [(string)$planWindow['start'], (string)$planWindow['end']];
+            }
+            $to = $today;
+            $from = $today->modify('-29 days');
+            break;
+        case 'custom':
+            return ['', ''];
+        case 'last7':
+        default:
+            $to = $today;
+            $from = $today->modify('-6 days');
+            break;
+    }
+
+    return [$from->format('Y-m-d'), $to->format('Y-m-d')];
+};
+
+$selectedPlanWindow = $athleteId > 0 ? $resolveAthletePlanWindow($pdo, $athleteId) : null;
+if ($athleteId > 0 && $period !== 'custom') {
+    [$autoFrom, $autoTo] = $resolvePeriodDates($period, $selectedPlanWindow);
+    $dateFrom = $autoFrom;
+    $dateTo = $autoTo;
+}
+if ($athleteId > 0 && ($dateFrom === '' || $dateTo === '')) {
+    [$autoFrom, $autoTo] = $resolvePeriodDates('last7', $selectedPlanWindow);
+    $dateFrom = $autoFrom;
+    $dateTo = $autoTo;
+    $period = 'last7';
+}
 
 // ── Odeslání e-mailu ──────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'email') {
@@ -35,6 +240,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'email
         $athleteId = intParam($_POST, 'athlete_id');
         $dateFrom  = preg_replace('/[^0-9\-]/', '', $_POST['date_from'] ?? '');
         $dateTo    = preg_replace('/[^0-9\-]/', '', $_POST['date_to']   ?? '');
+        $period    = preg_replace('/[^a-z0-9_\-]/', '', (string)($_POST['period'] ?? 'custom'));
+        $scope     = preg_replace('/[^a-z_\-]/', '', (string)($_POST['scope'] ?? 'all'));
+        if (!isset($periodOptions[$period])) {
+            $period = 'custom';
+        }
+        if (!in_array($scope, ['all', 'mycoach'], true)) {
+            $scope = 'all';
+        }
 
         $stmtA = $pdo->prepare('SELECT * FROM athletes WHERE id = ? AND coach_id = ?');
         $stmtA->execute([$athleteId, $coachId]);
@@ -44,21 +257,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'email
             $error = 'Sportovec nemá zadán e-mail.';
         } else {
             // Sestavit zprávu
-            $stmtS = $pdo->prepare(
-                'SELECT ts.*, ws.name AS set_name
-                 FROM training_sessions ts
-                 JOIN workout_sets ws ON ts.workout_set_id = ws.id
-                                 WHERE ts.athlete_id = ?
-                                     AND ts.completed_at IS NOT NULL
-                                     AND ts.deleted_by_coach_at IS NULL
-                   AND DATE(ts.completed_at) BETWEEN ? AND ?
-                 ORDER BY ts.completed_at ASC'
-            );
-            $stmtS->execute([$athleteId, $dateFrom, $dateTo]);
-            $sessions = $stmtS->fetchAll();
+                        $sessions = $fetchReportSessions($pdo, $athleteId, $dateFrom, $dateTo, $scope);
 
             $exerciseStats = [];
             foreach ($sessions as $sess) {
+                if (($sess['source_type'] ?? '') === 'mycoach_manual' || (int)($sess['id'] ?? 0) <= 0) {
+                    continue;
+                }
                 $exList = getSessionExercises((int)$sess['id'], (int)$sess['workout_set_id']);
                 foreach ($exList as $ex) {
                     $series = getSeriesForExercise($sess['id'], $ex['exercise_id']);
@@ -125,7 +330,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'email
                 flash('danger', 'E-mail se nepodařilo odeslat. Zkontrolujte nastavení PHP mail().');
             }
             redirect(BASE_URL . '/progress_report.php?athlete_id=' . $athleteId
-                . '&date_from=' . $dateFrom . '&date_to=' . $dateTo);
+                . '&date_from=' . $dateFrom . '&date_to=' . $dateTo . '&period=' . urlencode($period) . '&scope=' . urlencode($scope));
         }
     }
 }
@@ -137,21 +342,13 @@ if ($athleteId > 0 && $dateFrom && $dateTo) {
     $athlete = $stmtA->fetch();
 
     if ($athlete) {
-        $stmtS = $pdo->prepare(
-            'SELECT ts.*, ws.name AS set_name
-             FROM training_sessions ts
-             JOIN workout_sets ws ON ts.workout_set_id = ws.id
-                         WHERE ts.athlete_id = ?
-                             AND ts.completed_at IS NOT NULL
-                             AND ts.deleted_by_coach_at IS NULL
-               AND DATE(ts.completed_at) BETWEEN ? AND ?
-             ORDER BY ts.completed_at ASC'
-        );
-        $stmtS->execute([$athleteId, $dateFrom, $dateTo]);
-        $sessions = $stmtS->fetchAll();
+                $sessions = $fetchReportSessions($pdo, $athleteId, $dateFrom, $dateTo, $scope);
 
         $exerciseStats = [];
         foreach ($sessions as $sess) {
+            if (($sess['source_type'] ?? '') === 'mycoach_manual' || (int)($sess['id'] ?? 0) <= 0) {
+                continue;
+            }
             $exList = getSessionExercises((int)$sess['id'], (int)$sess['workout_set_id']);
             foreach ($exList as $ex) {
                 $series = getSeriesForExercise($sess['id'], $ex['exercise_id']);
@@ -227,6 +424,28 @@ renderHeader('Zpráva o pokroku');
         <?php if ($error): ?>
         <div class="alert alert-danger"><?= h($error) ?></div>
         <?php endif; ?>
+        <?php if ($athleteId > 0): ?>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+            <?php foreach ($periodOptions as $periodKey => $periodLabel): ?>
+            <a href="<?= BASE_URL ?>/progress_report.php?athlete_id=<?= (int)$athleteId ?>&period=<?= h($periodKey) ?>&scope=<?= h($scope) ?>"
+               class="btn btn-sm <?= $period === $periodKey ? 'btn-success' : 'btn-outline-success' ?>">
+                <?= h($periodLabel) ?>
+            </a>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+
+        <div class="d-flex flex-wrap gap-2 mb-3">
+            <a href="<?= BASE_URL ?>/progress_report.php?athlete_id=<?= (int)$athleteId ?>&period=<?= h($period) ?>&scope=mycoach"
+               class="btn btn-sm <?= $scope === 'mycoach' ? 'btn-primary' : 'btn-outline-primary' ?>">
+                Jen MyCoach
+            </a>
+            <a href="<?= BASE_URL ?>/progress_report.php?athlete_id=<?= (int)$athleteId ?>&period=<?= h($period) ?>&scope=all"
+               class="btn btn-sm <?= $scope === 'all' ? 'btn-secondary' : 'btn-outline-secondary' ?>">
+                Všechny tréninky
+            </a>
+        </div>
+
         <form method="get" class="row g-3 align-items-end">
             <div class="col-md-4">
                 <label class="form-label fw-semibold">Sportovec <span class="text-danger">*</span></label>
@@ -240,16 +459,25 @@ renderHeader('Zpráva o pokroku');
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label fw-semibold">Datum od <span class="text-danger">*</span></label>
                 <input type="date" name="date_from" class="form-control" required
                        value="<?= h($dateFrom) ?>">
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label fw-semibold">Datum do <span class="text-danger">*</span></label>
                 <input type="date" name="date_to" class="form-control" required
                        value="<?= h($dateTo) ?>" max="<?= date('Y-m-d') ?>">
             </div>
+            <div class="col-md-2">
+                <label class="form-label fw-semibold">Období</label>
+                <select name="period" class="form-select">
+                    <?php foreach ($periodOptions as $periodKey => $periodLabel): ?>
+                    <option value="<?= h($periodKey) ?>" <?= $period === $periodKey ? 'selected' : '' ?>><?= h($periodLabel) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <input type="hidden" name="scope" value="<?= h($scope) ?>">
             <div class="col-md-2">
                 <button type="submit" class="btn btn-success fw-bold w-100">
                     <i class="fas fa-search me-1"></i>Zobrazit
@@ -275,6 +503,8 @@ renderHeader('Zpráva o pokroku');
             <input type="hidden" name="athlete_id" value="<?= $athleteId ?>">
             <input type="hidden" name="date_from" value="<?= h($dateFrom) ?>">
             <input type="hidden" name="date_to" value="<?= h($dateTo) ?>">
+            <input type="hidden" name="period" value="<?= h($period) ?>">
+            <input type="hidden" name="scope" value="<?= h($scope) ?>">
             <button type="submit" class="btn btn-success btn-sm">
                 <i class="fas fa-envelope me-1"></i>Odeslat e-mailem
             </button>
@@ -299,6 +529,8 @@ renderHeader('Zpráva o pokroku');
             <span class="opacity-75">
                 <i class="fas fa-calendar me-1"></i>
                 <?= formatDate($dateFrom) ?> – <?= formatDate($dateTo) ?>
+                <span class="ms-2 badge bg-light text-dark border"><?= h($periodOptions[$period] ?? 'Vlastní') ?></span>
+                <span class="ms-1 badge <?= $scope === 'mycoach' ? 'bg-primary' : 'bg-secondary' ?>"><?= $scope === 'mycoach' ? 'Jen MyCoach' : 'Všechny tréninky' ?></span>
             </span>
         </div>
     </div>
@@ -332,7 +564,7 @@ renderHeader('Zpráva o pokroku');
         <?php if (empty($report['sessions'])): ?>
         <div class="alert alert-info">
             <i class="fas fa-info-circle me-1"></i>
-            V tomto období nebyly nalezeny žádné dokončené tréninky.
+            V tomto období nebyly nalezeny žádné MyCoach záznamy.
         </div>
         <?php else: ?>
 
@@ -345,6 +577,7 @@ renderHeader('Zpráva o pokroku');
                         <th>#</th>
                         <th>Datum</th>
                         <th>Sada</th>
+                        <th>Zdroj</th>
                         <th>Místo</th>
                     </tr>
                 </thead>
@@ -354,12 +587,25 @@ renderHeader('Zpráva o pokroku');
                         <td><?= $i + 1 ?></td>
                         <td><?= formatDateTime($s['completed_at']) ?></td>
                         <td><?= h($s['set_name']) ?></td>
+                        <td>
+                            <?php if (($s['source_type'] ?? '') === 'mycoach_manual'): ?>
+                            <span class="badge bg-info text-dark">Ruční záznam sportovce</span>
+                            <?php else: ?>
+                            <span class="badge bg-secondary">Trénink od trenéra</span>
+                            <?php endif; ?>
+                        </td>
                         <td><?= $s['location'] ? h($s['location']) : '–' ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
+
+        <?php if (!empty($report['sessions'])): ?>
+        <div class="small text-muted mb-4">
+            V režimu <strong>Jen MyCoach</strong> jsou zahrnuté i ručně přidané tréninky sportovce bez vazby na trenérskou session.
+        </div>
+        <?php endif; ?>
 
         <!-- Statistiky cviků -->
         <h6 class="fw-bold mb-2"><i class="fas fa-chart-bar me-1 text-success"></i>Statistiky cviků</h6>
