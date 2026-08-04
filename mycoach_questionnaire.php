@@ -144,12 +144,15 @@ if ($latestQuestionnaire) {
 renderHeader('MyCoach dotazník', false, true);
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-theme.css?v=20260804">
+<script>document.body.classList.add('mycoach-theme', 'mycoach-theme--coach');</script>
+
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2 mc-topbar">
     <div>
         <h2 class="mb-1"><i class="fas fa-clipboard-list me-2 text-warning"></i>Úvodní dotazník</h2>
         <div class="text-muted">MyCoach pro trenéra</div>
     </div>
-    <div class="d-flex gap-2 flex-wrap">
+    <div class="d-flex gap-2 flex-wrap mc-actions">
         <a href="<?= BASE_URL ?>/dashboard.php" class="btn btn-outline-secondary btn-sm fw-semibold">
             <i class="fas fa-house me-1"></i>Domů
         </a>
@@ -159,7 +162,7 @@ renderHeader('MyCoach dotazník', false, true);
     </div>
 </div>
 
-<ul class="nav nav-pills mb-4 flex-wrap gap-2">
+<ul class="nav nav-pills mb-4 flex-wrap gap-2 mc-pills">
     <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/mycoach.php"><i class="fas fa-house me-1"></i>Přehled</a></li>
     <li class="nav-item"><span class="nav-link active"><i class="fas fa-clipboard-list me-1"></i>Dotazník</span></li>
     <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/mycoach_graphs.php"><i class="fas fa-chart-line me-1"></i>Grafy</a></li>

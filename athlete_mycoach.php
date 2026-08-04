@@ -184,12 +184,15 @@ $recommendationSourceText = $readinessPreviewDate ? 'pro ' . formatDate((string)
 renderAthleteHeader('MyCoach dotazník', false, true);
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-theme.css?v=20260804">
+<script>document.body.classList.add('mycoach-theme', 'mycoach-theme--athlete');</script>
+
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2 mc-topbar">
     <div>
         <h2 class="mb-1"><i class="fas fa-clipboard-list me-2 text-warning"></i>Úvodní dotazník</h2>
         <div class="text-muted">MyCoach pro sportovce</div>
     </div>
-    <div class="d-flex gap-2 flex-wrap">
+    <div class="d-flex gap-2 flex-wrap mc-actions">
         <a href="<?= BASE_URL ?>/athlete_dashboard.php" class="btn btn-outline-secondary btn-sm fw-semibold">
             <i class="fas fa-house me-1"></i>Domů
         </a>
@@ -207,7 +210,7 @@ renderAthleteHeader('MyCoach dotazník', false, true);
     </div>
 </div>
 
-<ul class="nav nav-pills mb-4 flex-wrap gap-2">
+<ul class="nav nav-pills mb-4 flex-wrap gap-2 mc-pills">
     <li class="nav-item"><span class="nav-link active"><i class="fas fa-house me-1"></i>Přehled</span></li>
     <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_mycoach_questionnaire.php"><i class="fas fa-clipboard-list me-1"></i>Dotazník <?php if (!$questionnaireCompleted): ?><span class="badge rounded-pill bg-danger ms-1" style="font-size:.65rem">!</span><?php endif; ?></a></li>
     <li class="nav-item"><a class="nav-link <?= $latestQuestionnaire ? '' : 'disabled' ?>" href="<?= $latestQuestionnaire ? BASE_URL . '/athlete_mycoach_daily.php' : '#' ?>" aria-disabled="<?= $latestQuestionnaire ? 'false' : 'true' ?>"><i class="fas fa-dumbbell me-1"></i>Denní záznam</a></li>

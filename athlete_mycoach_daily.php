@@ -332,12 +332,15 @@ $sleepMissingForReadiness = trim($sleepValue) === '';
 renderAthleteHeader('MyCoach denní záznam', false, true);
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-theme.css?v=20260804">
+<script>document.body.classList.add('mycoach-theme', 'mycoach-theme--athlete');</script>
+
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2 mc-topbar">
     <div>
         <h2 class="mb-1"><i class="fas fa-book-open me-2 text-warning"></i>Denní záznam</h2>
         <div class="text-muted">Dokončené tréninky s trenérem se propisují do dnešního logu automaticky.</div>
     </div>
-    <div class="d-flex gap-2 flex-wrap">
+    <div class="d-flex gap-2 flex-wrap mc-actions">
         <a href="<?= BASE_URL ?>/athlete_mycoach_daily.php?date=<?= urlencode($previousDate) ?>" class="btn btn-outline-secondary btn-sm"><i class="fas fa-chevron-left me-1"></i>Předchozí den</a>
         <a href="<?= BASE_URL ?>/athlete_mycoach_daily.php?date=<?= urlencode($todayDate) ?>" class="btn btn-outline-secondary btn-sm">Dnes</a>
         <a href="<?= BASE_URL ?>/athlete_mycoach_daily.php?date=<?= urlencode($nextDate) ?>" class="btn btn-outline-secondary btn-sm">Další den<i class="fas fa-chevron-right ms-1"></i></a>

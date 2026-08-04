@@ -1,0 +1,222 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+:root {
+  --mc-bg: #f6f9fb;
+  --mc-bg-accent: #e7f8f3;
+  --mc-surface: #ffffff;
+  --mc-surface-soft: #f8fbff;
+  --mc-text: #10263b;
+  --mc-muted: #5d7284;
+  --mc-primary: #0f8b8d;
+  --mc-primary-strong: #0a6a6b;
+  --mc-secondary: #ff8f3c;
+  --mc-border: rgba(16, 38, 59, 0.1);
+  --mc-shadow: 0 14px 38px rgba(16, 38, 59, 0.08);
+  --mc-radius: 22px;
+}
+
+body.mycoach-theme {
+  background:
+    radial-gradient(1200px 600px at -8% -8%, rgba(15, 139, 141, 0.18), transparent 60%),
+    radial-gradient(900px 500px at 110% -10%, rgba(255, 143, 60, 0.14), transparent 58%),
+    linear-gradient(180deg, var(--mc-bg-accent) 0%, var(--mc-bg) 24%, var(--mc-bg) 100%);
+  color: var(--mc-text);
+  font-family: 'Outfit', 'Segoe UI', Tahoma, sans-serif;
+}
+
+body.mycoach-theme h1,
+body.mycoach-theme h2,
+body.mycoach-theme h3,
+body.mycoach-theme h4,
+body.mycoach-theme h5,
+body.mycoach-theme h6 {
+  font-family: 'Space Grotesk', 'Outfit', 'Segoe UI', sans-serif;
+  letter-spacing: -0.01em;
+  color: #0f2438;
+}
+
+body.mycoach-theme .mc-topbar {
+  background: linear-gradient(135deg, #ffffff 0%, #f4fdf9 100%);
+  border: 1px solid var(--mc-border);
+  border-radius: calc(var(--mc-radius) + 4px);
+  box-shadow: var(--mc-shadow);
+  padding: 1rem 1.1rem;
+}
+
+body.mycoach-theme .mc-actions {
+  gap: 0.55rem !important;
+}
+
+body.mycoach-theme .mc-pills {
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid var(--mc-border);
+  border-radius: 999px;
+  padding: 0.35rem;
+  box-shadow: 0 6px 18px rgba(16, 38, 59, 0.05);
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap !important;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+body.mycoach-theme .mc-pills::-webkit-scrollbar {
+  display: none;
+}
+
+body.mycoach-theme .mc-pills .nav-item {
+  flex: 0 0 auto;
+}
+
+body.mycoach-theme .mc-pills .nav-link {
+  border-radius: 999px;
+  padding: 0.55rem 0.9rem;
+  font-weight: 600;
+  color: #245070;
+}
+
+body.mycoach-theme .mc-pills .nav-link.active,
+body.mycoach-theme .mc-pills .show > .nav-link {
+  background: linear-gradient(135deg, var(--mc-primary) 0%, #13a6a9 100%);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(15, 139, 141, 0.34);
+}
+
+body.mycoach-theme .card {
+  border-radius: var(--mc-radius) !important;
+  border: 1px solid var(--mc-border) !important;
+  box-shadow: var(--mc-shadow) !important;
+  background: linear-gradient(180deg, var(--mc-surface) 0%, var(--mc-surface-soft) 100%);
+  overflow: hidden;
+}
+
+body.mycoach-theme .card-header {
+  border-bottom: 1px solid var(--mc-border) !important;
+}
+
+body.mycoach-theme .card.border-start {
+  border-left-width: 6px !important;
+}
+
+body.mycoach-theme .btn {
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+body.mycoach-theme .btn-primary,
+body.mycoach-theme .btn-success {
+  border: none;
+  background: linear-gradient(135deg, var(--mc-primary-strong) 0%, var(--mc-primary) 50%, #19b3b6 100%);
+  box-shadow: 0 10px 20px rgba(15, 139, 141, 0.3);
+}
+
+body.mycoach-theme .btn-primary:hover,
+body.mycoach-theme .btn-success:hover {
+  filter: brightness(1.04);
+}
+
+body.mycoach-theme .btn-outline-secondary,
+body.mycoach-theme .btn-outline-light,
+body.mycoach-theme .btn-outline-primary {
+  border-color: rgba(20, 53, 79, 0.26);
+  color: #1d4f74;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+body.mycoach-theme .form-control,
+body.mycoach-theme .form-select,
+body.mycoach-theme textarea {
+  border-radius: 14px;
+  border-color: rgba(16, 38, 59, 0.18);
+  background: #ffffff;
+}
+
+body.mycoach-theme .form-control:focus,
+body.mycoach-theme .form-select:focus,
+body.mycoach-theme textarea:focus {
+  border-color: rgba(15, 139, 141, 0.55);
+  box-shadow: 0 0 0 0.2rem rgba(15, 139, 141, 0.16);
+}
+
+body.mycoach-theme .badge {
+  border-radius: 999px;
+}
+
+body.mycoach-theme .table {
+  --bs-table-bg: transparent;
+}
+
+body.mycoach-theme .table > :not(caption) > * > * {
+  border-color: rgba(16, 38, 59, 0.1);
+}
+
+body.mycoach-theme .alert {
+  border-radius: 16px;
+  border: 1px solid rgba(16, 38, 59, 0.1);
+}
+
+body.mycoach-theme .text-muted {
+  color: var(--mc-muted) !important;
+}
+
+@media (max-width: 991.98px) {
+  body.mycoach-theme .mc-topbar {
+    padding: 0.9rem;
+  }
+
+  body.mycoach-theme .mc-topbar h2 {
+    font-size: 1.45rem;
+  }
+
+  body.mycoach-theme .mc-actions {
+    width: 100%;
+  }
+
+  body.mycoach-theme .mc-actions .btn {
+    flex: 1 1 calc(50% - 0.35rem);
+    min-height: 42px;
+  }
+
+  body.mycoach-theme .card-body {
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 767.98px) {
+  body.mycoach-theme {
+    font-size: 0.98rem;
+  }
+
+  body.mycoach-theme .mc-topbar {
+    margin-bottom: 0.9rem !important;
+  }
+
+  body.mycoach-theme .mc-topbar h2 {
+    font-size: 1.3rem;
+    margin-bottom: 0.25rem !important;
+  }
+
+  body.mycoach-theme .mc-actions .btn {
+    flex: 1 1 100%;
+  }
+
+  body.mycoach-theme .mc-pills {
+    border-radius: 18px;
+    padding: 0.35rem 0.4rem;
+  }
+
+  body.mycoach-theme .mc-pills .nav-link {
+    padding: 0.48rem 0.7rem;
+    font-size: 0.9rem;
+  }
+
+  body.mycoach-theme .table-responsive {
+    border-radius: 14px;
+    overflow: hidden;
+  }
+
+  body.mycoach-theme .card {
+    border-radius: 18px !important;
+  }
+}

@@ -66,12 +66,15 @@ $sleepValues = array_map(static function (array $row): float {
 renderAthleteHeader('MyCoach grafy', true, true);
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-theme.css?v=20260804">
+<script>document.body.classList.add('mycoach-theme', 'mycoach-theme--athlete');</script>
+
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2 mc-topbar">
     <div>
         <h2 class="mb-1"><i class="fas fa-chart-line me-2 text-warning"></i>MyCoach grafy</h2>
         <div class="text-muted">Vývoj readiness, energie a spánku v čase</div>
     </div>
-    <div class="d-flex gap-2 flex-wrap">
+    <div class="d-flex gap-2 flex-wrap mc-actions">
         <a href="<?= BASE_URL ?>/athlete_dashboard.php" class="btn btn-outline-secondary btn-sm fw-semibold"><i class="fas fa-house me-1"></i>Domů</a>
         <a href="<?= BASE_URL ?>/athlete_mycoach_daily.php" class="btn btn-success btn-sm fw-semibold"><i class="fas fa-book-open me-1"></i>Denní záznam</a>
         <a href="<?= BASE_URL ?>/athlete_mycoach.php" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i>Zpět do MyCoach</a>
