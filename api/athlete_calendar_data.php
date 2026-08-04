@@ -80,6 +80,8 @@ foreach ($events as &$event) {
     $eventStartTs = strtotime((string)($event['starts_at'] ?? ''));
     $canCancelByTime = ($eventStartTs !== false && $eventStartTs > time());
     $event['can_cancel'] = ($canCancelOwnership && $canCancelByTime);
+    $event['can_edit'] = ($isPending && $canCancelOwnership && $canCancelByTime);
+    $event['can_request_change'] = (!$isPending && $canCancelOwnership && $canCancelByTime);
     $event['is_pending'] = $isPending;
     $event['was_modified_by_coach'] = !empty($event['coach_modified_at']);
 
@@ -96,6 +98,8 @@ foreach ($events as &$event) {
         $event['approval_status'] = 'approved';
         $event['coach_modified_at'] = null;
         $event['can_cancel'] = false;
+        $event['can_edit'] = false;
+        $event['can_request_change'] = false;
         $event['is_pending'] = false;
         $event['was_modified_by_coach'] = false;
         $event['is_caldav_synced'] = 0;

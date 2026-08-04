@@ -26,11 +26,21 @@ if (!verifyCsrf((string)($input['csrf_token'] ?? ''))) {
 }
 
 $athleteId = (int)getCurrentAthleteId();
+$mode = trim((string)($input['mode'] ?? 'create'));
+$eventId = (int)($input['event_id'] ?? 0);
+$requestChangeForEventId = (int)($input['request_change_for_event_id'] ?? 0);
+$isEditMode = ($mode === 'edit' && $eventId > 0);
+$isRequestChangeMode = ($mode === 'request_change' && $requestChangeForEventId > 0);
 $startsAtRaw = trim((string)($input['starts_at'] ?? ''));
 $location = trim((string)($input['location'] ?? ''));
 $titleType = trim((string)($input['title_type'] ?? 'training'));
 $isMakeupSession = !empty($input['is_makeup_session']) ? 1 : 0;
 $allowAutoMakeup = !empty($input['allow_auto_makeup']);
+
+if (!in_array($mode, ['create', 'edit', 'request_change'], true)) {
+    echo json_encode(['success' => false, 'error' => 'Neplatný režim uložení']);
+    exit;
+}
 
 $start = DateTime::createFromFormat('Y-m-d\TH:i', $startsAtRaw);
 if (!$start) {
@@ -56,6 +66,9 @@ if ($location !== '') {
 } else {
     $location = null;
 }
+
+$existingEvent = null;
+$requestChangeEvent = null;
 
 $pdo = getDB();
 
@@ -422,6 +435,47 @@ if (!$athlete) {
     exit;
 }
 
+if ($isEditMode) {
+    $eventStmt = $pdo->prepare(
+        'SELECT id, coach_id, athlete_id, second_athlete_id, requested_by_athlete_id, approval_status, is_makeup_session, billing_month, custom_title, location, starts_at, ends_at
+         FROM coach_calendar_events
+         WHERE id = ?
+           AND coach_id = ?
+           AND approval_status = "pending"
+           AND requested_by_athlete_id = ?
+         LIMIT 1'
+    );
+    $eventStmt->execute([$eventId, (int)$athlete['coach_id'], $athleteId]);
+    $existingEvent = $eventStmt->fetch() ?: null;
+    if (!$existingEvent) {
+        echo json_encode(['success' => false, 'error' => 'Tento čekající požadavek už nelze upravit.']);
+        exit;
+    }
+
+    $existingEventStartTs = strtotime((string)($existingEvent['starts_at'] ?? ''));
+    if ($existingEventStartTs !== false && $existingEventStartTs <= time()) {
+        echo json_encode(['success' => false, 'error' => 'Minulé nebo právě probíhající termíny nelze upravovat.']);
+        exit;
+    }
+}
+
+if ($isRequestChangeMode) {
+    $requestChangeStmt = $pdo->prepare(
+        'SELECT id, coach_id, athlete_id, second_athlete_id, requested_by_athlete_id, approval_status, is_makeup_session, billing_month, custom_title, location, starts_at, ends_at
+         FROM coach_calendar_events
+         WHERE id = ?
+           AND coach_id = ?
+           AND (athlete_id = ? OR second_athlete_id = ?)
+         LIMIT 1'
+    );
+    $requestChangeStmt->execute([$requestChangeForEventId, (int)$athlete['coach_id'], $athleteId, $athleteId]);
+    $requestChangeEvent = $requestChangeStmt->fetch() ?: null;
+    if (!$requestChangeEvent) {
+        echo json_encode(['success' => false, 'error' => 'Požadavek na změnu se nepodařilo najít.']);
+        exit;
+    }
+}
+
 if ($location !== null) {
     rememberTrainingVenue($location, (int)$athlete['coach_id']);
 
@@ -496,6 +550,70 @@ if ($isMakeupSession === 1) {
     $billingMonthSql = athleteResolveOpenBillingMonth($pdo, (int)$athlete['coach_id'], $athleteId, $billingMonthSql);
 }
 
+if ($isRequestChangeMode) {
+    $eventStartTs = strtotime($startSql);
+    if ($eventStartTs !== false && $eventStartTs <= time()) {
+        echo json_encode(['success' => false, 'error' => 'Minulé nebo právě probíhající termíny nelze měnit.']);
+        exit;
+    }
+
+    $lockStmt = $pdo->prepare(
+        'SELECT id
+         FROM coach_calendar_locks
+         WHERE coach_id = ?
+           AND starts_at < ?
+           AND ends_at > ?
+         LIMIT 1'
+    );
+    $lockStmt->execute([(int)$athlete['coach_id'], $endSql, $startSql]);
+    if ($lockStmt->fetch()) {
+        echo json_encode(['success' => false, 'error' => 'Navržený čas je uzamčený. Vyberte prosím jiný termín.']);
+        exit;
+    }
+
+    $overlapStmt = $pdo->prepare(
+        'SELECT id
+         FROM coach_calendar_events
+         WHERE coach_id = ?
+           AND starts_at < ?
+           AND ends_at > ?
+           AND id <> ?
+         LIMIT 1'
+    );
+    $overlapStmt->execute([(int)$athlete['coach_id'], $endSql, $startSql, $requestChangeForEventId]);
+    if ($overlapStmt->fetch()) {
+        echo json_encode(['success' => false, 'error' => 'Navržený čas je už obsazený.']);
+        exit;
+    }
+
+    $athleteName = trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']);
+    $timeLabel = $start->format('d.m.Y H:i');
+    $oldStartLabel = !empty($requestChangeEvent['starts_at']) ? date('d.m.Y H:i', strtotime((string)$requestChangeEvent['starts_at'])) : 'původní termín';
+    $oldLocation = trim((string)($requestChangeEvent['location'] ?? ''));
+    $subject = 'Žádost o změnu termínu';
+    $body = 'Sportovec ' . $athleteName . ' požádal o změnu termínu.';
+    $body .= ' Původně: ' . $oldStartLabel . '.';
+    $body .= ' Nově navržené: ' . $timeLabel . '.';
+    if ($location) {
+        $body .= ' Místo: ' . $location . '.';
+    }
+    if ($oldLocation !== '' && $oldLocation !== (string)$location) {
+        $body .= ' Původní místo: ' . $oldLocation . '.';
+    }
+
+    createCoachSystemMessage((int)$athlete['coach_id'], $subject, $body, true);
+    createAthleteNotification($athleteId, 'Žádost o změnu odeslána', 'Tvoje žádost o změnu termínu byla odeslána trenérovi.');
+
+    echo json_encode([
+        'success' => true,
+        'message' => 'Žádost o změnu byla odeslána trenérovi.',
+        'coach_apple_sync_ok' => null,
+        'athlete_apple_sync_ok' => null,
+        'sync_queued' => false,
+    ]);
+    exit;
+}
+
 $lockStmt = $pdo->prepare(
     'SELECT id
      FROM coach_calendar_locks
@@ -524,25 +642,64 @@ if ($overlapStmt->fetch()) {
     exit;
 }
 
-$insert = $pdo->prepare(
-    'INSERT INTO coach_calendar_events (coach_id, athlete_id, requested_by_athlete_id, approval_status, coach_modified_at, is_makeup_session, billing_month, series_id, color_key, custom_title, location, starts_at, ends_at)
-    VALUES (?, ?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?, ?)'
-);
-$insert->execute([
-    (int)$athlete['coach_id'],
-    $athleteId,
-    $athleteId,
-    'pending',
-    $isMakeupSession,
-    $billingMonthSql,
-    'green',
-    $customTitle,
-    $location,
-    $startSql,
-    $endSql,
-]);
+$newEventId = 0;
+if ($isEditMode) {
+    $update = $pdo->prepare(
+        'UPDATE coach_calendar_events
+         SET approval_status = "pending",
+             coach_modified_at = NULL,
+             is_makeup_session = ?,
+             billing_month = ?,
+             color_key = ?,
+             custom_title = ?,
+             location = ?,
+             starts_at = ?,
+             ends_at = ?
+         WHERE id = ?
+           AND coach_id = ?
+           AND approval_status = "pending"
+           AND requested_by_athlete_id = ?'
+    );
+    $update->execute([
+        $isMakeupSession,
+        $billingMonthSql,
+        'green',
+        $customTitle,
+        $location,
+        $startSql,
+        $endSql,
+        $eventId,
+        (int)$athlete['coach_id'],
+        $athleteId,
+    ]);
 
-$newEventId = (int)$pdo->lastInsertId();
+    if ($update->rowCount() === 0) {
+        echo json_encode(['success' => false, 'error' => 'Požadavek se nepodařilo upravit.']);
+        exit;
+    }
+
+    $newEventId = $eventId;
+} else {
+    $insert = $pdo->prepare(
+        'INSERT INTO coach_calendar_events (coach_id, athlete_id, requested_by_athlete_id, approval_status, coach_modified_at, is_makeup_session, billing_month, series_id, color_key, custom_title, location, starts_at, ends_at)
+        VALUES (?, ?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?, ?)'
+    );
+    $insert->execute([
+        (int)$athlete['coach_id'],
+        $athleteId,
+        $athleteId,
+        'pending',
+        $isMakeupSession,
+        $billingMonthSql,
+        'green',
+        $customTitle,
+        $location,
+        $startSql,
+        $endSql,
+    ]);
+
+    $newEventId = (int)$pdo->lastInsertId();
+}
 
 if ($replacementCancellationId !== null
     && athleteReserveTableExists($pdo, 'coach_calendar_event_cancellations')
@@ -559,19 +716,33 @@ if ($replacementCancellationId !== null
     $bindReplacementStmt->execute([$newEventId, $replacementCancellationId, (int)$athlete['coach_id'], $athleteId]);
 }
 
+
 $athleteName = trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']);
 $timeLabel = $start->format('d.m.Y H:i');
-$subject = "Nový požadavek termínu - {$athleteName}";
-$body = "Sportovec {$athleteName} si rezervoval termín {$timeLabel}.";
-if ($location) {
-    $body .= " Místo: {$location}.";
-}
-if ($customTitle !== '') {
-    $body .= " Poznámka: {$customTitle}.";
-}
-createCoachSystemMessage((int)$athlete['coach_id'], $subject, $body, true);
+if ($isEditMode) {
+    $subject = "Upravený požadavek termínu - {$athleteName}";
+    $body = "Sportovec {$athleteName} upravil svůj čekající požadavek na termín {$timeLabel}.";
+    if ($location) {
+        $body .= " Místo: {$location}.";
+    }
+    if ($customTitle !== '') {
+        $body .= " Poznámka: {$customTitle}.";
+    }
+    createCoachSystemMessage((int)$athlete['coach_id'], $subject, $body, true);
+    createAthleteNotification($athleteId, 'Požadavek upraven', "Tvůj čekající požadavek na termín {$timeLabel} byl upraven a čeká znovu na schválení trenérem.");
+} else {
+    $subject = "Nový požadavek termínu - {$athleteName}";
+    $body = "Sportovec {$athleteName} si rezervoval termín {$timeLabel}.";
+    if ($location) {
+        $body .= " Místo: {$location}.";
+    }
+    if ($customTitle !== '') {
+        $body .= " Poznámka: {$customTitle}.";
+    }
+    createCoachSystemMessage((int)$athlete['coach_id'], $subject, $body, true);
 
-createAthleteNotification($athleteId, 'Požadavek odeslán ke schválení', "Tvůj požadavek na termín {$timeLabel} čeká na schválení trenérem.");
+    createAthleteNotification($athleteId, 'Požadavek odeslán ke schválení', "Tvůj požadavek na termín {$timeLabel} čeká na schválení trenérem.");
+}
 
 enqueueCoachGoogleCalendarSync((int)$athlete['coach_id'], $newEventId, 'upsert');
 enqueueCoachAppleCaldavSync((int)$athlete['coach_id'], $newEventId, 'upsert');
@@ -580,7 +751,7 @@ processInlineCalendarSyncQueues(2, 3, 3);
 
 echo json_encode([
     'success' => true,
-    'message' => 'Požadavek byl odeslán ke schválení.',
+    'message' => $isEditMode ? 'Požadavek byl upraven.' : 'Požadavek byl odeslán ke schválení.',
     'coach_apple_sync_ok' => null,
     'athlete_apple_sync_ok' => null,
     'sync_queued' => true,

@@ -959,6 +959,9 @@ renderAthleteHeader('Můj kalendář', false, true);
                 <a href="#" class="btn btn-outline-primary" id="eventDetailAddToIosBtn" target="_blank" rel="noopener">
                     <i class="fas fa-mobile-screen-button me-1"></i>Přidat do iOS kalendáře
                 </a>
+                <button type="button" class="btn btn-outline-warning d-none" id="eventDetailPrimaryActionBtn">
+                    <i class="fas fa-pen me-1"></i><span id="eventDetailPrimaryActionLabel">Upravit termín</span>
+                </button>
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Zavřít</button>
                 <button type="button" class="btn btn-danger" id="eventDetailCancelBtn">
                     <i class="fas fa-trash-alt me-1"></i>Zrušit událost
@@ -973,11 +976,14 @@ renderAthleteHeader('Můj kalendář', false, true);
         <div class="modal-content">
             <form id="reserveForm">
                 <div class="modal-header bg-dark text-white">
-                    <h5 class="modal-title"><i class="fas fa-calendar-plus me-2 text-warning"></i>Rezervovat termín</h5>
+                    <h5 class="modal-title" id="reserveModalTitle"><i class="fas fa-calendar-plus me-2 text-warning"></i>Rezervovat termín</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <input type="hidden" id="reserveStart" value="">
+                    <input type="hidden" id="reserveEventId" value="">
+                    <input type="hidden" id="reserveMode" value="create">
+                    <input type="hidden" id="reserveRequestChangeForEventId" value="">
 
                     <div class="mb-2">
                         <label class="form-label fw-semibold">Čas začátku</label>
@@ -1050,7 +1056,7 @@ renderAthleteHeader('Můj kalendář', false, true);
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Zrušit</button>
-                    <button type="submit" class="btn btn-warning fw-bold">Rezervovat</button>
+                    <button type="submit" class="btn btn-warning fw-bold" id="reserveSubmitBtn">Rezervovat</button>
                 </div>
             </form>
         </div>
@@ -1074,6 +1080,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const reserveHourInput = document.getElementById('reserveHour');
     const reserveMinuteInput = document.getElementById('reserveMinute');
     const reserveStartInput = document.getElementById('reserveStart');
+    const reserveEventIdInput = document.getElementById('reserveEventId');
+    const reserveModeInput = document.getElementById('reserveMode');
+    const reserveRequestChangeForEventIdInput = document.getElementById('reserveRequestChangeForEventId');
+    const reserveModalTitleEl = document.getElementById('reserveModalTitle');
+    const reserveSubmitBtn = document.getElementById('reserveSubmitBtn');
     const reserveMakeupSuggestion = document.getElementById('reserveMakeupSuggestion');
     const reserveMakeupSuggestionText = document.getElementById('reserveMakeupSuggestionText');
     const reserveUseMakeupInput = document.getElementById('reserveUseMakeup');
@@ -1084,6 +1095,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const eventDetailPaymentInfoEl = document.getElementById('eventDetailPaymentInfo');
     const eventDetailCancelInfoEl = document.getElementById('eventDetailCancelInfo');
     const eventDetailAddToIosBtn = document.getElementById('eventDetailAddToIosBtn');
+    const eventDetailPrimaryActionBtn = document.getElementById('eventDetailPrimaryActionBtn');
+    const eventDetailPrimaryActionLabel = document.getElementById('eventDetailPrimaryActionLabel');
     const eventDetailCancelBtn = document.getElementById('eventDetailCancelBtn');
     const athleteMonthInput = document.getElementById('athleteMonthInput');
     const athleteMonthPrevBtn = document.getElementById('athleteMonthPrevBtn');
@@ -1092,8 +1105,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const athleteMonthListEmpty = document.getElementById('athleteMonthListEmpty');
     const athleteAppleCaldavForm = document.getElementById('athleteAppleCaldavForm');
     const reserveForm = document.getElementById('reserveForm');
-    const reserveSubmitBtn = reserveForm ? reserveForm.querySelector('button[type="submit"]') : null;
     const athleteAppleCaldavActive = <?= !empty($athleteAppleCaldavActive) ? 'true' : 'false' ?>;
+    let dayPilotLoadPromise = null;
 
     function getSubmitControls(form) {
         return Array.from(form.querySelectorAll('button[type="submit"], input[type="submit"]'));
@@ -1247,6 +1260,17 @@ document.addEventListener('DOMContentLoaded', () => {
             label: '',
             className: '',
         };
+    }
+
+    function getReserveTitleTypeFromEvent(event) {
+        const title = String(event && event.custom_title ? event.custom_title : '').trim().toLowerCase();
+        if (title === 'konzultační hodina' || title === 'konzultacni hodina') {
+            return 'consultation';
+        }
+        if (title === 'jiné' || title === 'jine') {
+            return 'other';
+        }
+        return 'training';
     }
 
     function getEventTitle(event) {
@@ -1518,7 +1542,26 @@ document.addEventListener('DOMContentLoaded', () => {
             eventDetailPaymentInfoEl.classList.add('d-none');
         }
 
-        if (canCancel) {
+        const canEdit = Boolean(event.can_edit ?? false);
+        const canRequestChange = Boolean(event.can_request_change ?? false);
+
+        if (eventDetailPrimaryActionBtn && eventDetailPrimaryActionLabel) {
+            if (canEdit || canRequestChange) {
+                eventDetailPrimaryActionBtn.classList.remove('d-none');
+                eventDetailPrimaryActionBtn.disabled = false;
+                eventDetailPrimaryActionBtn.dataset.mode = canEdit ? 'edit' : 'request_change';
+                eventDetailPrimaryActionLabel.textContent = canEdit ? 'Upravit požadavek' : 'Požádat o změnu';
+            } else {
+                eventDetailPrimaryActionBtn.classList.add('d-none');
+                eventDetailPrimaryActionBtn.dataset.mode = '';
+            }
+        }
+
+        if (canEdit) {
+            eventDetailCancelBtn.classList.add('d-none');
+            eventDetailCancelInfoEl.className = 'alert alert-secondary mt-3 mb-0 py-2';
+            eventDetailCancelInfoEl.textContent = 'Tento čekající požadavek můžete upravit bez zrušení.';
+        } else if (canCancel) {
             eventDetailCancelBtn.classList.remove('d-none');
             eventDetailCancelBtn.disabled = false;
             if (lateCancellation) {
@@ -1526,14 +1569,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 eventDetailCancelInfoEl.textContent = 'Pozor: Zrušení méně než 12 hodin před začátkem je bez nároku na kompenzaci. Tento termín nelze nahradit.';
             } else {
                 eventDetailCancelInfoEl.className = 'alert alert-light border mt-3 mb-0 py-2';
-                eventDetailCancelInfoEl.textContent = 'Tento termín lze zrušit.';
+                eventDetailCancelInfoEl.textContent = canRequestChange
+                    ? 'Tento termín lze zrušit, nebo požádat o změnu času, místa či data.'
+                    : 'Tento termín lze zrušit.';
             }
         } else {
             eventDetailCancelBtn.classList.add('d-none');
             eventDetailCancelInfoEl.className = 'alert alert-secondary mt-3 mb-0 py-2';
-            eventDetailCancelInfoEl.textContent = canCancelEventByTime(event)
-                ? 'Tento termín nelze zrušit, protože není přiřazený tobě.'
-                : 'Minulé nebo právě probíhající termíny nelze rušit.';
+            if (canRequestChange) {
+                eventDetailCancelInfoEl.textContent = 'Můžete požádat o změnu času, místa nebo data bez zrušení tréninku.';
+            } else {
+                eventDetailCancelInfoEl.textContent = canCancelEventByTime(event)
+                    ? 'Tento termín nelze zrušit, protože není přiřazený tobě.'
+                    : 'Minulé nebo právě probíhající termíny nelze rušit.';
+            }
         }
 
         eventDetailModal.show();
@@ -1662,14 +1711,58 @@ document.addEventListener('DOMContentLoaded', () => {
         renderReserveMakeupSuggestion(payload, startDate);
     }
 
-    function openReserveModal(startDate) {
+    function openReserveModal(startDate, mode = 'create') {
         populateReserveHourOptions();
         setReserveStartControls(startDate);
         reserveLocationInput.value = '';
+        reserveEventIdInput.value = '';
+        reserveModeInput.value = mode;
+        reserveRequestChangeForEventIdInput.value = '';
+        if (reserveModalTitleEl) {
+            reserveModalTitleEl.innerHTML = '<i class="fas fa-calendar-plus me-2 text-warning"></i>Rezervovat termín';
+        }
+        if (reserveSubmitBtn) {
+            reserveSubmitBtn.textContent = 'Rezervovat';
+        }
         updateReserveLocationHint();
         clearReserveMakeupSuggestion();
-        refreshReserveMakeupSuggestion(startDate);
+        if (mode === 'create') {
+            refreshReserveMakeupSuggestion(startDate);
+        }
         reserveModal.show();
+    }
+
+    function openReserveModalFromEvent(event, mode = 'edit') {
+        if (!event) {
+            return;
+        }
+
+        const startDate = fromSqlDateTime(event.starts_at);
+        openReserveModal(startDate, mode);
+
+        reserveEventIdInput.value = mode === 'edit' ? String(event.id || '') : '';
+        reserveModeInput.value = mode;
+        reserveRequestChangeForEventIdInput.value = mode === 'request_change' ? String(event.id || '') : '';
+        reserveLocationInput.value = event.location || '';
+        updateReserveLocationHint();
+
+        const titleType = getReserveTitleTypeFromEvent(event);
+        const titleRadio = document.querySelector(`input[name="reserveTitleType"][value="${titleType}"]`);
+        if (titleRadio) {
+            titleRadio.checked = true;
+        }
+
+        clearReserveMakeupSuggestion();
+
+        if (reserveModalTitleEl && reserveSubmitBtn) {
+            if (mode === 'request_change') {
+                reserveModalTitleEl.innerHTML = '<i class="fas fa-calendar-day me-2 text-warning"></i>Požádat o změnu termínu';
+                reserveSubmitBtn.textContent = 'Odeslat požadavek';
+            } else {
+                reserveModalTitleEl.innerHTML = '<i class="fas fa-calendar-plus me-2 text-warning"></i>Upravit požadavek';
+                reserveSubmitBtn.textContent = 'Uložit změny';
+            }
+        }
     }
 
     async function cancelMyEvent(eventId) {
@@ -1757,6 +1850,27 @@ document.addEventListener('DOMContentLoaded', () => {
         return true;
     }
 
+    function ensureDayPilotLoaded() {
+        if (window.DayPilot && typeof window.DayPilot.Calendar === 'function') {
+            return Promise.resolve(true);
+        }
+
+        if (dayPilotLoadPromise) {
+            return dayPilotLoadPromise;
+        }
+
+        dayPilotLoadPromise = new Promise((resolve) => {
+            const fallbackScript = document.createElement('script');
+            fallbackScript.src = 'https://cdn.jsdelivr.net/npm/@daypilot/daypilot-lite-javascript@5.6.0/daypilot-javascript.min.js';
+            fallbackScript.async = true;
+            fallbackScript.onload = () => resolve(Boolean(window.DayPilot && typeof window.DayPilot.Calendar === 'function'));
+            fallbackScript.onerror = () => resolve(false);
+            document.head.appendChild(fallbackScript);
+        });
+
+        return dayPilotLoadPromise;
+    }
+
     async function loadWeekData() {
         weekRangeLabel.textContent = getWeekRangeLabel();
         const params = new URLSearchParams({ week_start: toDateKey(currentWeekStart) });
@@ -1774,7 +1888,21 @@ document.addEventListener('DOMContentLoaded', () => {
         locks = payload.locks || [];
 
         if (!renderDayPilotCalendar()) {
+            const loaded = await ensureDayPilotLoaded();
+            if (loaded) {
+                if (!renderDayPilotCalendar()) {
+                    alert('Knihovnu kalendáře se nepodařilo inicializovat ani po opakovaném načtení.');
+                    return;
+                }
+            } else {
+                alert('Knihovnu kalendáře se nepodařilo načíst. Zkontrolujte prosím připojení nebo blokování CDN.');
+                return;
+            }
+        }
+
+        if (!dayPilotCalendar) {
             alert('Nepodařilo se inicializovat zobrazení kalendáře.');
+            return;
         }
 
         await loadAthleteMonthList();
@@ -1892,6 +2020,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    if (eventDetailPrimaryActionBtn) {
+        eventDetailPrimaryActionBtn.addEventListener('click', () => {
+            if (!selectedEventForDetail) {
+                return;
+            }
+
+            const mode = eventDetailPrimaryActionBtn.dataset.mode || 'edit';
+            openReserveModalFromEvent(selectedEventForDetail, mode);
+            eventDetailModal.hide();
+        });
+    }
+
     reserveForm.addEventListener('submit', async (event) => {
         event.preventDefault();
 
@@ -1903,14 +2043,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
 
+        const mode = reserveModeInput.value || 'create';
         const payload = {
             csrf_token: csrfToken,
+            mode,
             starts_at: reserveStartInput.value,
             title_type: document.querySelector('input[name="reserveTitleType"]:checked')?.value || 'training',
             location: reserveLocationInput.value.trim(),
             is_makeup_session: reserveUseMakeupInput.checked ? 1 : 0,
             allow_auto_makeup: !reserveMakeupSuggestion.classList.contains('d-none') ? 1 : 0,
         };
+
+        if (mode === 'edit' && reserveEventIdInput.value) {
+            payload.event_id = Number(reserveEventIdInput.value);
+        }
+
+        if (mode === 'request_change' && reserveRequestChangeForEventIdInput.value) {
+            payload.request_change_for_event_id = Number(reserveRequestChangeForEventIdInput.value);
+        }
 
         const response = await fetch('<?= BASE_URL ?>/api/athlete_calendar_save_event.php', {
             method: 'POST',
@@ -1921,7 +2071,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const result = await response.json();
         if (!result.success) {
-            alert(result.error || 'Nepodařilo se vytvořit rezervaci.');
+            alert(result.error || 'Nepodařilo se uložit požadavek.');
             return;
         }
 
