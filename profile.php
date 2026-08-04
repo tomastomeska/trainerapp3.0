@@ -8,6 +8,45 @@ requireLogin();
 $coachId = getCurrentCoachId();
 $pdo     = getDB();
 $error   = null;
+$coachSpecialTrainingEnabled = false;
+$coachMyCoachEnabled = false;
+$unreadInboxCount = 0;
+
+try {
+    $specialTrainingColumnStmt = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'special_training_enabled'");
+    if ($specialTrainingColumnStmt !== false && $specialTrainingColumnStmt->fetch()) {
+        $specialTrainingValueStmt = $pdo->prepare('SELECT special_training_enabled FROM coaches WHERE id = ? LIMIT 1');
+        $specialTrainingValueStmt->execute([$coachId]);
+        $coachSpecialTrainingEnabled = ((int)$specialTrainingValueStmt->fetchColumn()) === 1;
+    }
+} catch (Throwable $e) {
+    $coachSpecialTrainingEnabled = false;
+}
+
+try {
+    $myCoachColumnStmt = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'mycoach_enabled'");
+    if ($myCoachColumnStmt !== false && $myCoachColumnStmt->fetch()) {
+        $myCoachValueStmt = $pdo->prepare('SELECT mycoach_enabled FROM coaches WHERE id = ? LIMIT 1');
+        $myCoachValueStmt->execute([$coachId]);
+        $coachMyCoachEnabled = ((int)$myCoachValueStmt->fetchColumn()) === 1;
+    }
+} catch (Throwable $e) {
+    $coachMyCoachEnabled = false;
+}
+
+try {
+    $unreadInboxStmt = $pdo->prepare(
+        "SELECT COUNT(*)
+         FROM admin_message_recipients
+         WHERE coach_id = ?
+           AND status = 'inbox'
+           AND read_at IS NULL"
+    );
+    $unreadInboxStmt->execute([$coachId]);
+    $unreadInboxCount = (int)$unreadInboxStmt->fetchColumn();
+} catch (Throwable $e) {
+    $unreadInboxCount = 0;
+}
 
 $agreementForm = [
     'title' => '',
@@ -398,6 +437,67 @@ renderHeader('Můj profil', false, true);
 
 <div class="d-flex align-items-center mb-4 gap-3">
     <h2 class="mb-0"><i class="fas fa-user-circle me-2 text-warning"></i>Můj profil</h2>
+</div>
+
+<div class="dashboard-quick-tiles mb-3">
+    <a href="<?= BASE_URL ?>/zpravy.php" class="quick-tile quick-tile-danger">
+        <span class="quick-tile__label"><i class="fas fa-envelope me-1"></i>Zprávy</span>
+        <span class="quick-tile__value"><?= (int)$unreadInboxCount ?></span>
+    </a>
+    <a href="<?= BASE_URL ?>/meal_plans.php" class="quick-tile quick-tile-success">
+        <span class="quick-tile__label"><i class="fas fa-utensils me-1"></i>Jídelníčky</span>
+        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+    </a>
+    <a href="<?= BASE_URL ?>/graphs.php" class="quick-tile quick-tile-info">
+        <span class="quick-tile__label"><i class="fas fa-chart-line me-1"></i>Grafy</span>
+        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+    </a>
+    <a href="<?= BASE_URL ?>/calendar.php" class="quick-tile quick-tile-warning">
+        <span class="quick-tile__label"><i class="fas fa-calendar-alt me-1"></i>Kalendář</span>
+        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+    </a>
+    <a href="<?= BASE_URL ?>/change_password.php" class="quick-tile quick-tile-muted">
+        <span class="quick-tile__label"><i class="fas fa-key me-1"></i>Heslo</span>
+        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+    </a>
+    <a href="<?= BASE_URL ?>/gallery.php" class="quick-tile quick-tile-info">
+        <span class="quick-tile__label"><i class="fas fa-images me-1"></i>Galerie</span>
+        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+    </a>
+    <a href="<?= BASE_URL ?>/videos.php" class="quick-tile quick-tile-danger">
+        <span class="quick-tile__label"><i class="fas fa-video me-1"></i>Videa</span>
+        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+    </a>
+    <?php if ($coachSpecialTrainingEnabled): ?>
+    <a href="<?= BASE_URL ?>/special_training.php" class="quick-tile quick-tile-info">
+        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-flag-checkered me-1"></i>Events</span>
+        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+    </a>
+    <?php else: ?>
+    <div class="quick-tile quick-tile-muted">
+        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-lock me-1"></i>Events <span class="badge rounded-pill bg-secondary">Uzamčeno</span></span>
+        <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
+    </div>
+    <?php endif; ?>
+    <?php if ($coachMyCoachEnabled): ?>
+    <a href="<?= BASE_URL ?>/mycoach.php" class="quick-tile quick-tile-info">
+        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-brain me-1"></i>MyCoach</span>
+        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+    </a>
+    <?php else: ?>
+    <div class="quick-tile quick-tile-muted">
+        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-lock me-1"></i>MyCoach <span class="badge rounded-pill bg-secondary">Uzamčeno</span></span>
+        <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
+    </div>
+    <?php endif; ?>
+    <a href="<?= BASE_URL ?>/coach_manual.php" class="quick-tile quick-tile-success">
+        <span class="quick-tile__label"><i class="fas fa-circle-question me-1"></i>Návod</span>
+        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+    </a>
+    <a href="<?= BASE_URL ?>/coach_terms.php" class="quick-tile quick-tile-warning">
+        <span class="quick-tile__label"><i class="fas fa-file-contract me-1"></i>Podmínky</span>
+        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+    </a>
 </div>
 
 <?php if ($error): ?>

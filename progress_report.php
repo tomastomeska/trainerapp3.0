@@ -400,6 +400,11 @@ if ($athleteId > 0 && $dateFrom && $dateTo) {
 renderHeader('Zpráva o pokroku');
 ?>
 
+<?php if ($scope === 'mycoach'): ?>
+<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-theme.css?v=20260804">
+<script>document.body.classList.add('mycoach-theme', 'mycoach-theme--coach');</script>
+<?php endif; ?>
+
 <style>
 @media print {
     .no-print { display: none !important; }
@@ -408,7 +413,7 @@ renderHeader('Zpráva o pokroku');
 }
 </style>
 
-<div class="d-flex align-items-center mb-4 gap-3 no-print">
+<div class="d-flex align-items-center mb-4 gap-3 no-print mc-topbar">
     <a href="<?= BASE_URL ?>/dashboard.php" class="btn btn-outline-secondary btn-sm">
         <i class="fas fa-arrow-left"></i>
     </a>
@@ -425,7 +430,7 @@ renderHeader('Zpráva o pokroku');
         <div class="alert alert-danger"><?= h($error) ?></div>
         <?php endif; ?>
         <?php if ($athleteId > 0): ?>
-        <div class="d-flex flex-wrap gap-2 mb-3">
+        <div class="d-flex flex-wrap gap-2 mb-3 mc-pills">
             <?php foreach ($periodOptions as $periodKey => $periodLabel): ?>
             <a href="<?= BASE_URL ?>/progress_report.php?athlete_id=<?= (int)$athleteId ?>&period=<?= h($periodKey) ?>&scope=<?= h($scope) ?>"
                class="btn btn-sm <?= $period === $periodKey ? 'btn-success' : 'btn-outline-success' ?>">
@@ -435,7 +440,7 @@ renderHeader('Zpráva o pokroku');
         </div>
         <?php endif; ?>
 
-        <div class="d-flex flex-wrap gap-2 mb-3">
+        <div class="d-flex flex-wrap gap-2 mb-3 mc-actions">
             <a href="<?= BASE_URL ?>/progress_report.php?athlete_id=<?= (int)$athleteId ?>&period=<?= h($period) ?>&scope=mycoach"
                class="btn btn-sm <?= $scope === 'mycoach' ? 'btn-primary' : 'btn-outline-primary' ?>">
                 Jen MyCoach

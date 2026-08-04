@@ -88,20 +88,71 @@ body.mycoach-theme .card {
   box-shadow: var(--mc-shadow) !important;
   background: linear-gradient(180deg, var(--mc-surface) 0%, var(--mc-surface-soft) 100%);
   overflow: hidden;
+  position: relative;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+body.mycoach-theme .card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--mc-primary) 0%, #18b7ba 60%, var(--mc-secondary) 100%);
+  opacity: 0.9;
+}
+
+body.mycoach-theme .card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 38px rgba(16, 38, 59, 0.14) !important;
+  border-color: rgba(15, 139, 141, 0.22) !important;
 }
 
 body.mycoach-theme .card-header {
   border-bottom: 1px solid var(--mc-border) !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f2f8ff 100%) !important;
+  font-weight: 700;
 }
 
 body.mycoach-theme .card.border-start {
   border-left-width: 6px !important;
 }
 
+body.mycoach-theme .row.g-3,
+body.mycoach-theme .row.g-4 {
+  --bs-gutter-x: 1rem;
+  --bs-gutter-y: 1rem;
+}
+
+body.mycoach-theme .row.g-3 > [class*="col-"] > .card,
+body.mycoach-theme .row.g-4 > [class*="col-"] > .card {
+  min-height: 100%;
+}
+
+body.mycoach-theme .row.g-3 > [class*="col-"] > .card .card-body,
+body.mycoach-theme .row.g-4 > [class*="col-"] > .card .card-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+body.mycoach-theme .fs-3.fw-bold,
+body.mycoach-theme .fs-2.fw-bold {
+  line-height: 1.08;
+  letter-spacing: -0.01em;
+}
+
+body.mycoach-theme .text-uppercase.fw-bold.small {
+  color: #47657f !important;
+  letter-spacing: 0.06em;
+}
+
 body.mycoach-theme .btn {
   border-radius: 999px;
   font-weight: 600;
   letter-spacing: 0.01em;
+  min-height: 40px;
 }
 
 body.mycoach-theme .btn-primary,
@@ -151,6 +202,26 @@ body.mycoach-theme .table > :not(caption) > * > * {
   border-color: rgba(16, 38, 59, 0.1);
 }
 
+body.mycoach-theme .table thead th {
+  background: #eef5fb;
+  color: #1d3d57;
+  font-weight: 700;
+}
+
+body.mycoach-theme .table-responsive {
+  border: 1px solid var(--mc-border);
+  border-radius: 16px;
+}
+
+body.mycoach-theme .badge.bg-primary,
+body.mycoach-theme .badge.bg-success,
+body.mycoach-theme .badge.bg-info,
+body.mycoach-theme .badge.bg-warning,
+body.mycoach-theme .badge.bg-secondary,
+body.mycoach-theme .badge.bg-danger {
+  box-shadow: 0 6px 14px rgba(16, 38, 59, 0.16);
+}
+
 body.mycoach-theme .alert {
   border-radius: 16px;
   border: 1px solid rgba(16, 38, 59, 0.1);
@@ -180,6 +251,12 @@ body.mycoach-theme .text-muted {
 
   body.mycoach-theme .card-body {
     padding: 1rem;
+  }
+
+  body.mycoach-theme .row.g-3,
+  body.mycoach-theme .row.g-4 {
+    --bs-gutter-x: 0.8rem;
+    --bs-gutter-y: 0.8rem;
   }
 }
 
@@ -218,5 +295,13 @@ body.mycoach-theme .text-muted {
 
   body.mycoach-theme .card {
     border-radius: 18px !important;
+  }
+
+  body.mycoach-theme .btn {
+    min-height: 42px;
+  }
+
+  body.mycoach-theme .card::before {
+    height: 3px;
   }
 }

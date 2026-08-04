@@ -581,50 +581,77 @@ renderHeader('Dashboard', false, true);
 <div class="card border-0 shadow-sm mb-3 coach-dashboard-shortcuts-mobile">
     <div class="card-body p-3">
         <div class="small text-uppercase fw-bold text-muted mb-2">Rychlé menu</div>
-        <div class="coach-dashboard-shortcuts-grid">
-            <a href="<?= BASE_URL ?>/dashboard.php" class="coach-dashboard-shortcut">
-                <span><i class="fas fa-house me-1"></i>Sportovci</span>
+        <div class="dashboard-quick-tiles coach-dashboard-shortcuts-grid">
+            <a href="<?= BASE_URL ?>/dashboard.php" class="quick-tile quick-tile-muted">
+                <span class="quick-tile__label"><i class="fas fa-house me-1"></i>Sportovci</span>
+                <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
             </a>
-            <a href="<?= BASE_URL ?>/zpravy.php" class="coach-dashboard-shortcut">
-                <span><i class="fas fa-envelope me-1"></i>Zprávy</span>
-                <?php if ($unreadInboxCount > 0): ?><span class="badge bg-danger"><?= (int)$unreadInboxCount ?></span><?php endif; ?>
+            <a href="<?= BASE_URL ?>/zpravy.php" class="quick-tile quick-tile-danger">
+                <span class="quick-tile__label"><i class="fas fa-envelope me-1"></i>Zprávy</span>
+                <span class="quick-tile__value"><?= (int)$unreadInboxCount ?></span>
             </a>
-            <a href="<?= BASE_URL ?>/calendar.php" class="coach-dashboard-shortcut">
-                <span><i class="fas fa-calendar-alt me-1"></i>Kalendář</span>
-                <?php if ($pendingCalendarRequestCount > 0): ?><span class="badge bg-warning text-dark"><?= (int)$pendingCalendarRequestCount ?></span><?php endif; ?>
+            <a href="<?= BASE_URL ?>/calendar.php" class="quick-tile quick-tile-warning">
+                <span class="quick-tile__label"><i class="fas fa-calendar-alt me-1"></i>Kalendář</span>
+                <span class="quick-tile__value"><?= (int)$pendingCalendarRequestCount ?></span>
             </a>
-            <a href="<?= BASE_URL ?>/infokanal.php" class="coach-dashboard-shortcut">
-                <span><i class="fas fa-lightbulb me-1"></i>Infokanál</span>
-                <?php if ($unreadInfoCount > 0): ?><span class="badge bg-danger"><?= (int)$unreadInfoCount ?></span><?php endif; ?>
+            <a href="<?= BASE_URL ?>/infokanal.php" class="quick-tile quick-tile-info">
+                <span class="quick-tile__label"><i class="fas fa-lightbulb me-1"></i>Infokanál</span>
+                <span class="quick-tile__value"><?= (int)$unreadInfoCount ?></span>
             </a>
-            <a href="<?= BASE_URL ?>/exercises.php" class="coach-dashboard-shortcut"><span><i class="fas fa-list me-1"></i>Cviky</span></a>
-            <a href="<?= BASE_URL ?>/sady.php" class="coach-dashboard-shortcut"><span><i class="fas fa-layer-group me-1"></i>Sady</span></a>
-            <a href="<?= BASE_URL ?>/payments.php" class="coach-dashboard-shortcut"><span><i class="fas fa-wallet me-1"></i>Platby</span></a>
-            <a href="<?= BASE_URL ?>/meal_plans.php" class="coach-dashboard-shortcut"><span><i class="fas fa-utensils me-1"></i>Jídelníčky</span></a>
-            <a href="<?= BASE_URL ?>/gallery.php" class="coach-dashboard-shortcut"><span><i class="fas fa-images me-1"></i>Galerie</span></a>
-            <a href="<?= BASE_URL ?>/profile.php" class="coach-dashboard-shortcut"><span><i class="fas fa-user-tie me-1"></i>Můj profil</span></a>
+            <a href="<?= BASE_URL ?>/exercises.php" class="quick-tile quick-tile-success">
+                <span class="quick-tile__label"><i class="fas fa-list me-1"></i>Cviky</span>
+                <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+            </a>
+            <a href="<?= BASE_URL ?>/sady.php" class="quick-tile quick-tile-info">
+                <span class="quick-tile__label"><i class="fas fa-layer-group me-1"></i>Sady</span>
+                <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+            </a>
+            <a href="<?= BASE_URL ?>/payments.php" class="quick-tile quick-tile-muted">
+                <span class="quick-tile__label"><i class="fas fa-wallet me-1"></i>Platby</span>
+                <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+            </a>
+            <a href="<?= BASE_URL ?>/meal_plans.php" class="quick-tile quick-tile-success">
+                <span class="quick-tile__label"><i class="fas fa-utensils me-1"></i>Jídelníčky</span>
+                <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+            </a>
+            <a href="<?= BASE_URL ?>/gallery.php" class="quick-tile quick-tile-info">
+                <span class="quick-tile__label"><i class="fas fa-images me-1"></i>Galerie</span>
+                <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+            </a>
+            <a href="<?= BASE_URL ?>/profile.php" class="quick-tile quick-tile-muted">
+                <span class="quick-tile__label"><i class="fas fa-user-tie me-1"></i>Můj profil</span>
+                <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+            </a>
             <?php if ($coachSpecialTrainingEnabled): ?>
-            <a href="<?= BASE_URL ?>/special_training.php" class="coach-dashboard-shortcut">
-                <span><i class="fas fa-flag-checkered me-1"></i>Events</span>
+            <a href="<?= BASE_URL ?>/special_training.php" class="quick-tile quick-tile-info">
+                <span class="quick-tile__label"><i class="fas fa-flag-checkered me-1"></i>Events</span>
+                <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
             </a>
             <?php else: ?>
-            <span class="coach-dashboard-shortcut is-disabled">
-                <span><i class="fas fa-lock me-1"></i>Events</span>
-                <span class="badge bg-secondary">Uzamčeno</span>
-            </span>
+            <div class="quick-tile quick-tile-muted quick-tile-disabled">
+                <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-lock me-1"></i>Events <span class="badge rounded-pill bg-secondary">Uzamčeno</span></span>
+                <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
+            </div>
             <?php endif; ?>
             <?php if ($coachMyCoachEnabled): ?>
-            <a href="<?= BASE_URL ?>/mycoach.php" class="coach-dashboard-shortcut">
-                <span><i class="fas fa-brain me-1"></i>MyCoach</span>
+            <a href="<?= BASE_URL ?>/mycoach.php" class="quick-tile quick-tile-info">
+                <span class="quick-tile__label"><i class="fas fa-brain me-1"></i>MyCoach</span>
+                <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
             </a>
             <?php else: ?>
-            <span class="coach-dashboard-shortcut is-disabled">
-                <span><i class="fas fa-lock me-1"></i>MyCoach</span>
-                <span class="badge bg-secondary">Uzamčeno</span>
-            </span>
+            <div class="quick-tile quick-tile-muted quick-tile-disabled">
+                <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-lock me-1"></i>MyCoach <span class="badge rounded-pill bg-secondary">Uzamčeno</span></span>
+                <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
+            </div>
             <?php endif; ?>
-            <a href="<?= BASE_URL ?>/coach_manual.php" class="coach-dashboard-shortcut"><span><i class="fas fa-circle-question me-1"></i>Návod</span></a>
-            <a href="<?= BASE_URL ?>/coach_terms.php" class="coach-dashboard-shortcut"><span><i class="fas fa-file-contract me-1"></i>Podmínky</span></a>
+            <a href="<?= BASE_URL ?>/coach_manual.php" class="quick-tile quick-tile-success">
+                <span class="quick-tile__label"><i class="fas fa-circle-question me-1"></i>Návod</span>
+                <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+            </a>
+            <a href="<?= BASE_URL ?>/coach_terms.php" class="quick-tile quick-tile-warning">
+                <span class="quick-tile__label"><i class="fas fa-file-contract me-1"></i>Podmínky</span>
+                <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+            </a>
         </div>
     </div>
 </div>

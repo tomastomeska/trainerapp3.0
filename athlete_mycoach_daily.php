@@ -50,6 +50,8 @@ if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $entryDate)) {
 $previousDate = date('Y-m-d', strtotime($entryDate . ' -1 day'));
 $nextDate = date('Y-m-d', strtotime($entryDate . ' +1 day'));
 $todayDate = date('Y-m-d');
+$sleepFromDate = date('Y-m-d', strtotime($entryDate . ' -1 day'));
+$sleepToDate = $entryDate;
 
 $trainerSessions = mycoachFetchDailyTrainerSessions($pdo, $athleteId, $entryDate);
 $latestQuestionnaire = mycoachFetchLatestQuestionnaire($pdo, $myCoachUserId);
@@ -158,11 +160,32 @@ if ($selectedTrainerSession && !empty($selectedTrainerSession['started_at']) && 
     }
 }
 
+$sleepRecoveryRow = null;
+try {
+    $sleepRecoveryStmt = $pdo->prepare(
+        'SELECT id, duration_minutes, created_at, updated_at
+         FROM mycoach_recovery_entries
+         WHERE user_id = ?
+           AND recovery_type = "sleep"
+           AND entry_date = ?
+         ORDER BY updated_at DESC, id DESC
+         LIMIT 1'
+    );
+    $sleepRecoveryStmt->execute([$myCoachUserId, $entryDate]);
+    $sleepRecoveryRow = $sleepRecoveryStmt->fetch() ?: null;
+} catch (Throwable $e) {
+    $sleepRecoveryRow = null;
+}
+$sleepRecoveryHours = null;
+if ($sleepRecoveryRow && isset($sleepRecoveryRow['duration_minutes']) && $sleepRecoveryRow['duration_minutes'] !== null) {
+    $sleepRecoveryHours = round(((int)$sleepRecoveryRow['duration_minutes']) / 60, 1);
+}
+
 $readinessSource = [
     'feeling_score' => $_POST['feeling_score'] ?? ($formSource['feeling_score'] ?? null),
     'energy_score' => $_POST['energy_score'] ?? ($formSource['energy_score'] ?? null),
     'motivation_score' => $_POST['motivation_score'] ?? ($formSource['motivation_score'] ?? null),
-    'sleep_hours' => $_POST['sleep_hours'] ?? ($formSource['sleep_hours'] ?? null),
+    'sleep_hours' => $_POST['sleep_hours'] ?? ($formSource['sleep_hours'] ?? ($sleepRecoveryHours !== null ? (string)$sleepRecoveryHours : null)),
     'muscle_pain_score' => $_POST['muscle_pain_score'] ?? ($formSource['muscle_pain_score'] ?? null),
     'joint_pain_score' => $_POST['joint_pain_score'] ?? ($formSource['joint_pain_score'] ?? null),
     'rpe_score' => $_POST['rpe_score'] ?? ($formSource['rpe_score'] ?? null),
@@ -217,7 +240,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $dailyError = 'Neplatný bezpečnostní token.';
     } else {
         $action = (string)($_POST['action'] ?? '');
-        if ($action === 'save_daily') {
+        if ($action === 'save_sleep_only') {
+            $sleepHoursOnlyRaw = trim((string)($_POST['sleep_hours_only'] ?? ''));
+            $sleepHoursOnly = $sleepHoursOnlyRaw !== '' ? (float)str_replace(',', '.', $sleepHoursOnlyRaw) : null;
+            if ($sleepHoursOnly === null || $sleepHoursOnly < 0 || $sleepHoursOnly > 24) {
+                $dailyError = 'Vyplňte platnou délku spánku (0 až 24 h).';
+            } else {
+                $sleepDurationMinutes = (int)round($sleepHoursOnly * 60);
+                try {
+                    $existingSleepId = $sleepRecoveryRow ? (int)$sleepRecoveryRow['id'] : 0;
+                    if ($existingSleepId > 0) {
+                        $updateSleepStmt = $pdo->prepare(
+                            'UPDATE mycoach_recovery_entries
+                             SET duration_minutes = ?, updated_at = NOW()
+                             WHERE id = ? AND user_id = ?'
+                        );
+                        $updateSleepStmt->execute([$sleepDurationMinutes, $existingSleepId, $myCoachUserId]);
+                    } else {
+                        $insertSleepStmt = $pdo->prepare(
+                            'INSERT INTO mycoach_recovery_entries (user_id, entry_date, recovery_type, duration_minutes, notes)
+                             VALUES (?, ?, "sleep", ?, ?)'
+                        );
+                        $insertSleepStmt->execute([
+                            $myCoachUserId,
+                            $entryDate,
+                            $sleepDurationMinutes,
+                            'Spánek z ' . $sleepFromDate . ' na ' . $sleepToDate,
+                        ]);
+                    }
+
+                    $readinessSleepSource = $readinessSource;
+                    $readinessSleepSource['sleep_hours'] = $sleepHoursOnly;
+                    mycoachStoreReadinessMetric($pdo, $myCoachUserId, $entryDate, mycoachCalculateReadinessScore($readinessSleepSource));
+
+                    flash('success', 'Spánek z ' . formatDate($sleepFromDate) . ' na ' . formatDate($sleepToDate) . ' byl uložen (' . number_format($sleepHoursOnly, 1, ',', '') . ' h).');
+                    redirect(BASE_URL . '/athlete_mycoach_daily.php?date=' . urlencode($entryDate));
+                } catch (Throwable $e) {
+                    $dailyError = 'Spánek se nepodařilo uložit.';
+                }
+            }
+        } elseif ($action === 'save_daily') {
             $editingEntryIdPost = isset($_POST['entry_id']) && $_POST['entry_id'] !== '' ? (int)$_POST['entry_id'] : 0;
             $isEditingManualEntry = false;
             if ($editingEntryIdPost > 0) {
@@ -238,6 +300,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if ($dailyError === null) {
+            $hasAnyWorkoutMeta = !empty(array_filter($_POST['workout_meta'] ?? [], static function ($value): bool {
+                return trim((string)$value) !== '';
+            }));
+            $hasManualDailyInputsBeyondSleep = false;
+            $manualDailyFields = [
+                'feeling_score', 'rpe_score', 'muscle_pain_score', 'joint_pain_score', 'motivation_score', 'energy_score',
+                'training_duration_minutes', 'calories_burned', 'avg_heart_rate', 'max_heart_rate', 'athlete_note'
+            ];
+            foreach ($manualDailyFields as $manualField) {
+                if (trim((string)($_POST[$manualField] ?? '')) !== '') {
+                    $hasManualDailyInputsBeyondSleep = true;
+                    break;
+                }
+            }
+
+            if ($dailyError === null) {
             $payload = [
                 'id' => $isEditingManualEntry ? $editingEntryIdPost : null,
                 'entry_date' => $entryDate,
@@ -246,7 +324,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'workout_meta' => $_POST['workout_meta'] ?? $selectedWorkoutMeta,
                 'feeling_score' => $_POST['feeling_score'] ?? null,
                 'rpe_score' => $_POST['rpe_score'] ?? null,
-                'sleep_hours' => $_POST['sleep_hours'] ?? null,
+                'sleep_hours' => null,
                 'muscle_pain_score' => $_POST['muscle_pain_score'] ?? null,
                 'joint_pain_score' => $_POST['joint_pain_score'] ?? null,
                 'motivation_score' => $_POST['motivation_score'] ?? null,
@@ -272,6 +350,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 flash('success', $successMessage);
                 redirect(BASE_URL . '/athlete_mycoach_daily.php?date=' . urlencode($entryDate));
+            }
             }
             }
         } elseif ($action === 'delete_daily') {
@@ -317,6 +396,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $feelingValue = (string)($_POST['feeling_score'] ?? ($formSource['feeling_score'] ?? ''));
 $rpeValue = (string)($_POST['rpe_score'] ?? ($formSource['rpe_score'] ?? ''));
 $sleepValue = (string)($_POST['sleep_hours'] ?? ($formSource['sleep_hours'] ?? ''));
+$sleepFromRecoveryValue = $sleepRecoveryHours !== null ? number_format((float)$sleepRecoveryHours, 1, '.', '') : '';
+if ($sleepValue === '' && $sleepFromRecoveryValue !== '') {
+    $sleepValue = $sleepFromRecoveryValue;
+}
 $musclePainValue = (string)($_POST['muscle_pain_score'] ?? ($formSource['muscle_pain_score'] ?? ''));
 $jointPainValue = (string)($_POST['joint_pain_score'] ?? ($formSource['joint_pain_score'] ?? ''));
 $motivationValue = (string)($_POST['motivation_score'] ?? ($formSource['motivation_score'] ?? ''));
@@ -456,13 +539,19 @@ renderAthleteHeader('MyCoach denní záznam', false, true);
 <div class="alert alert-danger shadow-sm"><?= h($dailyError) ?></div>
 <?php endif; ?>
 
+<?php if ($sleepRecoveryHours !== null): ?>
+<div class="alert alert-success shadow-sm">
+    Spánek z <?= h(formatDate($sleepFromDate)) ?> na <?= h(formatDate($sleepToDate)) ?> je uložený: <strong><?= h(number_format((float)$sleepRecoveryHours, 1, ',', '')) ?> h</strong>.
+</div>
+<?php endif; ?>
+
 <?php if ($sleepMissingForReadiness): ?>
 <div class="alert alert-warning shadow-sm d-flex justify-content-between align-items-center flex-wrap gap-2">
     <div>
         <strong>Pro přesnější Readiness doplň spánek.</strong>
         MyCoach počítá připravenost lépe, když vyplníš délku spánku z noci před dnešním dnem. Není to povinné, ale pro odhad regenerace je to důležité.
     </div>
-    <button type="button" class="btn btn-sm btn-outline-dark" id="focusSleepReminderBtn">
+    <button type="button" class="btn btn-sm btn-outline-dark" data-bs-toggle="modal" data-bs-target="#sleepQuickEntryModal" id="focusSleepReminderBtn">
         <i class="fas fa-bed me-1"></i>Doplnit spánek
     </button>
 </div>
@@ -561,7 +650,7 @@ renderAthleteHeader('MyCoach denní záznam', false, true);
                 </select>
             </div>
             <div class="col-12 col-md-8 d-flex align-items-end">
-                <div class="text-muted small">Vyplň jen to, co víš. Pole jsou nepovinná, takže můžeš uložit i stručný záznam bez tepů, spánku nebo přesných metrik.</div>
+                <div class="text-muted small">Vyplň jen to, co víš. Pole jsou nepovinná, takže můžeš uložit i stručný záznam bez tepů nebo přesných metrik. Spánek vyplňuj přes tlačítko „Doplnit spánek“ výše.</div>
             </div>
 
             <div class="col-12">
@@ -613,11 +702,6 @@ renderAthleteHeader('MyCoach denní záznam', false, true);
                 <label class="form-label fw-semibold">RPE</label>
                 <input type="number" min="1" max="10" name="rpe_score" class="form-control" value="<?= h($rpeValue) ?>">
                 <div class="form-text">RPE = subjektivní vnímaná náročnost tréninku na škále 1-10.</div>
-            </div>
-            <div class="col-12 col-md-3">
-                <label class="form-label fw-semibold">Spánek (hod)</label>
-                <input type="number" step="0.1" min="0" max="24" name="sleep_hours" id="sleepHoursInput" class="form-control <?= $sleepMissingForReadiness ? 'border-warning' : '' ?>" value="<?= h($sleepValue) ?>">
-                <div class="form-text">Vyplň délku spánku z noci před dnešním dnem. Pro Readiness je to jeden z nejdůležitějších vstupů.</div>
             </div>
             <div class="col-12 col-md-3">
                 <label class="form-label fw-semibold">Svalová bolest</label>
@@ -676,6 +760,32 @@ renderAthleteHeader('MyCoach denní záznam', false, true);
     <?php else: ?>
         Nejprve je vhodné vyplnit úvodní dotazník v MyCoach.
     <?php endif; ?>
+</div>
+
+<div class="modal fade" id="sleepQuickEntryModal" tabindex="-1" aria-labelledby="sleepQuickEntryModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title" id="sleepQuickEntryModalLabel"><i class="fas fa-bed me-2 text-primary"></i>Rychlé zadání spánku</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">Ulož spánek z <?= h(formatDate($sleepFromDate)) ?> na <?= h(formatDate($sleepToDate)) ?> bez vytváření denní aktivity.</p>
+                <form method="post" class="row g-3" id="sleepQuickEntryForm">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="action" value="save_sleep_only">
+                    <div class="col-12">
+                        <label class="form-label fw-semibold">Doba spánku (hodiny)</label>
+                        <input type="number" min="0" max="24" step="0.1" name="sleep_hours_only" class="form-control" value="<?= h($sleepValue !== '' ? $sleepValue : '') ?>" required>
+                    </div>
+                    <div class="col-12 d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Zrušit</button>
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Uložit spánek</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 </div>
 
 <?php if ($existingDailyRows): ?>
@@ -744,7 +854,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const toggleBtn = document.getElementById('toggleDailyFormBtn');
     const formCollapse = document.getElementById('dailyFormCollapse');
     const sleepReminderBtn = document.getElementById('focusSleepReminderBtn');
-    const sleepHoursInput = document.getElementById('sleepHoursInput');
+    const sleepModal = document.getElementById('sleepQuickEntryModal');
+    const sleepModalInput = sleepModal ? sleepModal.querySelector('input[name="sleep_hours_only"]') : null;
 
     function syncPanels() {
         const activeType = typeSelect ? typeSelect.value : '';
@@ -775,12 +886,19 @@ document.addEventListener('DOMContentLoaded', function () {
         syncToggleButton();
     }
 
-    if (sleepReminderBtn && sleepHoursInput && formCollapse) {
+    if (sleepReminderBtn && formCollapse) {
         sleepReminderBtn.addEventListener('click', function () {
-            formCollapse.classList.remove('d-none');
-            syncToggleButton();
-            sleepHoursInput.focus();
-            sleepHoursInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (!sleepModal) {
+                formCollapse.classList.remove('d-none');
+                syncToggleButton();
+            }
+        });
+    }
+
+    if (sleepModal && sleepModalInput) {
+        sleepModal.addEventListener('shown.bs.modal', function () {
+            sleepModalInput.focus();
+            sleepModalInput.select();
         });
     }
 });
