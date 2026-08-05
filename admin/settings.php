@@ -10,6 +10,7 @@ $error   = null;
 $success = null;
 
 $logoSettingKey = 'login_logo_path';
+$sublogoSettingKey = 'login_sublogo_path';
 $supportBankAccountKey = 'support_bank_account';
 $logoUploadDir = __DIR__ . '/../uploads/logo';
 $logoBasePath = 'uploads/logo';
@@ -37,6 +38,7 @@ function normalizeBankAccountInput(?string $raw): string|false|null
 
 $currentVersion = getAppSetting('app_version', APP_VERSION);
 $currentLogoPath = trim(getAppSetting($logoSettingKey, ''));
+$currentSublogoPath = trim(getAppSetting($sublogoSettingKey, ''));
 $currentSupportBankAccount = trim(getAppSetting($supportBankAccountKey, ''));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -88,6 +90,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
+        } elseif ($action === 'upload_login_sublogo') {
+            if (empty($_FILES['login_sublogo']['tmp_name']) || (int)($_FILES['login_sublogo']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                $error = 'Vyberte prosím soubor podloga.';
+            } else {
+                $allowedExt = ['png', 'jpg', 'jpeg', 'webp', 'svg'];
+                $originalName = (string)($_FILES['login_sublogo']['name'] ?? '');
+                $tmpName = (string)($_FILES['login_sublogo']['tmp_name'] ?? '');
+                $fileSize = (int)($_FILES['login_sublogo']['size'] ?? 0);
+                $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+
+                if (!in_array($ext, $allowedExt, true)) {
+                    $error = 'Nepodporovaný formát podloga. Povolené: png, jpg, jpeg, webp, svg.';
+                } elseif ($fileSize <= 0 || $fileSize > 5 * 1024 * 1024) {
+                    $error = 'Soubor podloga musí mít velikost 1 B až 5 MB.';
+                } else {
+                    if (!is_dir($logoUploadDir) && !mkdir($logoUploadDir, 0775, true) && !is_dir($logoUploadDir)) {
+                        $error = 'Nepodařilo se vytvořit složku pro podlogo.';
+                    } else {
+                        $newName = 'login_sublogo_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+                        $targetPath = $logoUploadDir . '/' . $newName;
+
+                        if (!move_uploaded_file($tmpName, $targetPath)) {
+                            $error = 'Soubor podloga se nepodařilo nahrát.';
+                        } else {
+                            if ($currentSublogoPath !== '') {
+                                $oldPath = __DIR__ . '/../' . ltrim($currentSublogoPath, '/');
+                                if (is_file($oldPath)) {
+                                    @unlink($oldPath);
+                                }
+                            }
+
+                            $newRelativePath = $logoBasePath . '/' . $newName;
+                            $pdo->prepare(
+                                'INSERT INTO app_settings (`key`, `value`) VALUES (?, ?)
+                                 ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)'
+                            )->execute([$sublogoSettingKey, $newRelativePath]);
+
+                            $currentSublogoPath = $newRelativePath;
+                            $success = 'Podlogo přihlášení bylo úspěšně nahráno.';
+                        }
+                    }
+                }
+            }
         } elseif ($action === 'remove_login_logo') {
             if ($currentLogoPath !== '') {
                 $oldPath = __DIR__ . '/../' . ltrim($currentLogoPath, '/');
@@ -103,6 +148,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $currentLogoPath = '';
             $success = 'Logo přihlášení bylo odebráno.';
+        } elseif ($action === 'remove_login_sublogo') {
+            if ($currentSublogoPath !== '') {
+                $oldPath = __DIR__ . '/../' . ltrim($currentSublogoPath, '/');
+                if (is_file($oldPath)) {
+                    @unlink($oldPath);
+                }
+            }
+
+            $pdo->prepare(
+                'INSERT INTO app_settings (`key`, `value`) VALUES (?, ?)
+                 ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)'
+            )->execute([$sublogoSettingKey, '']);
+
+            $currentSublogoPath = '';
+            $success = 'Podlogo přihlášení bylo odebráno.';
         } elseif ($action === 'save_support_bank_account') {
             $bankAccount = normalizeBankAccountInput($_POST['support_bank_account'] ?? '');
 
@@ -141,6 +201,14 @@ if ($currentLogoPath !== '') {
     $logoAbsolutePath = __DIR__ . '/../' . ltrim($currentLogoPath, '/');
     if (is_file($logoAbsolutePath)) {
         $logoPreviewUrl = BASE_URL . '/' . ltrim($currentLogoPath, '/');
+    }
+}
+
+$sublogoPreviewUrl = null;
+if ($currentSublogoPath !== '') {
+    $sublogoAbsolutePath = __DIR__ . '/../' . ltrim($currentSublogoPath, '/');
+    if (is_file($sublogoAbsolutePath)) {
+        $sublogoPreviewUrl = BASE_URL . '/' . ltrim($currentSublogoPath, '/');
     }
 }
 
@@ -230,6 +298,15 @@ renderAdminHeader('Nastavení aplikace');
         <div class="alert alert-light border mb-3">Momentálně není nastavené žádné vlastní logo. Použije se text názvu aplikace.</div>
         <?php endif; ?>
 
+        <?php if ($sublogoPreviewUrl): ?>
+        <div class="mb-3">
+            <div class="small text-muted mb-2">Aktuální podlogo</div>
+            <img src="<?= h($sublogoPreviewUrl) ?>" alt="Login podlogo" style="max-width:320px;width:100%;height:auto;border:1px solid #ddd;border-radius:10px;padding:8px;background:#fff;">
+        </div>
+        <?php else: ?>
+        <div class="alert alert-light border mb-3">Momentálně není nastavené žádné podlogo mezi logem a formulářem.</div>
+        <?php endif; ?>
+
         <form method="post" enctype="multipart/form-data" class="mb-3">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="upload_login_logo">
@@ -247,12 +324,39 @@ renderAdminHeader('Nastavení aplikace');
             </div>
         </form>
 
+        <form method="post" enctype="multipart/form-data" class="mb-3">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="upload_login_sublogo">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-9">
+                    <label for="loginSublogoInput" class="form-label fw-semibold">Nahrát podlogo (mezi logo a formulář)</label>
+                    <input type="file" name="login_sublogo" id="loginSublogoInput" class="form-control" accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml" required>
+                    <div class="form-text">Povolené formáty: png, jpg, jpeg, webp, svg. Maximálně 5 MB.</div>
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn fw-bold w-100" style="background:#7c3aed;color:#fff;border:none">
+                        <i class="fas fa-upload me-1"></i>Nahrát podlogo
+                    </button>
+                </div>
+            </div>
+        </form>
+
         <?php if ($logoPreviewUrl): ?>
         <form method="post" onsubmit="return confirm('Odebrat aktuální logo přihlášení?');">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="remove_login_logo">
             <button type="submit" class="btn btn-outline-danger fw-semibold">
                 <i class="fas fa-trash me-1"></i>Odebrat logo
+            </button>
+        </form>
+        <?php endif; ?>
+
+        <?php if ($sublogoPreviewUrl): ?>
+        <form method="post" class="mt-2" onsubmit="return confirm('Odebrat aktuální podlogo přihlášení?');">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="remove_login_sublogo">
+            <button type="submit" class="btn btn-outline-danger fw-semibold">
+                <i class="fas fa-trash me-1"></i>Odebrat podlogo
             </button>
         </form>
         <?php endif; ?>

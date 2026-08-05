@@ -311,6 +311,15 @@ if ($logoUrl === null) {
     }
     $logoUrl = $logoFile ? (BASE_URL . '/uploads/logo/' . rawurlencode($logoFile)) : null;
 }
+
+$sublogoUrl = null;
+$configuredSublogoPath = trim(getAppSetting('login_sublogo_path', ''));
+if ($configuredSublogoPath !== '') {
+    $configuredSublogoAbsolute = __DIR__ . '/' . ltrim($configuredSublogoPath, '/');
+    if (is_file($configuredSublogoAbsolute)) {
+        $sublogoUrl = BASE_URL . '/' . ltrim($configuredSublogoPath, '/');
+    }
+}
 $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
 ?>
 <!DOCTYPE html>
@@ -358,21 +367,23 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
         .brand {
             text-align: center;
             margin-bottom: 8px;
+            transition: opacity .52s cubic-bezier(.22,.61,.36,1), transform .52s cubic-bezier(.22,.61,.36,1), height .52s cubic-bezier(.22,.61,.36,1), margin .52s cubic-bezier(.22,.61,.36,1);
         }
 
         .brand-stage {
             display: inline-block;
-            background: linear-gradient(160deg, rgba(2, 6, 16, 0.95), rgba(10, 18, 35, 0.94));
-            border: 1px solid rgba(243, 179, 0, 0.3);
-            border-radius: 16px;
-            padding: 16px;
-            box-shadow: 0 14px 28px rgba(0, 0, 0, 0.35);
-            transition: padding .4s ease, transform .4s ease, box-shadow .4s ease;
+            background: transparent;
+            border: 0;
+            border-radius: 0;
+            padding: 0;
+            box-shadow: none;
+            transition: transform .16s ease;
         }
 
         .brand-logo {
-            max-width: min(72vw, 540px);
-            width: 100%;
+            max-width: min(88vw, 500px);
+            max-height: 240px;
+            width: auto;
             height: auto;
             display: inline-block;
             cursor: pointer;
@@ -392,12 +403,26 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
             text-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
         }
 
+        .sublogo-wrap {
+            text-align: center;
+            margin: 8px 0 12px;
+            transition: opacity .52s cubic-bezier(.22,.61,.36,1), transform .52s cubic-bezier(.22,.61,.36,1), height .52s cubic-bezier(.22,.61,.36,1), margin .52s cubic-bezier(.22,.61,.36,1);
+        }
+
+        .sublogo-img {
+            max-width: min(84vw, 320px);
+            max-height: 130px;
+            width: auto;
+            height: auto;
+            display: inline-block;
+        }
+
         .intro-actions {
             text-align: center;
             margin-top: 16px;
             opacity: 1;
             transform: translateY(0);
-            transition: opacity .25s ease, transform .25s ease;
+            transition: opacity .42s cubic-bezier(.22,.61,.36,1), transform .42s cubic-bezier(.22,.61,.36,1);
         }
 
         .intro-actions .btn-login {
@@ -437,7 +462,8 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
             max-height: 0;
             margin-top: 0;
             pointer-events: none;
-            transition: opacity .35s ease, transform .35s ease, max-height .4s ease, margin-top .35s ease;
+            transition: opacity .52s cubic-bezier(.22,.61,.36,1), transform .52s cubic-bezier(.22,.61,.36,1), max-height .58s cubic-bezier(.22,.61,.36,1), margin-top .52s cubic-bezier(.22,.61,.36,1);
+            transition-delay: .08s;
         }
 
         .login-card .card-body {
@@ -505,7 +531,7 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
             opacity: 0;
             transform: translateY(8px);
             pointer-events: none;
-            transition: opacity .25s ease, transform .25s ease;
+            transition: opacity .34s cubic-bezier(.22,.61,.36,1), transform .34s cubic-bezier(.22,.61,.36,1);
         }
 
         .footer-meta a {
@@ -523,13 +549,17 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
         }
 
         body.show-form .brand-stage {
-            padding: 10px;
-            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
             transform: translateY(-2px);
         }
 
-        body.show-form .brand-logo {
-            max-width: 300px;
+        body.show-form .brand,
+        body.show-form .sublogo-wrap {
+            opacity: 0;
+            transform: translateY(-8px);
+            pointer-events: none;
+            height: 0;
+            margin: 0;
+            overflow: hidden;
         }
 
         body.show-form .intro-actions {
@@ -547,6 +577,7 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
             max-height: 700px;
             margin-top: 12px;
             pointer-events: auto;
+            transition-delay: .12s;
         }
 
         body.show-form .footer-meta {
@@ -565,11 +596,13 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
             }
 
             .brand-logo {
-                max-width: min(84vw, 440px);
+                max-width: min(86vw, 420px);
+                max-height: 190px;
             }
 
-            body.show-form .brand-logo {
-                max-width: 240px;
+            .sublogo-img {
+                max-width: min(82vw, 300px);
+                max-height: 118px;
             }
         }
     </style>
@@ -590,6 +623,12 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
                 <h1 id="brandLogo" class="brand-fallback" title="Dvojklik pro administraci"><?= h(APP_NAME) ?></h1>
             <?php endif; ?>
         </div>
+
+        <?php if ($sublogoUrl): ?>
+            <div class="sublogo-wrap">
+                <img src="<?= h($sublogoUrl) ?>" alt="Podlogo přihlášení" class="sublogo-img">
+            </div>
+        <?php endif; ?>
 
         <div class="intro-actions">
             <button type="button" id="btnShowLogin" class="btn btn-login">Přihlášení</button>
@@ -751,7 +790,7 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
                 setTimeout(function() {
                     const username = document.getElementById('username');
                     if (username) username.focus();
-                }, 260);
+                }, 420);
             });
         }
 
