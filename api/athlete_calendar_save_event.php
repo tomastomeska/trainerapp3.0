@@ -183,6 +183,19 @@ function athleteReserveShouldReplaceMonthPayment(?array $current, array $candida
     return ((int)($candidate['id'] ?? 0)) > ((int)($current['id'] ?? 0));
 }
 
+function athleteExtractRescheduleTargetEventId(?string $seriesId): int
+{
+    if (!is_string($seriesId)) {
+        return 0;
+    }
+
+    if (preg_match('/^reschedule:(\d+)$/', trim($seriesId), $matches)) {
+        return (int)$matches[1];
+    }
+
+    return 0;
+}
+
 function athleteResolveAutoMakeupBillingMonth(PDO $pdo, int $coachId, int $athleteId, string $targetMonthSql): ?string
 {
     if (!athleteReserveTableExists($pdo, 'athlete_monthly_payments') || !athleteReserveTableExists($pdo, 'coach_calendar_events')) {
@@ -461,7 +474,7 @@ if ($isEditMode) {
 
 if ($isRequestChangeMode) {
     $requestChangeStmt = $pdo->prepare(
-        'SELECT id, coach_id, athlete_id, second_athlete_id, requested_by_athlete_id, approval_status, is_makeup_session, billing_month, custom_title, location, starts_at, ends_at
+                'SELECT id, coach_id, athlete_id, second_athlete_id, requested_by_athlete_id, approval_status, is_makeup_session, billing_month, color_key, custom_title, location, starts_at, ends_at, series_id
          FROM coach_calendar_events
          WHERE id = ?
            AND coach_id = ?
@@ -557,6 +570,16 @@ if ($isRequestChangeMode) {
         exit;
     }
 
+    if ((string)($requestChangeEvent['approval_status'] ?? 'approved') !== 'approved') {
+        echo json_encode(['success' => false, 'error' => 'Změnu lze požádat jen u schváleného termínu.']);
+        exit;
+    }
+
+    if (athleteExtractRescheduleTargetEventId((string)($requestChangeEvent['series_id'] ?? '')) > 0) {
+        echo json_encode(['success' => false, 'error' => 'U tohoto termínu už je změna ve zpracování.']);
+        exit;
+    }
+
     $lockStmt = $pdo->prepare(
         'SELECT id
          FROM coach_calendar_locks
@@ -586,10 +609,53 @@ if ($isRequestChangeMode) {
         exit;
     }
 
+    $seriesMarker = 'reschedule:' . $requestChangeForEventId;
+    $duplicateRequestStmt = $pdo->prepare(
+        'SELECT id
+         FROM coach_calendar_events
+         WHERE coach_id = ?
+           AND requested_by_athlete_id = ?
+           AND approval_status = "pending"
+           AND series_id = ?
+         LIMIT 1'
+    );
+    $duplicateRequestStmt->execute([(int)$athlete['coach_id'], $athleteId, $seriesMarker]);
+    if ($duplicateRequestStmt->fetch()) {
+        echo json_encode(['success' => false, 'error' => 'Pro tento termín už čeká žádost o změnu.']);
+        exit;
+    }
+
+    $insertRequestStmt = $pdo->prepare(
+        'INSERT INTO coach_calendar_events (coach_id, athlete_id, second_athlete_id, requested_by_athlete_id, approval_status, coach_modified_at, is_makeup_session, billing_month, series_id, color_key, custom_title, location, starts_at, ends_at)
+         VALUES (?, ?, ?, ?, "pending", NULL, ?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    $insertRequestStmt->execute([
+        (int)$athlete['coach_id'],
+        (int)($requestChangeEvent['athlete_id'] ?? 0) > 0 ? (int)$requestChangeEvent['athlete_id'] : null,
+        (int)($requestChangeEvent['second_athlete_id'] ?? 0) > 0 ? (int)$requestChangeEvent['second_athlete_id'] : null,
+        $athleteId,
+        (int)($requestChangeEvent['is_makeup_session'] ?? 0) === 1 ? 1 : 0,
+        !empty($requestChangeEvent['billing_month']) ? (string)$requestChangeEvent['billing_month'] : $billingMonthSql,
+        $seriesMarker,
+        (string)($requestChangeEvent['color_key'] ?? 'green') !== '' ? (string)$requestChangeEvent['color_key'] : 'green',
+        $customTitle,
+        $location,
+        $startSql,
+        $endSql,
+    ]);
+    $newRequestEventId = (int)$pdo->lastInsertId();
+
     $athleteName = trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']);
     $timeLabel = $start->format('d.m.Y H:i');
     $oldStartLabel = !empty($requestChangeEvent['starts_at']) ? date('d.m.Y H:i', strtotime((string)$requestChangeEvent['starts_at'])) : 'původní termín';
     $oldLocation = trim((string)($requestChangeEvent['location'] ?? ''));
+    $calendarDay = $start->format('Y-m-d');
+    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['SERVER_PORT'] ?? '') === '443');
+    $scheme = $isHttps ? 'https' : 'http';
+    $host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
+    $calendarUrl = $host !== ''
+        ? ($scheme . '://' . $host . BASE_URL . '/calendar.php?tab=week&focus_date=' . rawurlencode($calendarDay) . '&focus_event=' . $newRequestEventId)
+        : (BASE_URL . '/calendar.php?tab=week&focus_date=' . rawurlencode($calendarDay) . '&focus_event=' . $newRequestEventId);
     $subject = 'Žádost o změnu termínu';
     $body = 'Sportovec ' . $athleteName . ' požádal o změnu termínu.';
     $body .= ' Původně: ' . $oldStartLabel . '.';
@@ -600,16 +666,28 @@ if ($isRequestChangeMode) {
     if ($oldLocation !== '' && $oldLocation !== (string)$location) {
         $body .= ' Původní místo: ' . $oldLocation . '.';
     }
+    $body .= "\nPřejít do kalendáře: " . $calendarUrl;
 
     createCoachSystemMessage((int)$athlete['coach_id'], $subject, $body, true);
     createAthleteNotification($athleteId, 'Žádost o změnu odeslána', 'Tvoje žádost o změnu termínu byla odeslána trenérovi.');
+
+    enqueueCoachGoogleCalendarSync((int)$athlete['coach_id'], $newRequestEventId, 'upsert');
+    enqueueCoachAppleCaldavSync((int)$athlete['coach_id'], $newRequestEventId, 'upsert');
+    $syncAthleteIds = array_values(array_unique(array_filter([
+        (int)($requestChangeEvent['athlete_id'] ?? 0),
+        (int)($requestChangeEvent['second_athlete_id'] ?? 0),
+    ])));
+    foreach ($syncAthleteIds as $syncAthleteId) {
+        enqueueAthleteAppleCaldavSync($syncAthleteId, $newRequestEventId, 'upsert');
+    }
+    processInlineCalendarSyncQueues(2, 3, 3);
 
     echo json_encode([
         'success' => true,
         'message' => 'Žádost o změnu byla odeslána trenérovi.',
         'coach_apple_sync_ok' => null,
         'athlete_apple_sync_ok' => null,
-        'sync_queued' => false,
+        'sync_queued' => true,
     ]);
     exit;
 }

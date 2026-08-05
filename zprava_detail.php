@@ -83,6 +83,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reply
 $isUnread = $message['read_at'] === null;
 $requiresManualConfirm = $isUnread && !$hasRequiredAction;
 
+function renderMessageBodyWithLinks(string $text): string
+{
+    $escaped = h($text);
+
+    return (string)preg_replace_callback(
+        '~https?://[^\s<]+~iu',
+        static function (array $matches): string {
+            $url = $matches[0];
+            return '<a href="' . $url . '" target="_blank" rel="noopener">' . $url . '</a>';
+        },
+        $escaped
+    );
+}
+
 renderHeader('Zpráva: ' . $message['subject']);
 ?>
 
@@ -127,7 +141,7 @@ renderHeader('Zpráva: ' . $message['subject']);
         <?php endif; ?>
     </div>
     <div class="card-body">
-        <div style="white-space:pre-wrap;font-size:1rem;line-height:1.7"><?= h($message['body']) ?></div>
+        <div style="white-space:pre-wrap;font-size:1rem;line-height:1.7"><?= renderMessageBodyWithLinks((string)$message['body']) ?></div>
     </div>
     <?php if ($message['attachment_name']): ?>
     <div class="card-footer">

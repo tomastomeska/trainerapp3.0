@@ -43,7 +43,9 @@ $eventsStmt = $pdo->prepare(
             e.is_makeup_session,
          CASE WHEN ael.event_id IS NULL THEN 0 ELSE 1 END AS is_caldav_synced,
             e.athlete_id,
-            e.second_athlete_id
+                e.second_athlete_id,
+                e.requested_by_athlete_id,
+                e.series_id
      FROM coach_calendar_events e
      LEFT JOIN athlete_apple_caldav_event_links ael ON ael.athlete_id = ? AND ael.event_id = e.id
      WHERE e.coach_id = ?
@@ -76,7 +78,9 @@ $cancellationsStmt = $pdo->prepare(
             c.is_makeup_session,
             0 AS is_caldav_synced,
             c.athlete_id,
-            c.second_athlete_id
+            c.second_athlete_id,
+            NULL AS requested_by_athlete_id,
+            NULL AS series_id
      FROM coach_calendar_event_cancellations c
      WHERE c.coach_id = ?
        AND c.starts_at >= ?
@@ -92,6 +96,46 @@ $cancellationsStmt->execute([
     $athleteId,
 ]);
 $rows = array_merge($rows, $cancellationsStmt->fetchAll());
+
+$hiddenOriginalEventIds = [];
+foreach ($rows as $candidateRow) {
+    if ((string)($candidateRow['record_type'] ?? '') !== 'active') {
+        continue;
+    }
+    if ((string)($candidateRow['approval_status'] ?? 'approved') !== 'pending') {
+        continue;
+    }
+    if ((int)($candidateRow['requested_by_athlete_id'] ?? 0) !== $athleteId) {
+        continue;
+    }
+
+    $seriesId = trim((string)($candidateRow['series_id'] ?? ''));
+    if (preg_match('/^reschedule:(\d+)$/', $seriesId, $matches)) {
+        $hiddenOriginalEventIds[(int)$matches[1]] = true;
+    }
+}
+
+if (!empty($hiddenOriginalEventIds)) {
+    $rows = array_values(array_filter($rows, static function (array $eventRow) use ($hiddenOriginalEventIds, $athleteId): bool {
+        if ((string)($eventRow['record_type'] ?? '') !== 'active') {
+            return true;
+        }
+
+        $eventId = (int)($eventRow['id'] ?? 0);
+        if ($eventId <= 0 || !isset($hiddenOriginalEventIds[$eventId])) {
+            return true;
+        }
+
+        $isPending = ((string)($eventRow['approval_status'] ?? 'approved') === 'pending');
+        if ($isPending) {
+            return true;
+        }
+
+        $isMine = ((int)($eventRow['athlete_id'] ?? 0) === $athleteId)
+            || ((int)($eventRow['second_athlete_id'] ?? 0) === $athleteId);
+        return !$isMine;
+    }));
+}
 
 usort($rows, static function (array $a, array $b): int {
     $aTs = strtotime((string)($a['starts_at'] ?? '')) ?: 0;
@@ -127,7 +171,12 @@ foreach ($rows as $row) {
         $statusLabel = 'Zrušený';
         $statusClass = 'danger';
     } elseif ((string)($row['approval_status'] ?? 'approved') === 'pending') {
-        $statusLabel = 'Zatím neschválený';
+        $seriesId = trim((string)($row['series_id'] ?? ''));
+        if (preg_match('/^reschedule:\d+$/', $seriesId)) {
+            $statusLabel = 'Žádost o změnu';
+        } else {
+            $statusLabel = 'Zatím neschválený';
+        }
         $statusClass = 'warning';
     } elseif (!empty($row['is_makeup_session'])) {
         $statusLabel = 'Náhradní';

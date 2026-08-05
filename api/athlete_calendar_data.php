@@ -30,6 +30,7 @@ $eventsStmt = $pdo->prepare(
                         e.athlete_id,
             e.second_athlete_id,
                         e.requested_by_athlete_id,
+                        e.series_id,
                         e.approval_status,
                         e.color_key,
                         e.coach_modified_at,
@@ -71,6 +72,19 @@ $eventsStmt->execute([
 ]);
 $events = $eventsStmt->fetchAll();
 
+$hiddenOriginalEventIds = [];
+foreach ($events as $candidateEvent) {
+    $isPendingCandidate = ((string)($candidateEvent['approval_status'] ?? 'approved') === 'pending');
+    if (!$isPendingCandidate || (int)($candidateEvent['requested_by_athlete_id'] ?? 0) !== $athleteId) {
+        continue;
+    }
+
+    $seriesId = trim((string)($candidateEvent['series_id'] ?? ''));
+    if (preg_match('/^reschedule:(\d+)$/', $seriesId, $matches)) {
+        $hiddenOriginalEventIds[(int)$matches[1]] = true;
+    }
+}
+
 foreach ($events as &$event) {
     $isPending = (($event['approval_status'] ?? 'approved') === 'pending');
     $event['is_mine'] = ((int)$event['athlete_id'] === $athleteId || (int)($event['second_athlete_id'] ?? 0) === $athleteId);
@@ -106,6 +120,24 @@ foreach ($events as &$event) {
     }
 }
 unset($event);
+
+if (!empty($hiddenOriginalEventIds)) {
+    $events = array_values(array_filter($events, static function (array $eventRow) use ($hiddenOriginalEventIds, $athleteId): bool {
+        $eventId = (int)($eventRow['id'] ?? 0);
+        if ($eventId <= 0 || !isset($hiddenOriginalEventIds[$eventId])) {
+            return true;
+        }
+
+        $isPending = ((string)($eventRow['approval_status'] ?? 'approved') === 'pending');
+        if ($isPending) {
+            return true;
+        }
+
+        $isMine = ((int)($eventRow['athlete_id'] ?? 0) === $athleteId)
+            || ((int)($eventRow['second_athlete_id'] ?? 0) === $athleteId);
+        return !$isMine;
+    }));
+}
 
 $locksStmt = $pdo->prepare(
     'SELECT id, note, starts_at, ends_at

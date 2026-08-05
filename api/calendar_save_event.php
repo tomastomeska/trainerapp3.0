@@ -211,6 +211,19 @@ function requireAutoMakeupBillingMonth(PDO $pdo, int $coachId, int $athleteId, s
     return $resolved;
 }
 
+function extractRescheduleTargetEventId(?string $seriesId): int
+{
+    if (!is_string($seriesId)) {
+        return 0;
+    }
+
+    if (preg_match('/^reschedule:(\d+)$/', trim($seriesId), $matches)) {
+        return (int)$matches[1];
+    }
+
+    return 0;
+}
+
 function resolveOpenBillingMonth(PDO $pdo, int $coachId, int $athleteId, string $targetMonthSql): string
 {
     if ($athleteId <= 0) {
@@ -455,6 +468,9 @@ if ($eventId > 0 && $repeatMode !== 'none') {
 }
 
 if ($eventId > 0) {
+    $isPendingRequest = (($existingEvent['approval_status'] ?? 'approved') === 'pending') && !empty($existingEvent['requested_by_athlete_id']);
+    $rescheduleSourceEventId = $isPendingRequest ? extractRescheduleTargetEventId((string)($existingEvent['series_id'] ?? '')) : 0;
+
     $lockStmt = $pdo->prepare(
         'SELECT id
          FROM coach_calendar_locks
@@ -475,10 +491,11 @@ if ($eventId > 0) {
          WHERE coach_id = ?
            AND starts_at < ?
            AND ends_at > ?
-           AND id <> ?
+                     AND id <> ?
+                     AND (? <= 0 OR id <> ?)
          LIMIT 1'
     );
-    $overlapStmt->execute([$coachId, $endSql, $startSql, $eventId]);
+        $overlapStmt->execute([$coachId, $endSql, $startSql, $eventId, $rescheduleSourceEventId, $rescheduleSourceEventId]);
     if ($overlapStmt->fetch()) {
         echo json_encode(['success' => false, 'error' => 'V tomto čase už máte jiný trénink']);
         exit;
@@ -521,7 +538,157 @@ if ($eventId > 0) {
         || ($oldTitle !== (string)$customTitle)
         || ($oldIsMakeup !== (int)$isMakeupSession)
         || ($oldBillingMonth !== $billingMonthSql);
-    $isPendingRequest = (($existingEvent['approval_status'] ?? 'approved') === 'pending') && !empty($existingEvent['requested_by_athlete_id']);
+
+    if ($isPendingRequest && $rescheduleSourceEventId > 0) {
+        $sourceStmt = $pdo->prepare(
+            'SELECT e.id,
+                    e.athlete_id,
+                    e.second_athlete_id,
+                    e.starts_at,
+                    e.ends_at,
+                    e.custom_title,
+                    e.location,
+                    e.is_makeup_session,
+                    e.billing_month,
+                    a.email AS athlete_email,
+                    a.first_name,
+                    a.last_name,
+                    a2.email AS second_athlete_email,
+                    a2.first_name AS second_first_name,
+                    a2.last_name AS second_last_name
+             FROM coach_calendar_events e
+             LEFT JOIN athletes a ON a.id = e.athlete_id
+             LEFT JOIN athletes a2 ON a2.id = e.second_athlete_id
+             WHERE e.id = ?
+               AND e.coach_id = ?
+             LIMIT 1'
+        );
+        $sourceStmt->execute([$rescheduleSourceEventId, $coachId]);
+        $sourceEvent = $sourceStmt->fetch();
+        if (!$sourceEvent) {
+            echo json_encode(['success' => false, 'error' => 'Původní termín pro změnu se nepodařilo dohledat.']);
+            exit;
+        }
+
+        $sourceOldStart = (string)($sourceEvent['starts_at'] ?? '');
+        $sourceOldEnd = (string)($sourceEvent['ends_at'] ?? '');
+        $sourceOldTitle = (string)($sourceEvent['custom_title'] ?? '');
+        $sourceOldLocation = (string)($sourceEvent['location'] ?? '');
+        $sourceOldIsMakeup = (int)($sourceEvent['is_makeup_session'] ?? 0);
+        $sourceOldBillingMonth = (string)($sourceEvent['billing_month'] ?? '');
+        $sourceChanged = ($sourceOldStart !== $startSql)
+            || ($sourceOldEnd !== $endSql)
+            || ($sourceOldTitle !== (string)$customTitle)
+            || ($sourceOldLocation !== (string)$location)
+            || ($sourceOldIsMakeup !== (int)$isMakeupSession)
+            || ($sourceOldBillingMonth !== $billingMonthSql)
+            || ((int)($sourceEvent['athlete_id'] ?? 0) !== (int)($athleteId ?? 0))
+            || ((int)($sourceEvent['second_athlete_id'] ?? 0) !== (int)($secondAthleteId ?? 0));
+
+        $sourceUpdateStmt = $pdo->prepare(
+            'UPDATE coach_calendar_events
+             SET athlete_id = ?,
+                 second_athlete_id = ?,
+                 requested_by_athlete_id = NULL,
+                 approval_status = "approved",
+                 coach_modified_at = ?,
+                 is_makeup_session = ?,
+                 billing_month = ?,
+                 color_key = ?,
+                 custom_title = ?,
+                 location = ?,
+                 starts_at = ?,
+                 ends_at = ?
+             WHERE id = ?
+               AND coach_id = ?'
+        );
+
+        $deleteRequestStmt = $pdo->prepare('DELETE FROM coach_calendar_events WHERE id = ? AND coach_id = ? LIMIT 1');
+
+        try {
+            $pdo->beginTransaction();
+
+            $sourceUpdateStmt->execute([
+                $athleteId,
+                $secondAthleteId,
+                $sourceChanged ? date('Y-m-d H:i:s') : null,
+                (int)$isMakeupSession,
+                $billingMonthSql,
+                $colorKey,
+                $customTitle,
+                $location,
+                $startSql,
+                $endSql,
+                $rescheduleSourceEventId,
+                $coachId,
+            ]);
+
+            $deleteRequestStmt->execute([$eventId, $coachId]);
+
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            exit;
+        }
+
+        $syncAthleteIds = array_values(array_unique(array_filter([
+            (int)($sourceEvent['athlete_id'] ?? 0),
+            (int)($sourceEvent['second_athlete_id'] ?? 0),
+            (int)($athleteId ?? 0),
+            (int)($secondAthleteId ?? 0),
+            (int)($existingEvent['requested_by_athlete_id'] ?? 0),
+        ])));
+
+        enqueueCoachGoogleCalendarSync($coachId, $rescheduleSourceEventId, 'upsert');
+        enqueueCoachAppleCaldavSync($coachId, $rescheduleSourceEventId, 'upsert');
+        enqueueCoachGoogleCalendarSync($coachId, $eventId, 'delete');
+        enqueueCoachAppleCaldavSync($coachId, $eventId, 'delete');
+        foreach ($syncAthleteIds as $syncAthleteId) {
+            enqueueAthleteAppleCaldavSync($syncAthleteId, $rescheduleSourceEventId, 'upsert');
+            enqueueAthleteAppleCaldavSync($syncAthleteId, $eventId, 'delete');
+        }
+        processInlineCalendarSyncQueues(2, 3, 3);
+
+        $participants = [];
+        if ((int)($athleteId ?? 0) > 0) {
+            $participants[] = [
+                'id' => (int)$athleteId,
+                'email' => (string)($sourceEvent['athlete_email'] ?? ''),
+                'name' => trim((string)($sourceEvent['first_name'] ?? '') . ' ' . (string)($sourceEvent['last_name'] ?? '')),
+            ];
+        }
+        if ((int)($secondAthleteId ?? 0) > 0) {
+            $participants[] = [
+                'id' => (int)$secondAthleteId,
+                'email' => (string)($sourceEvent['second_athlete_email'] ?? ''),
+                'name' => trim((string)($sourceEvent['second_first_name'] ?? '') . ' ' . (string)($sourceEvent['second_last_name'] ?? '')),
+            ];
+        }
+
+        $newStartLabel = date('d.m.Y H:i', strtotime($startSql));
+        foreach ($participants as $participant) {
+            if ((int)($participant['id'] ?? 0) <= 0) {
+                continue;
+            }
+            $subject = 'Žádost o změnu byla schválena';
+            $body = 'Trenér schválil změnu termínu. Nový termín: ' . $newStartLabel . '.';
+            if ($location) {
+                $body .= ' Místo: ' . $location . '.';
+            }
+            createAthleteNotification((int)$participant['id'], $subject, $body);
+            if (!empty($participant['email'])) {
+                $recipientName = $participant['name'] !== '' ? $participant['name'] : 'sportovec';
+                sendAthleteCalendarNotificationEmail((string)$participant['email'], $recipientName, $subject, $body);
+            }
+        }
+
+        echo json_encode(['success' => true, 'id' => $rescheduleSourceEventId, 'mode' => 'updated', 'approval_status' => 'approved']);
+        exit;
+    }
+
     $nextApprovalStatus = ($approvalAction === 'approve' || $isPendingRequest) ? 'approved' : (string)($existingEvent['approval_status'] ?? 'approved');
     $coachModifiedAt = $changed ? date('Y-m-d H:i:s') : ($existingEvent['coach_modified_at'] ?: null);
     $syncedEventIds = [$eventId];

@@ -36,6 +36,7 @@ $eventsStmt = $pdo->prepare(
             e.athlete_id,
             e.second_athlete_id,
             e.requested_by_athlete_id,
+            e.series_id,
             a.first_name,
             a.last_name,
             a2.first_name AS second_first_name,
@@ -68,6 +69,7 @@ $cancellationsStmt = $pdo->prepare(
             c.athlete_id,
             c.second_athlete_id,
             NULL AS requested_by_athlete_id,
+            NULL AS series_id,
             a.first_name,
             a.last_name,
             a2.first_name AS second_first_name,
@@ -134,7 +136,12 @@ foreach ($rows as $row) {
         $statusLabel = 'Zrušený';
         $statusClass = 'danger';
     } elseif ((string)($row['approval_status'] ?? 'approved') === 'pending') {
-        $statusLabel = 'Zatím neschválený';
+        $seriesId = trim((string)($row['series_id'] ?? ''));
+        if (preg_match('/^reschedule:\d+$/', $seriesId)) {
+            $statusLabel = 'Žádost o změnu';
+        } else {
+            $statusLabel = 'Zatím neschválený';
+        }
         $statusClass = 'warning';
     } elseif (!empty($row['is_makeup_session'])) {
         $statusLabel = 'Náhradní';

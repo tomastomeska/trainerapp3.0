@@ -1360,6 +1360,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const eventAddToIosBtn = document.getElementById('eventAddToIosBtn');
     const coachAppleCaldavActive = <?= !empty($coachAppleCaldavActive) ? 'true' : 'false' ?>;
     const eventModalSubmitBtn = eventForm ? eventForm.querySelector('button[type="submit"]') : null;
+    const urlParams = new URLSearchParams(window.location.search);
+    const focusDateParam = (urlParams.get('focus_date') || '').trim();
+    let pendingFocusEventId = Number(urlParams.get('focus_event') || 0);
 
     function getSubmitControls(form) {
         return Array.from(form.querySelectorAll('button[type="submit"], input[type="submit"]'));
@@ -1477,6 +1480,12 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     let currentWeekStart = getMonday(new Date());
+    if (/^\d{4}-\d{2}-\d{2}$/.test(focusDateParam)) {
+        const focusDate = new Date(`${focusDateParam}T00:00:00`);
+        if (!Number.isNaN(focusDate.getTime())) {
+            currentWeekStart = getMonday(focusDate);
+        }
+    }
     let events = [];
     let locks = [];
     let dayPilotCalendar = null;
@@ -1510,10 +1519,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return eventColorSchemes[normalizeColorKey(event.color_key)];
     }
 
+    function isRescheduleRequestEvent(event) {
+        if (!event) {
+            return false;
+        }
+        const seriesId = String(event.series_id || '').trim();
+        return /^reschedule:\d+$/.test(seriesId);
+    }
+
     function getEventStatusMeta(event) {
         if ((event.approval_status || 'approved') === 'pending') {
             return {
-                label: 'Ke schválení',
+                label: isRescheduleRequestEvent(event) ? 'Žádost o změnu' : 'Ke schválení',
                 className: 'pending',
             };
         }
@@ -2475,7 +2492,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const isPendingRequest = (event.approval_status || 'approved') === 'pending' && Number(event.requested_by_athlete_id || 0) > 0;
             if (isPendingRequest) {
-                requestInfo.textContent = 'Toto je nový požadavek sportovce. Můžete jej schválit, zamítnout nebo upravit. Uložení změn požadavek automaticky schválí.';
+                requestInfo.textContent = isRescheduleRequestEvent(event)
+                    ? 'Sportovec požádal o změnu existujícího termínu. Schválení nebo uložení změn přesune původní termín na tento slot; zamítnutí žádost zruší.'
+                    : 'Toto je nový požadavek sportovce. Můžete jej schválit, zamítnout nebo upravit. Uložení změn požadavek automaticky schválí.';
                 requestInfo.classList.remove('d-none');
                 approveEventBtn.classList.remove('d-none');
                 deleteEventBtn.innerHTML = '<i class="fas fa-xmark me-1"></i>Zamítnout';
@@ -2878,7 +2897,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         let deleteScope = 'single';
-        if (activeEvent && activeEvent.series_id) {
+        if (activeEvent && activeEvent.series_id && !isRescheduleRequestEvent(activeEvent)) {
             const deleteFuture = confirm('Smazat tento trénink i všechny budoucí ve stejné sérii?\n\nOK = Ano (tento + budoucí)\nStorno = Vybrat jen tento');
             if (deleteFuture) {
                 deleteScope = 'future';
@@ -2962,7 +2981,17 @@ document.addEventListener('DOMContentLoaded', () => {
     updateEventLocationHint();
     updateModeUI();
 
-    loadWeekData();
+    (async () => {
+        await loadWeekData();
+
+        if (pendingFocusEventId > 0) {
+            const focusEvent = events.find((event) => Number(event.id || 0) === pendingFocusEventId);
+            if (focusEvent) {
+                openEventModal(focusEvent);
+            }
+            pendingFocusEventId = 0;
+        }
+    })();
 });
 </script>
 
