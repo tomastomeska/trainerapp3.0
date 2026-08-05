@@ -965,6 +965,34 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
 
+    // Deduplikace historických goal záznamů: ponechat nejnovější řádek pro stejnou kombinaci.
+    $pdo->exec(
+        'DELETE g1
+         FROM mycoach_goals g1
+         JOIN mycoach_goals g2
+           ON g1.user_id = g2.user_id
+          AND g1.goal_type = g2.goal_type
+          AND (g1.custom_goal_name <=> g2.custom_goal_name)
+          AND (g1.target_date <=> g2.target_date)
+          AND g1.is_active = g2.is_active
+          AND ((DATE(g1.ended_at) <=> DATE(g2.ended_at)) OR (g1.ended_at IS NULL AND g2.ended_at IS NULL))
+          AND g1.id < g2.id'
+    );
+
+        // Jednorázový cleanup: odstranit archivní cíl, pokud stejný cíl je momentálně aktivní.
+        // Tím zmizí historické artefakty po staré auto-archivační logice.
+        $pdo->exec(
+                'DELETE archived
+                 FROM mycoach_goals archived
+                 JOIN mycoach_goals active
+                     ON archived.user_id = active.user_id
+                    AND archived.goal_type = active.goal_type
+                    AND (archived.custom_goal_name <=> active.custom_goal_name)
+                    AND (archived.target_date <=> active.target_date)
+                 WHERE archived.is_active = 0
+                     AND active.is_active = 1'
+        );
+
     $pdo->exec(" 
         CREATE TABLE IF NOT EXISTS `mycoach_events` (
             `id`                  BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -1541,6 +1569,21 @@ function ensureSchemaUpgrades(PDO $pdo): void {
             CONSTRAINT `fk_mycoach_metrics_user` FOREIGN KEY (`user_id`) REFERENCES `mycoach_users`(`id`) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
+
+    $mycoachMetricUniqueStmt = $pdo->query("SHOW INDEX FROM mycoach_metrics WHERE Key_name = 'uq_mycoach_metrics_user_date_type'");
+    if (!$mycoachMetricUniqueStmt->fetch()) {
+        // Pred vytvorenim unique indexu odstran duplicity a nech nejnovější zaznam pro kombinaci user/date/type.
+        $pdo->exec(
+            'DELETE m1
+             FROM mycoach_metrics m1
+             JOIN mycoach_metrics m2
+               ON m1.user_id = m2.user_id
+              AND m1.metric_date = m2.metric_date
+              AND m1.metric_type = m2.metric_type
+              AND m1.id < m2.id'
+        );
+        $pdo->exec('ALTER TABLE mycoach_metrics ADD UNIQUE KEY uq_mycoach_metrics_user_date_type (user_id, metric_date, metric_type)');
+    }
 
     $pdo->exec(" 
         CREATE TABLE IF NOT EXISTS `mycoach_personal_records` (

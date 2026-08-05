@@ -227,6 +227,39 @@ if (!function_exists('mycoachWorkoutTypeLabel')) {
   }
 }
 
+if (!function_exists('mycoachWorkoutDisplayName')) {
+  function mycoachWorkoutDisplayName(array $row): string {
+    $trainerWorkoutName = trim((string)($row['workout_name'] ?? ''));
+    if ($trainerWorkoutName !== '') {
+      return $trainerWorkoutName;
+    }
+
+    $workoutType = trim((string)($row['workout_type'] ?? ''));
+    if ($workoutType === '') {
+      return '—';
+    }
+
+    $label = mycoachWorkoutTypeLabel($workoutType);
+    $meta = [];
+    if (!empty($row['workout_meta_json'])) {
+      $decoded = json_decode((string)$row['workout_meta_json'], true);
+      if (is_array($decoded)) {
+        $meta = $decoded;
+      }
+    }
+
+    $detailKeys = ['workout_note', 'exercise_name', 'mobility_focus'];
+    foreach ($detailKeys as $detailKey) {
+      $detailValue = trim((string)($meta[$detailKey] ?? ''));
+      if ($detailValue !== '') {
+        return $label . ': ' . $detailValue;
+      }
+    }
+
+    return $label;
+  }
+}
+
 if (!function_exists('mycoachWorkoutTypeFields')) {
   function mycoachWorkoutTypeFields(string $type): array {
     $options = mycoachWorkoutTypeOptions();
@@ -1080,6 +1113,46 @@ if (!function_exists('getAppSetting')) {
     }
 }
 
+    if (!function_exists('mycoachGetAppLogoUrl')) {
+      function mycoachGetAppLogoUrl(): ?string {
+        $relativePath = trim(getAppSetting('mycoach_logo_path', ''));
+        if ($relativePath === '') {
+          return null;
+        }
+
+        $absolutePath = dirname(__DIR__) . '/' . ltrim($relativePath, '/');
+        if (!is_file($absolutePath)) {
+          return null;
+        }
+
+        return BASE_URL . '/' . ltrim($relativePath, '/');
+      }
+    }
+
+    if (!function_exists('renderMyCoachAppLogo')) {
+      function renderMyCoachAppLogo(): void {
+        $logoUrl = mycoachGetAppLogoUrl();
+        if ($logoUrl === null) {
+          return;
+        }
+
+        echo '<div class="mc-app-logo-wrap mb-3">';
+        echo '<img src="' . h($logoUrl) . '" alt="MyCoach logo" class="mc-app-logo" loading="lazy">';
+        echo '</div>';
+      }
+    }
+
+    if (!function_exists('renderMyCoachAppLogoInline')) {
+      function renderMyCoachAppLogoInline(): void {
+        $logoUrl = mycoachGetAppLogoUrl();
+        if ($logoUrl === null) {
+          return;
+        }
+
+        echo '<img src="' . h($logoUrl) . '" alt="MyCoach logo" class="mc-app-logo-inline" loading="lazy">';
+      }
+    }
+
   if (!function_exists('mycoachResolveUser')) {
     function mycoachResolveUser(PDO $pdo, string $role, int $coachId = 0, int $athleteId = 0, string $displayName = ''): ?array {
       if (!in_array($role, ['coach', 'athlete'], true)) {
@@ -1407,6 +1480,70 @@ if (!function_exists('getAppSetting')) {
       }
 
       return $options[$goalType] ?? 'Cíl';
+    }
+  }
+
+  if (!function_exists('mycoachFindSimilarGoal')) {
+    function mycoachFindSimilarGoal(PDO $pdo, int $userId, string $goalType, ?string $customGoalName, ?string $targetDate, bool $onlyActive = true): ?array {
+      if ($userId <= 0) {
+        return null;
+      }
+
+      $goalType = trim($goalType);
+      $customGoalName = $customGoalName !== null ? trim($customGoalName) : null;
+      $targetDate = $targetDate !== null ? trim($targetDate) : null;
+      if ($targetDate === '') {
+        $targetDate = null;
+      }
+
+      try {
+        $sql =
+          'SELECT id, user_id, goal_type, custom_goal_name, target_date, is_active, started_at, ended_at, created_at, updated_at
+           FROM mycoach_goals
+           WHERE user_id = ?
+             AND goal_type = ?
+             AND (custom_goal_name <=> ?)
+             AND (target_date <=> ?)';
+        if ($onlyActive) {
+          $sql .= ' AND is_active = 1';
+        }
+        $sql .= ' ORDER BY id DESC LIMIT 1';
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$userId, $goalType, $customGoalName, $targetDate]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+      } catch (Throwable $e) {
+        return null;
+      }
+    }
+  }
+
+  if (!function_exists('mycoachCollapseGoalsForDisplay')) {
+    function mycoachCollapseGoalsForDisplay(array $rows): array {
+      $seen = [];
+      $result = [];
+
+      foreach ($rows as $row) {
+        $goalType = trim((string)($row['goal_type'] ?? ''));
+        $customName = trim((string)($row['custom_goal_name'] ?? ''));
+        $targetDate = trim((string)($row['target_date'] ?? ''));
+        $isActive = (int)($row['is_active'] ?? 0);
+        $endedDate = '';
+        if (!empty($row['ended_at'])) {
+          $endedDate = substr((string)$row['ended_at'], 0, 10);
+        }
+
+        $key = strtolower($goalType) . '|' . strtolower($customName) . '|' . $targetDate . '|' . $isActive . '|' . $endedDate;
+        if (isset($seen[$key])) {
+          continue;
+        }
+
+        $seen[$key] = true;
+        $result[] = $row;
+      }
+
+      return $result;
     }
   }
 
@@ -1751,7 +1888,46 @@ if (!function_exists('getAppSetting')) {
       }
       $entryId = isset($data['id']) && $data['id'] !== '' ? (int)$data['id'] : 0;
 
+      if ($workoutType === 'rest') {
+        // U odpočinku nevážeme záznam na konkrétní workout a dopočítáme lehký default bez sportovních metrik.
+        $workoutId = null;
+        $trainingDurationMinutes = 0;
+        if ($rpeScore === null) {
+          $rpeScore = 1;
+        }
+      }
+
       try {
+        if ($entryId <= 0) {
+          if ($workoutId !== null && $workoutId > 0) {
+            $existingStmt = $pdo->prepare(
+              'SELECT id
+               FROM mycoach_daily_questionnaires
+               WHERE user_id = ? AND entry_date = ? AND workout_id = ?
+               ORDER BY updated_at DESC, id DESC
+               LIMIT 1'
+            );
+            $existingStmt->execute([$userId, $entryDate, $workoutId]);
+            $existingId = (int)$existingStmt->fetchColumn();
+            if ($existingId > 0) {
+              $entryId = $existingId;
+            }
+          } else {
+            $existingStmt = $pdo->prepare(
+              'SELECT id
+               FROM mycoach_daily_questionnaires
+               WHERE user_id = ? AND entry_date = ? AND workout_id IS NULL
+               ORDER BY updated_at DESC, id DESC
+               LIMIT 1'
+            );
+            $existingStmt->execute([$userId, $entryDate]);
+            $existingId = (int)$existingStmt->fetchColumn();
+            if ($existingId > 0) {
+              $entryId = $existingId;
+            }
+          }
+        }
+
         if ($entryId > 0) {
           $stmt = $pdo->prepare(
             'UPDATE mycoach_daily_questionnaires
@@ -1842,6 +2018,7 @@ if (!function_exists('getAppSetting')) {
       $caloriesBurned = isset($dailyEntry['calories_burned']) && $dailyEntry['calories_burned'] !== null ? (int)$dailyEntry['calories_burned'] : null;
       $avgHeartRate = isset($dailyEntry['avg_heart_rate']) && $dailyEntry['avg_heart_rate'] !== null ? (int)$dailyEntry['avg_heart_rate'] : null;
       $maxHeartRate = isset($dailyEntry['max_heart_rate']) && $dailyEntry['max_heart_rate'] !== null ? (int)$dailyEntry['max_heart_rate'] : null;
+      $workoutType = trim((string)($dailyEntry['workout_type'] ?? ''));
 
       $score = 50.0;
       $score += ($feelingScore - 5) * 4.0;
@@ -1874,6 +2051,10 @@ if (!function_exists('getAppSetting')) {
         $score -= min(6.0, (($maxHeartRate - 175) / 4.0) * 1.0);
       }
 
+      if ($workoutType === 'rest') {
+        $score += 6.0;
+      }
+
       return max(0, min(100, (int)round($score)));
     }
   }
@@ -1885,12 +2066,32 @@ if (!function_exists('getAppSetting')) {
       }
 
       try {
-        $stmt = $pdo->prepare(
-          'INSERT INTO mycoach_metrics (user_id, metric_date, metric_type, metric_value, unit, source)
-           VALUES (?, ?, "readiness_score", ?, "score", "manual")
-           ON DUPLICATE KEY UPDATE metric_value = VALUES(metric_value), unit = VALUES(unit), source = VALUES(source), updated_at = NOW()'
+        $existingStmt = $pdo->prepare(
+          'SELECT id
+           FROM mycoach_metrics
+           WHERE user_id = ?
+             AND metric_date = ?
+             AND metric_type = "readiness_score"
+           ORDER BY id DESC
+           LIMIT 1'
         );
-        return $stmt->execute([$userId, $metricDate, $readinessScore]);
+        $existingStmt->execute([$userId, $metricDate]);
+        $existingId = (int)$existingStmt->fetchColumn();
+
+        if ($existingId > 0) {
+          $updateStmt = $pdo->prepare(
+            'UPDATE mycoach_metrics
+             SET metric_value = ?, unit = "score", source = "manual", updated_at = NOW()
+             WHERE id = ? AND user_id = ?'
+          );
+          return $updateStmt->execute([$readinessScore, $existingId, $userId]);
+        }
+
+        $insertStmt = $pdo->prepare(
+          'INSERT INTO mycoach_metrics (user_id, metric_date, metric_type, metric_value, unit, source)
+           VALUES (?, ?, "readiness_score", ?, "score", "manual")'
+        );
+        return $insertStmt->execute([$userId, $metricDate, $readinessScore]);
       } catch (Throwable $e) {
         return false;
       }
@@ -1954,10 +2155,20 @@ if (!function_exists('getAppSetting')) {
                   ts.completed_at,
                   ws.name AS workout_name
            FROM mycoach_daily_questionnaires dq
-           LEFT JOIN mycoach_metrics m
-             ON m.user_id = dq.user_id
-            AND m.metric_type = "readiness_score"
-            AND m.metric_date = dq.entry_date
+           INNER JOIN (
+             SELECT MAX(id) AS keep_id
+             FROM mycoach_daily_questionnaires
+             WHERE user_id = ?
+             GROUP BY entry_date, COALESCE(workout_id, 0)
+           ) dq_keep ON dq_keep.keep_id = dq.id
+           LEFT JOIN (
+             SELECT MAX(id) AS keep_metric_id, user_id, metric_date
+             FROM mycoach_metrics
+             WHERE user_id = ?
+               AND metric_type = "readiness_score"
+             GROUP BY user_id, metric_date
+           ) m_keep ON m_keep.user_id = dq.user_id AND m_keep.metric_date = dq.entry_date
+           LEFT JOIN mycoach_metrics m ON m.id = m_keep.keep_metric_id
            LEFT JOIN training_sessions ts
              ON ts.id = dq.workout_id
             AND ts.athlete_id = (
@@ -1969,7 +2180,9 @@ if (!function_exists('getAppSetting')) {
            LIMIT ?'
         );
         $stmt->bindValue(1, $userId, PDO::PARAM_INT);
-        $stmt->bindValue(2, $limit, PDO::PARAM_INT);
+        $stmt->bindValue(2, $userId, PDO::PARAM_INT);
+        $stmt->bindValue(3, $userId, PDO::PARAM_INT);
+        $stmt->bindValue(4, $limit, PDO::PARAM_INT);
         $stmt->execute();
         $rows = $stmt->fetchAll() ?: [];
         return array_reverse($rows);

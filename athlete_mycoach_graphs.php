@@ -71,7 +71,7 @@ renderAthleteHeader('MyCoach grafy', true, true);
 
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2 mc-topbar">
     <div>
-        <h2 class="mb-1"><i class="fas fa-chart-line me-2 text-warning"></i>MyCoach grafy</h2>
+        <h2 class="mb-1"><?php renderMyCoachAppLogoInline(); ?><i class="fas fa-chart-line me-2 text-warning"></i>MyCoach grafy</h2>
         <div class="text-muted">Vývoj readiness, energie a spánku v čase</div>
     </div>
     <div class="d-flex gap-2 flex-wrap mc-actions">
@@ -179,7 +179,7 @@ renderAthleteHeader('MyCoach grafy', true, true);
                 <?php foreach (array_reverse($timeline) as $row): ?>
                 <tr>
                     <td><?= h(formatDate((string)$row['entry_date'])) ?></td>
-                    <td><?= h((string)($row['workout_name'] ?? '—')) ?></td>
+                    <td><?= h(mycoachWorkoutDisplayName($row)) ?></td>
                     <td><?= isset($row['readiness_score']) && $row['readiness_score'] !== null ? h((string)round((float)$row['readiness_score'])) : '—' ?></td>
                     <td><?= isset($row['feeling_score']) && $row['feeling_score'] !== null ? h((string)$row['feeling_score']) : '—' ?></td>
                     <td><?= isset($row['energy_score']) && $row['energy_score'] !== null ? h((string)$row['energy_score']) : '—' ?></td>

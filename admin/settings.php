@@ -11,6 +11,7 @@ $success = null;
 
 $logoSettingKey = 'login_logo_path';
 $sublogoSettingKey = 'login_sublogo_path';
+$mycoachLogoSettingKey = 'mycoach_logo_path';
 $supportBankAccountKey = 'support_bank_account';
 $logoUploadDir = __DIR__ . '/../uploads/logo';
 $logoBasePath = 'uploads/logo';
@@ -39,6 +40,7 @@ function normalizeBankAccountInput(?string $raw): string|false|null
 $currentVersion = getAppSetting('app_version', APP_VERSION);
 $currentLogoPath = trim(getAppSetting($logoSettingKey, ''));
 $currentSublogoPath = trim(getAppSetting($sublogoSettingKey, ''));
+$currentMyCoachLogoPath = trim(getAppSetting($mycoachLogoSettingKey, ''));
 $currentSupportBankAccount = trim(getAppSetting($supportBankAccountKey, ''));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -163,6 +165,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $currentSublogoPath = '';
             $success = 'Podlogo přihlášení bylo odebráno.';
+        } elseif ($action === 'upload_mycoach_logo') {
+            if (empty($_FILES['mycoach_logo']['tmp_name']) || (int)($_FILES['mycoach_logo']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                $error = 'Vyberte prosím soubor MyCoach loga.';
+            } else {
+                $allowedExt = ['png', 'jpg', 'jpeg', 'webp', 'svg'];
+                $originalName = (string)($_FILES['mycoach_logo']['name'] ?? '');
+                $tmpName = (string)($_FILES['mycoach_logo']['tmp_name'] ?? '');
+                $fileSize = (int)($_FILES['mycoach_logo']['size'] ?? 0);
+                $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+
+                if (!in_array($ext, $allowedExt, true)) {
+                    $error = 'Nepodporovaný formát MyCoach loga. Povolené: png, jpg, jpeg, webp, svg.';
+                } elseif ($fileSize <= 0 || $fileSize > 5 * 1024 * 1024) {
+                    $error = 'Soubor MyCoach loga musí mít velikost 1 B až 5 MB.';
+                } else {
+                    if (!is_dir($logoUploadDir) && !mkdir($logoUploadDir, 0775, true) && !is_dir($logoUploadDir)) {
+                        $error = 'Nepodařilo se vytvořit složku pro MyCoach logo.';
+                    } else {
+                        $newName = 'mycoach_logo_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+                        $targetPath = $logoUploadDir . '/' . $newName;
+
+                        if (!move_uploaded_file($tmpName, $targetPath)) {
+                            $error = 'Soubor MyCoach loga se nepodařilo nahrát.';
+                        } else {
+                            if ($currentMyCoachLogoPath !== '') {
+                                $oldPath = __DIR__ . '/../' . ltrim($currentMyCoachLogoPath, '/');
+                                if (is_file($oldPath)) {
+                                    @unlink($oldPath);
+                                }
+                            }
+
+                            $newRelativePath = $logoBasePath . '/' . $newName;
+                            $pdo->prepare(
+                                'INSERT INTO app_settings (`key`, `value`) VALUES (?, ?)
+                                 ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)'
+                            )->execute([$mycoachLogoSettingKey, $newRelativePath]);
+
+                            $currentMyCoachLogoPath = $newRelativePath;
+                            $success = 'MyCoach logo bylo úspěšně nahráno.';
+                        }
+                    }
+                }
+            }
+        } elseif ($action === 'remove_mycoach_logo') {
+            if ($currentMyCoachLogoPath !== '') {
+                $oldPath = __DIR__ . '/../' . ltrim($currentMyCoachLogoPath, '/');
+                if (is_file($oldPath)) {
+                    @unlink($oldPath);
+                }
+            }
+
+            $pdo->prepare(
+                'INSERT INTO app_settings (`key`, `value`) VALUES (?, ?)
+                 ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)'
+            )->execute([$mycoachLogoSettingKey, '']);
+
+            $currentMyCoachLogoPath = '';
+            $success = 'MyCoach logo bylo odebráno.';
         } elseif ($action === 'save_support_bank_account') {
             $bankAccount = normalizeBankAccountInput($_POST['support_bank_account'] ?? '');
 
@@ -209,6 +269,14 @@ if ($currentSublogoPath !== '') {
     $sublogoAbsolutePath = __DIR__ . '/../' . ltrim($currentSublogoPath, '/');
     if (is_file($sublogoAbsolutePath)) {
         $sublogoPreviewUrl = BASE_URL . '/' . ltrim($currentSublogoPath, '/');
+    }
+}
+
+$mycoachLogoPreviewUrl = null;
+if ($currentMyCoachLogoPath !== '') {
+    $mycoachLogoAbsolutePath = __DIR__ . '/../' . ltrim($currentMyCoachLogoPath, '/');
+    if (is_file($mycoachLogoAbsolutePath)) {
+        $mycoachLogoPreviewUrl = BASE_URL . '/' . ltrim($currentMyCoachLogoPath, '/');
     }
 }
 
@@ -357,6 +425,51 @@ renderAdminHeader('Nastavení aplikace');
             <input type="hidden" name="action" value="remove_login_sublogo">
             <button type="submit" class="btn btn-outline-danger fw-semibold">
                 <i class="fas fa-trash me-1"></i>Odebrat podlogo
+            </button>
+        </form>
+        <?php endif; ?>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mt-4" style="max-width:760px">
+    <div class="card-header fw-bold" style="background:#1e1e2e;color:#fff">
+        <i class="fas fa-bullseye me-2"></i>MyCoach logo aplikace
+    </div>
+    <div class="card-body">
+        <p class="text-muted mb-3">Logo se zobrazí nad hlavičkou na všech stránkách a podstránkách MyCoach modulu (trenér i sportovec).</p>
+
+        <?php if ($mycoachLogoPreviewUrl): ?>
+        <div class="mb-3">
+            <div class="small text-muted mb-2">Aktuální MyCoach logo</div>
+            <img src="<?= h($mycoachLogoPreviewUrl) ?>" alt="MyCoach logo" style="max-width:420px;width:100%;height:auto;border:1px solid #ddd;border-radius:10px;padding:8px;background:#fff;">
+        </div>
+        <?php else: ?>
+        <div class="alert alert-light border mb-3">Momentálně není nastavené vlastní MyCoach logo.</div>
+        <?php endif; ?>
+
+        <form method="post" enctype="multipart/form-data" class="mb-3">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="upload_mycoach_logo">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-9">
+                    <label for="mycoachLogoInput" class="form-label fw-semibold">Nahrát nové MyCoach logo</label>
+                    <input type="file" name="mycoach_logo" id="mycoachLogoInput" class="form-control" accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml" required>
+                    <div class="form-text">Povolené formáty: png, jpg, jpeg, webp, svg. Maximálně 5 MB.</div>
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn fw-bold w-100" style="background:#7c3aed;color:#fff;border:none">
+                        <i class="fas fa-upload me-1"></i>Nahrát logo
+                    </button>
+                </div>
+            </div>
+        </form>
+
+        <?php if ($mycoachLogoPreviewUrl): ?>
+        <form method="post" onsubmit="return confirm('Odebrat aktuální MyCoach logo?');">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="remove_mycoach_logo">
+            <button type="submit" class="btn btn-outline-danger fw-semibold">
+                <i class="fas fa-trash me-1"></i>Odebrat logo
             </button>
         </form>
         <?php endif; ?>

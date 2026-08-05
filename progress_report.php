@@ -417,7 +417,7 @@ renderHeader('Zpráva o pokroku');
     <a href="<?= BASE_URL ?>/dashboard.php" class="btn btn-outline-secondary btn-sm">
         <i class="fas fa-arrow-left"></i>
     </a>
-    <h2 class="mb-0"><i class="fas fa-file-alt me-2 text-success"></i>Zpráva o pokroku</h2>
+    <h2 class="mb-0"><?php if ($scope === 'mycoach') { renderMyCoachAppLogoInline(); } ?><i class="fas fa-file-alt me-2 text-success"></i>Zpráva o pokroku</h2>
 </div>
 
 <!-- Formulář výběru -->

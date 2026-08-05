@@ -62,7 +62,17 @@ $existingDailyStmt = $pdo->prepare('SELECT * FROM mycoach_daily_questionnaires W
 $existingDailyStmt->execute([$myCoachUserId, $entryDate]);
 $existingDaily = $existingDailyStmt->fetch() ?: null;
 
-$existingDailyRowsStmt = $pdo->prepare('SELECT * FROM mycoach_daily_questionnaires WHERE user_id = ? AND entry_date = ? ORDER BY created_at DESC, id DESC');
+$existingDailyRowsStmt = $pdo->prepare(
+     'SELECT dq.*
+      FROM mycoach_daily_questionnaires dq
+      INNER JOIN (
+          SELECT MAX(id) AS keep_id
+          FROM mycoach_daily_questionnaires
+          WHERE user_id = ? AND entry_date = ?
+          GROUP BY COALESCE(workout_id, 0)
+      ) x ON x.keep_id = dq.id
+      ORDER BY dq.created_at DESC, dq.id DESC'
+);
 $existingDailyRowsStmt->execute([$myCoachUserId, $entryDate]);
 $existingDailyRows = $existingDailyRowsStmt->fetchAll() ?: [];
 
@@ -93,7 +103,7 @@ foreach ($existingDailyRows as $dailyRow) {
 
 $bubbleStart = date('Y-m-d', strtotime($entryDate . ' -7 days'));
 $bubbleEnd = date('Y-m-d', strtotime($entryDate . ' +7 days'));
-$recentDaysStmt = $pdo->prepare('SELECT entry_date, COUNT(*) AS entry_count FROM mycoach_daily_questionnaires WHERE user_id = ? AND entry_date BETWEEN ? AND ? GROUP BY entry_date ORDER BY entry_date ASC');
+$recentDaysStmt = $pdo->prepare('SELECT entry_date, COUNT(DISTINCT COALESCE(workout_id, 0)) AS entry_count FROM mycoach_daily_questionnaires WHERE user_id = ? AND entry_date BETWEEN ? AND ? GROUP BY entry_date ORDER BY entry_date ASC');
 $recentDaysStmt->execute([$myCoachUserId, $bubbleStart, $bubbleEnd]);
 $recentDays = $recentDaysStmt->fetchAll() ?: [];
 $recentDayMap = [];
@@ -101,7 +111,17 @@ foreach ($recentDays as $recentDay) {
     $recentDayMap[(string)$recentDay['entry_date']] = (int)$recentDay['entry_count'];
 }
 
-$recentDayRowsStmt = $pdo->prepare('SELECT entry_date, workout_meta_json, feeling_score, energy_score, motivation_score, sleep_hours, muscle_pain_score, joint_pain_score, rpe_score, training_duration_minutes, calories_burned, avg_heart_rate, max_heart_rate, athlete_note FROM mycoach_daily_questionnaires WHERE user_id = ? AND entry_date BETWEEN ? AND ? ORDER BY entry_date ASC, id ASC');
+$recentDayRowsStmt = $pdo->prepare(
+     'SELECT dq.entry_date, dq.workout_meta_json, dq.feeling_score, dq.energy_score, dq.motivation_score, dq.sleep_hours, dq.muscle_pain_score, dq.joint_pain_score, dq.rpe_score, dq.training_duration_minutes, dq.calories_burned, dq.avg_heart_rate, dq.max_heart_rate, dq.athlete_note
+      FROM mycoach_daily_questionnaires dq
+      INNER JOIN (
+          SELECT MAX(id) AS keep_id
+          FROM mycoach_daily_questionnaires
+          WHERE user_id = ? AND entry_date BETWEEN ? AND ?
+          GROUP BY entry_date, COALESCE(workout_id, 0)
+      ) x ON x.keep_id = dq.id
+      ORDER BY dq.entry_date ASC, dq.id ASC'
+);
 $recentDayRowsStmt->execute([$myCoachUserId, $bubbleStart, $bubbleEnd]);
 $recentDayRows = $recentDayRowsStmt->fetchAll() ?: [];
 $recentDayAthleteInputMap = [];
@@ -202,7 +222,29 @@ $readinessContextEntry = $readinessSource;
 $readinessScore = null;
 $readinessComputedForDate = $entryDate;
 $readinessComputedFromText = 'uložených dat';
-if ($hasExplicitReadinessData) {
+if ($entryDate === $todayDate) {
+    $projectedReadiness = mycoachProjectReadinessForDate($timeline, $entryDate);
+    if ($projectedReadiness && !empty($projectedReadiness['entry']) && is_array($projectedReadiness['entry'])) {
+        $readinessContextEntry = $projectedReadiness['entry'];
+        $readinessContextEntry['entry_date'] = $entryDate;
+
+        // Dnešek: promítnout aktuálně zadané hodnoty (typicky spánek) do projekce dne.
+        foreach ($readinessSource as $metricKey => $metricValue) {
+            if ($metricValue === null) {
+                continue;
+            }
+            if (is_string($metricValue) && trim($metricValue) === '') {
+                continue;
+            }
+            $readinessContextEntry[$metricKey] = $metricValue;
+        }
+
+        $readinessScore = mycoachCalculateReadinessScore($readinessContextEntry);
+        $readinessComputedFromText = 'dnešního kontextu (projekce + zadaná data)';
+    } elseif ($hasExplicitReadinessData) {
+        $readinessScore = mycoachCalculateReadinessScore($readinessSource);
+    }
+} elseif ($hasExplicitReadinessData) {
     $readinessScore = mycoachCalculateReadinessScore($readinessSource);
 } else {
     $projectedReadiness = mycoachProjectReadinessForDate($timeline, $entryDate);
@@ -216,6 +258,21 @@ if ($hasExplicitReadinessData) {
 }
 
 $recommendation = mycoachBuildRecommendation($readinessScore, $readinessContextEntry, $latestQuestionnaire, $timeline, $activeGoal);
+$daysToPrimaryGoal = null;
+if ($activeGoal && !empty($activeGoal['target_date'])) {
+    $targetTimestamp = strtotime((string)$activeGoal['target_date']);
+    $entryTimestamp = strtotime($entryDate);
+    if ($targetTimestamp !== false && $entryTimestamp !== false) {
+        $daysToPrimaryGoal = (int)floor(($targetTimestamp - $entryTimestamp) / 86400);
+    }
+}
+if ($daysToPrimaryGoal !== null && $daysToPrimaryGoal >= 0 && $daysToPrimaryGoal <= 6) {
+    $recommendation = [
+        'title' => 'Předzávodní taper režim',
+        'text' => 'Do hlavního cíle zbývá ' . ($daysToPrimaryGoal === 0 ? 'dnešek' : ($daysToPrimaryGoal . ' dní')) . '. Priorita je regenerace, lehká aktivace, kvalitní spánek a žádné nové vysoké zatížení.',
+        'variant' => 'warning',
+    ];
+}
 $readinessGuidance = $readinessScore !== null
     ? mycoachBuildReadinessGuidance($readinessScore, $readinessContextEntry, $latestQuestionnaire, $timeline, $activeGoal)
     : null;
@@ -420,7 +477,7 @@ renderAthleteHeader('MyCoach denní záznam', false, true);
 
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2 mc-topbar">
     <div>
-        <h2 class="mb-1"><i class="fas fa-book-open me-2 text-warning"></i>Denní záznam</h2>
+        <h2 class="mb-1"><?php renderMyCoachAppLogoInline(); ?><i class="fas fa-book-open me-2 text-warning"></i>Denní záznam</h2>
         <div class="text-muted">Dokončené tréninky s trenérem se propisují do dnešního logu automaticky.</div>
     </div>
     <div class="d-flex gap-2 flex-wrap mc-actions">
@@ -447,29 +504,42 @@ renderAthleteHeader('MyCoach denní záznam', false, true);
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body">
         <div class="text-muted small text-uppercase fw-bold mb-2">Dny kolem vybraného data</div>
-        <div class="d-flex gap-2 overflow-auto pb-2">
+        <div class="d-flex gap-2 overflow-auto pt-2 pb-2">
             <?php foreach ($bubbleDays as $bubbleDay): ?>
             <?php
                 $hasAthleteInputs = !empty($bubbleDay['has_athlete_input']);
                 $hasTrainerEntries = $bubbleDay['trainer_count'] > 0;
-                $bubbleClass = 'btn-outline-secondary';
-                if ($bubbleDay['is_selected']) {
-                    $bubbleClass = 'btn-primary';
-                } elseif ($hasAthleteInputs && $hasTrainerEntries) {
-                    $bubbleClass = 'btn-success';
+                $bubbleStatusClass = 'mc-day-bubble--empty';
+                if ($hasAthleteInputs && $hasTrainerEntries) {
+                    $bubbleStatusClass = 'mc-day-bubble--with-both';
                 } elseif ($hasAthleteInputs) {
-                    $bubbleClass = 'btn-info';
+                    $bubbleStatusClass = 'mc-day-bubble--with-athlete';
                 } elseif ($hasTrainerEntries) {
-                    $bubbleClass = 'btn-warning';
+                    $bubbleStatusClass = 'mc-day-bubble--with-trainer';
+                }
+
+                $bubbleClasses = ['mc-day-bubble', $bubbleStatusClass];
+                if ($bubbleDay['is_selected']) {
+                    $bubbleClasses[] = 'mc-day-bubble--selected';
+                }
+                if ($bubbleDay['is_today']) {
+                    $bubbleClasses[] = 'mc-day-bubble--today';
                 }
             ?>
-            <a href="<?= BASE_URL ?>/athlete_mycoach_daily.php?date=<?= urlencode($bubbleDay['date']) ?>" class="btn <?= $bubbleClass ?> rounded-circle d-flex flex-column align-items-center justify-content-center flex-shrink-0" style="width:68px;height:68px;line-height:1;">
+            <a href="<?= BASE_URL ?>/athlete_mycoach_daily.php?date=<?= urlencode($bubbleDay['date']) ?>" class="<?= h(implode(' ', $bubbleClasses)) ?> d-flex flex-column align-items-center justify-content-center flex-shrink-0 text-decoration-none" aria-label="Den <?= h(formatDate($bubbleDay['date'])) ?>">
                 <span class="small"><?= h(date('d', strtotime($bubbleDay['date']))) ?></span>
                 <span style="font-size:.72rem;"><?= h(mb_substr((string)formatDate($bubbleDay['date']), 3, 3, 'UTF-8')) ?></span>
             </a>
             <?php endforeach; ?>
         </div>
-        <div class="small text-muted mt-2">Modrá = vybraný den, zelená = ručně doplněná MyCoach data + trenérská aktivita, tyrkysová = ručně doplněná MyCoach data, žlutá = pouze trenérská session (bez doplnění sportovce).</div>
+        <div class="mc-day-legend mt-3">
+            <span class="mc-day-legend__item"><span class="mc-day-legend__dot mc-day-legend__dot--selected"></span>Vybraný den (obrys)</span>
+            <span class="mc-day-legend__item"><span class="mc-day-legend__dot mc-day-legend__dot--today"></span>Dnes (obrys)</span>
+            <span class="mc-day-legend__item"><span class="mc-day-legend__dot mc-day-legend__dot--with-both"></span>MyCoach data + trenérská aktivita</span>
+            <span class="mc-day-legend__item"><span class="mc-day-legend__dot mc-day-legend__dot--with-athlete"></span>Jen ručně doplněná MyCoach data</span>
+            <span class="mc-day-legend__item"><span class="mc-day-legend__dot mc-day-legend__dot--with-trainer"></span>Jen trenérská session</span>
+            <span class="mc-day-legend__item"><span class="mc-day-legend__dot mc-day-legend__dot--empty"></span>Bez dat</span>
+        </div>
     </div>
 </div>
 
@@ -630,7 +700,7 @@ renderAthleteHeader('MyCoach denní záznam', false, true);
                 </div>
             </div>
             <?php endif; ?>
-            <div class="col-12">
+            <div class="col-12" data-rest-optional="true">
                 <label class="form-label fw-semibold">Přiřazený trénink</label>
                 <div class="form-control bg-light">
                     <?php if ($selectedTrainerSession): ?>
@@ -649,11 +719,17 @@ renderAthleteHeader('MyCoach denní záznam', false, true);
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-12 col-md-8 d-flex align-items-end">
+            <div class="col-12 col-md-8 d-flex align-items-end" data-rest-optional="true">
                 <div class="text-muted small">Vyplň jen to, co víš. Pole jsou nepovinná, takže můžeš uložit i stručný záznam bez tepů nebo přesných metrik. Spánek vyplňuj přes tlačítko „Doplnit spánek“ výše.</div>
             </div>
 
-            <div class="col-12">
+            <div class="col-12 d-none" id="restModeHint">
+                <div class="alert alert-info mb-0">
+                    <strong>Režim odpočinek:</strong> nic dalšího není potřeba vyplňovat. Uloží se čistý den volna a MyCoach s tím počítá ve výpočtech.
+                </div>
+            </div>
+
+            <div class="col-12" data-rest-optional="true">
                 <div id="workoutTypePanels">
                     <?php foreach ($workoutTypeOptions as $typeKey => $typeDefinition): ?>
                     <div class="workout-type-panel border rounded-4 p-3 mb-3 <?= $selectedWorkoutType === $typeKey ? '' : 'd-none' ?>" data-workout-type-panel="<?= h($typeKey) ?>">
@@ -694,24 +770,24 @@ renderAthleteHeader('MyCoach denní záznam', false, true);
                 </div>
             </div>
 
-            <div class="col-12 col-md-3">
+            <div class="col-12 col-md-3" data-rest-optional="true">
                 <label class="form-label fw-semibold">Jak ses cítil?</label>
                 <input type="number" min="1" max="10" name="feeling_score" class="form-control" value="<?= h($feelingValue) ?>">
             </div>
-            <div class="col-12 col-md-3">
+            <div class="col-12 col-md-3" data-rest-optional="true">
                 <label class="form-label fw-semibold">RPE</label>
                 <input type="number" min="1" max="10" name="rpe_score" class="form-control" value="<?= h($rpeValue) ?>">
                 <div class="form-text">RPE = subjektivní vnímaná náročnost tréninku na škále 1-10.</div>
             </div>
-            <div class="col-12 col-md-3">
+            <div class="col-12 col-md-3" data-rest-optional="true">
                 <label class="form-label fw-semibold">Svalová bolest</label>
                 <input type="number" min="0" max="10" name="muscle_pain_score" class="form-control" value="<?= h($musclePainValue) ?>">
             </div>
-            <div class="col-12 col-md-3">
+            <div class="col-12 col-md-3" data-rest-optional="true">
                 <label class="form-label fw-semibold">Bolest kloubů</label>
                 <input type="number" min="0" max="10" name="joint_pain_score" class="form-control" value="<?= h($jointPainValue) ?>">
             </div>
-            <div class="col-12 col-md-3">
+            <div class="col-12 col-md-3" data-rest-optional="true">
                 <label class="form-label fw-semibold">Motivace</label>
                 <select name="motivation_score" class="form-select">
                     <option value="">Nevím</option>
@@ -720,27 +796,27 @@ renderAthleteHeader('MyCoach denní záznam', false, true);
                     <?php endfor; ?>
                 </select>
             </div>
-            <div class="col-12 col-md-3">
+            <div class="col-12 col-md-3" data-rest-optional="true">
                 <label class="form-label fw-semibold">Energie</label>
                 <input type="number" min="1" max="10" name="energy_score" class="form-control" value="<?= h($energyValue) ?>">
             </div>
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-4" data-rest-optional="true">
                 <label class="form-label fw-semibold">Délka tréninku (min)</label>
                 <input type="number" min="0" max="1440" name="training_duration_minutes" class="form-control" value="<?= h($durationValue) ?>">
             </div>
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-4" data-rest-optional="true">
                 <label class="form-label fw-semibold">Spálené kalorie</label>
                 <input type="number" min="0" max="20000" name="calories_burned" class="form-control" value="<?= h($caloriesValue) ?>">
             </div>
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-4" data-rest-optional="true">
                 <label class="form-label fw-semibold">Prům. tep</label>
                 <input type="number" min="0" max="300" name="avg_heart_rate" class="form-control" value="<?= h($avgHrValue) ?>">
             </div>
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-4" data-rest-optional="true">
                 <label class="form-label fw-semibold">Max tep</label>
                 <input type="number" min="0" max="300" name="max_heart_rate" class="form-control" value="<?= h($maxHrValue) ?>">
             </div>
-            <div class="col-12">
+            <div class="col-12" data-rest-optional="true">
                 <label class="form-label fw-semibold">Moje poznámka k tréninku</label>
                 <textarea name="athlete_note" class="form-control" rows="3" placeholder="Jak ses cítil, co bylo jinak, co ukázaly hodinky..."><?= h($athleteNoteValue) ?></textarea>
             </div>
@@ -851,17 +927,38 @@ renderAthleteHeader('MyCoach denní záznam', false, true);
 document.addEventListener('DOMContentLoaded', function () {
     const typeSelect = document.getElementById('workoutTypeSelect');
     const panels = document.querySelectorAll('[data-workout-type-panel]');
+    const restOptionalBlocks = document.querySelectorAll('[data-rest-optional="true"]');
+    const restModeHint = document.getElementById('restModeHint');
     const toggleBtn = document.getElementById('toggleDailyFormBtn');
     const formCollapse = document.getElementById('dailyFormCollapse');
     const sleepReminderBtn = document.getElementById('focusSleepReminderBtn');
     const sleepModal = document.getElementById('sleepQuickEntryModal');
     const sleepModalInput = sleepModal ? sleepModal.querySelector('input[name="sleep_hours_only"]') : null;
+    const workoutIdInput = document.querySelector('input[name="workout_id"]');
+    const workoutIdOriginalValue = workoutIdInput ? workoutIdInput.value : '';
 
     function syncPanels() {
         const activeType = typeSelect ? typeSelect.value : '';
+        const isRestMode = activeType === 'rest';
+
         panels.forEach(function (panel) {
             panel.classList.toggle('d-none', panel.dataset.workoutTypePanel !== activeType);
         });
+
+        restOptionalBlocks.forEach(function (block) {
+            block.classList.toggle('d-none', isRestMode);
+            block.querySelectorAll('input, select, textarea').forEach(function (element) {
+                element.disabled = isRestMode;
+            });
+        });
+
+        if (restModeHint) {
+            restModeHint.classList.toggle('d-none', !isRestMode);
+        }
+
+        if (workoutIdInput) {
+            workoutIdInput.value = isRestMode ? '' : workoutIdOriginalValue;
+        }
     }
 
     function syncToggleButton() {

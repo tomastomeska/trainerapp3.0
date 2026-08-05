@@ -41,6 +41,48 @@ body.mycoach-theme .mc-topbar {
   border-radius: calc(var(--mc-radius) + 4px);
   box-shadow: var(--mc-shadow);
   padding: 1rem 1.1rem;
+  position: relative;
+  overflow: hidden;
+}
+
+body.mycoach-theme .mc-app-logo-wrap {
+  display: none;
+}
+
+body.mycoach-theme .mc-app-logo {
+  display: none;
+}
+
+body.mycoach-theme .mc-topbar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #11a8ab 0%, #18bfc2 56%, #ff9c54 100%);
+  opacity: 0.95;
+}
+
+body.mycoach-theme .mc-topbar h2 {
+  margin-bottom: 0.25rem !important;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+body.mycoach-theme .mc-app-logo-inline {
+  height: 22px;
+  width: auto;
+  max-width: 140px;
+  object-fit: contain;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+body.mycoach-theme .mc-topbar .btn.btn-sm {
+  min-height: 38px;
+  padding: 0.45rem 0.82rem;
 }
 
 body.mycoach-theme .mc-actions {
@@ -231,6 +273,173 @@ body.mycoach-theme .text-muted {
   color: var(--mc-muted) !important;
 }
 
+body.mycoach-theme .mc-day-bubble {
+  width: 68px;
+  height: 68px;
+  line-height: 1;
+  margin-top: 2px;
+  border-radius: 999px;
+  border: 1px solid #bfd0df;
+  color: #245070;
+  background: #ffffff;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+body.mycoach-theme .mc-day-bubble:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(16, 38, 59, 0.14);
+}
+
+body.mycoach-theme .mc-day-bubble--empty {
+  background: #ffffff;
+  border-color: #bccbd9;
+  color: #2b5274;
+}
+
+body.mycoach-theme .mc-day-bubble--with-athlete {
+  background: linear-gradient(135deg, #07b8e8 0%, #16c5f2 100%);
+  border-color: #07a7d3;
+  color: #ffffff;
+}
+
+body.mycoach-theme .mc-day-bubble--with-both {
+  background: linear-gradient(135deg, #0d8f91 0%, #11a8ab 100%);
+  border-color: #0d8385;
+  color: #ffffff;
+}
+
+body.mycoach-theme .mc-day-bubble--with-trainer {
+  background: linear-gradient(135deg, #ffc24f 0%, #ffda7c 100%);
+  border-color: #efb540;
+  color: #4d3610;
+}
+
+body.mycoach-theme .mc-day-bubble--selected {
+  box-shadow: 0 0 0 3px rgba(22, 92, 142, 0.88);
+}
+
+body.mycoach-theme .mc-day-bubble--today {
+  border-style: dashed;
+  border-width: 2px;
+  box-shadow: 0 0 0 3px rgba(255, 154, 76, 0.72);
+}
+
+body.mycoach-theme .mc-day-bubble--selected.mc-day-bubble--today {
+  box-shadow:
+    0 0 0 3px rgba(22, 92, 142, 0.9),
+    0 0 0 6px rgba(255, 154, 76, 0.6);
+}
+
+body.mycoach-theme .mc-day-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem 1rem;
+}
+
+body.mycoach-theme .mc-day-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #425d73;
+  font-size: 0.86rem;
+}
+
+body.mycoach-theme .mc-day-legend__dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: #ffffff;
+  flex: 0 0 13px;
+}
+
+body.mycoach-theme .mc-day-legend__dot--selected {
+  background: #ffffff;
+  border: 2px solid #165c8e;
+}
+
+body.mycoach-theme .mc-day-legend__dot--today {
+  background: #ffffff;
+  border: 2px dashed #ff9a4c;
+}
+
+body.mycoach-theme .mc-day-legend__dot--with-both {
+  background: #11a8ab;
+  border-color: #0d8385;
+}
+
+body.mycoach-theme .mc-day-legend__dot--with-athlete {
+  background: #16c5f2;
+  border-color: #07a7d3;
+}
+
+body.mycoach-theme .mc-day-legend__dot--with-trainer {
+  background: #ffd06a;
+  border-color: #efb540;
+}
+
+body.mycoach-theme .mc-day-legend__dot--empty {
+  background: #ffffff;
+  border-color: #bccbd9;
+}
+
+body.mycoach-theme .mc-goals-board .card-header {
+  background: linear-gradient(180deg, #ffffff 0%, #eef7ff 100%) !important;
+}
+
+body.mycoach-theme .mc-goal-card {
+  border: 1px solid rgba(16, 38, 59, 0.12);
+  border-radius: 18px;
+  background: linear-gradient(155deg, #ffffff 0%, #f7fbff 100%);
+  padding: 0.9rem;
+  box-shadow: 0 10px 20px rgba(16, 38, 59, 0.08);
+}
+
+body.mycoach-theme .mc-goal-card .badge {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+body.mycoach-theme .mc-goal-progress-wrap {
+  display: grid;
+  gap: 0.35rem;
+}
+
+body.mycoach-theme .mc-goal-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: #dfeaf3;
+  overflow: hidden;
+}
+
+body.mycoach-theme .mc-goal-progress__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #0f8b8d 0%, #1abdc0 65%, #ff9a4c 100%);
+  transition: width 0.24s ease;
+}
+
+body.mycoach-theme .mc-goal-progress__labels {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
+  font-size: 0.76rem;
+  color: #60788d;
+}
+
+body.mycoach-theme .mc-goal-progress__labels span {
+  text-align: center;
+  padding: 0.16rem 0.2rem;
+  border-radius: 999px;
+  background: #eef4f9;
+}
+
+body.mycoach-theme .mc-goal-progress__labels span.is-active {
+  background: #d8eff0;
+  color: #0e6f71;
+  font-weight: 700;
+}
+
 @media (max-width: 991.98px) {
   body.mycoach-theme .mc-topbar {
     padding: 0.9rem;
@@ -238,6 +447,12 @@ body.mycoach-theme .text-muted {
 
   body.mycoach-theme .mc-topbar h2 {
     font-size: 1.45rem;
+    gap: 0.4rem;
+  }
+
+  body.mycoach-theme .mc-app-logo-inline {
+    height: 20px;
+    max-width: 120px;
   }
 
   body.mycoach-theme .mc-actions {
@@ -274,6 +489,11 @@ body.mycoach-theme .text-muted {
     margin-bottom: 0.25rem !important;
   }
 
+  body.mycoach-theme .mc-app-logo-inline {
+    height: 18px;
+    max-width: 104px;
+  }
+
   body.mycoach-theme .mc-actions .btn {
     flex: 1 1 100%;
   }
@@ -299,6 +519,15 @@ body.mycoach-theme .text-muted {
 
   body.mycoach-theme .btn {
     min-height: 42px;
+  }
+
+  body.mycoach-theme .mc-day-bubble {
+    width: 62px;
+    height: 62px;
+  }
+
+  body.mycoach-theme .mc-day-legend__item {
+    font-size: 0.81rem;
   }
 
   body.mycoach-theme .card::before {

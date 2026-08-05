@@ -70,7 +70,7 @@ renderHeader('MyCoach sportovci', false, true);
 
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2 mc-topbar">
     <div>
-        <h2 class="mb-1"><i class="fas fa-users me-2 text-warning"></i>MyCoach sportovci</h2>
+        <h2 class="mb-1"><?php renderMyCoachAppLogoInline(); ?><i class="fas fa-users me-2 text-warning"></i>MyCoach sportovci</h2>
         <div class="text-muted">Sledování sportovců trenéra v samostatné kartě</div>
     </div>
     <div class="d-flex gap-2 flex-wrap mc-actions">
