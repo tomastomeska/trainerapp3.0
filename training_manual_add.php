@@ -30,10 +30,12 @@ if (!$athlete) {
     redirect(BASE_URL . '/dashboard.php');
 }
 
+$activeSetFilter = workoutSetArchivingEnabled() ? ' AND ws.is_active = 1' : '';
+
 $stmtSets = $pdo->prepare(
     'SELECT ws.id, ws.name
      FROM workout_sets ws
-     WHERE ws.coach_id = ?
+     WHERE ws.coach_id = ?' . $activeSetFilter . '
      ORDER BY ws.name'
 );
 $stmtSets->execute([$coachId]);
@@ -44,7 +46,7 @@ $stmtSetExercises = $pdo->prepare(
      FROM workout_set_exercises wse
      JOIN workout_sets ws ON ws.id = wse.workout_set_id
      JOIN exercises e ON e.id = wse.exercise_id
-     WHERE ws.coach_id = ?
+    WHERE ws.coach_id = ?' . $activeSetFilter . '
      ORDER BY ws.name, wse.exercise_order'
 );
 $stmtSetExercises->execute([$coachId]);
@@ -93,10 +95,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Zadejte datum tréninku.';
     }
 
-    $stmtSetCheck = $pdo->prepare('SELECT id FROM workout_sets WHERE id = ? AND coach_id = ?');
+    $setCheckSql = 'SELECT id FROM workout_sets WHERE id = ? AND coach_id = ?';
+    if (workoutSetArchivingEnabled()) {
+        $setCheckSql .= ' AND is_active = 1';
+    }
+    $stmtSetCheck = $pdo->prepare($setCheckSql);
     $stmtSetCheck->execute([$workoutSetId, $coachId]);
     if (!$stmtSetCheck->fetch(PDO::FETCH_ASSOC)) {
-        $errors[] = 'Vybraná sada nepatří pod váš profil.';
+        $errors[] = 'Vybraná sada nepatří pod váš profil nebo je archivovaná.';
     }
 
     $exerciseIds = array_map('intval', (array)($_POST['exercise_id'] ?? []));

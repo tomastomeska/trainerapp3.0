@@ -8,6 +8,54 @@ requireAthleteLogin();
 renderAthleteHeader('Návod pro sportovce', false, true);
 ?>
 
+<style>
+    .manual-sticky-nav {
+        position: sticky;
+        top: 72px;
+        z-index: 1015;
+    }
+
+    .manual-anchor-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .4rem;
+    }
+
+    .manual-anchor-links .btn {
+        border-radius: 999px;
+    }
+
+    .manual-priority {
+        font-size: .7rem;
+        font-weight: 700;
+        padding: .2rem .5rem;
+        border-radius: 999px;
+        margin-left: .45rem;
+        vertical-align: middle;
+    }
+
+    .manual-priority-high {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .manual-priority-mid {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .manual-priority-low {
+        background: #dbeafe;
+        color: #1e3a8a;
+    }
+
+    @media (max-width: 991.98px) {
+        .manual-sticky-nav {
+            top: 62px;
+        }
+    }
+</style>
+
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h2 class="mb-0"><i class="fas fa-book-open me-2 text-warning"></i>Návod pro sportovce</h2>
     <div class="d-flex gap-2 flex-wrap">
@@ -25,12 +73,50 @@ renderAthleteHeader('Návod pro sportovce', false, true);
 </div>
 
 <div class="alert alert-success shadow-sm border-0">
-    <strong>Novinky v této verzi:</strong> přibyla samostatná sekce <strong>Videa</strong> (v menu i na dashboardu), kde vidíte videa sdílená trenérem. Přehrávání běží bezpečně přes interní stream a nově se seznam videí průběžně automaticky obnovuje.
+    <strong>Novinky v této verzi:</strong>
+    <ul class="mb-0 mt-2">
+        <li>dlaždice <strong>Events</strong> a <strong>MyCoach</strong> na dashboardu (podle odemčení účtu),</li>
+        <li><strong>Apple Kalendář (CalDAV push)</strong> s možností stáhnout <strong>.mobileconfig</strong> profil,</li>
+        <li>v kalendáři lepší práce s termíny: týdenní přehled, měsíční seznam, přehledné stavy schválení,</li>
+        <li>sekce <strong>Videa</strong> s bezpečným interním přehráváním a automatickou obnovou seznamu.</li>
+    </ul>
+</div>
+
+<div class="card border-0 shadow-sm mb-4 manual-sticky-nav">
+    <div class="card-body py-2">
+        <div class="manual-anchor-links">
+            <a href="#athlete-start" class="btn btn-outline-dark btn-sm">Start</a>
+            <a href="#athlete-profile" class="btn btn-outline-dark btn-sm">Profil</a>
+            <a href="#athlete-calendar" class="btn btn-outline-dark btn-sm">Kalendář</a>
+            <a href="#athlete-food" class="btn btn-outline-dark btn-sm">Jídelníčky</a>
+            <a href="#athlete-payments" class="btn btn-outline-dark btn-sm">Platby</a>
+            <a href="#athlete-events" class="btn btn-outline-dark btn-sm">Events</a>
+            <a href="#athlete-mycoach" class="btn btn-outline-dark btn-sm">MyCoach</a>
+            <a href="#athlete-messages" class="btn btn-outline-dark btn-sm">Zprávy</a>
+        </div>
+    </div>
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-light fw-semibold"><i class="fas fa-compass me-2 text-warning"></i>Rychlá orientace: kde co najdu</div>
+    <div class="card-body">
+        <div class="row g-2 small">
+            <div class="col-12 col-md-6"><i class="fas fa-calendar-alt me-2 text-muted"></i><strong>Kalendář:</strong> termíny, stavy schválení, změny termínů</div>
+            <div class="col-12 col-md-6"><i class="fas fa-wallet me-2 text-muted"></i><strong>Platby:</strong> přehled období, stavy plateb, QR platby</div>
+            <div class="col-12 col-md-6"><i class="fas fa-utensils me-2 text-muted"></i><strong>Jídelníčky:</strong> aktuální plán od trenéra</div>
+            <div class="col-12 col-md-6"><i class="fas fa-chart-line me-2 text-muted"></i><strong>Grafy:</strong> trend progresu a hmotnosti</div>
+            <div class="col-12 col-md-6"><i class="fas fa-video me-2 text-muted"></i><strong>Videa:</strong> sdílená videa od trenéra</div>
+            <div class="col-12 col-md-6"><i class="fas fa-flag-checkered me-2 text-muted"></i><strong>Events:</strong> event karty, záložky, formuláře</div>
+            <div class="col-12 col-md-6"><i class="fas fa-brain me-2 text-muted"></i><strong>MyCoach:</strong> cíle, dotazník, denní doporučení</div>
+            <div class="col-12 col-md-6"><i class="fas fa-envelope me-2 text-muted"></i><strong>Zprávy:</strong> komunikace s trenérem</div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4" id="athlete-start">
     <div class="card-header bg-dark text-white fw-semibold">
         <i class="fas fa-rocket me-2"></i>Jak začít po prvním přihlášení
+        <span class="manual-priority manual-priority-high">Doporučeno ihned</span>
     </div>
     <div class="card-body">
         <ol class="mb-0">
@@ -41,12 +127,13 @@ renderAthleteHeader('Návod pro sportovce', false, true);
             <li>V Jídelníčcích projděte aktuálně přiřazený plán.</li>
             <li>V Platbách zkontrolujte přehled období a zbývajících tréninků.</li>
             <li>Ve Zprávách si přečtěte nové instrukce od trenéra.</li>
+            <li>Pokud máte odemčené moduly, otevřete také Events a MyCoach.</li>
         </ol>
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-user me-2 text-warning"></i>1) Profil: kontrola údajů a změna hesla</div>
+<div class="card border-0 shadow-sm mb-4" id="athlete-profile">
+    <div class="card-header fw-semibold"><i class="fas fa-user me-2 text-warning"></i>1) Profil: kontrola údajů a změna hesla <span class="manual-priority manual-priority-high">Důležité</span></div>
     <div class="card-body">
         <h6 class="fw-bold">Jak zkontrolovat a upravit profil</h6>
         <ol>
@@ -74,51 +161,43 @@ renderAthleteHeader('Návod pro sportovce', false, true);
             <li>Zadaná hmotnost se ukládá do vaší historie a trenér ji uvidí při vedení tréninku.</li>
         </ol>
 
-        <h6 class="fw-bold mt-3">Jak propojit moje tréninky s Apple Kalendářem</h6>
+        <h6 class="fw-bold mt-3">Jak propojit moje tréninky s Apple Kalendářem (doporučeno)</h6>
         <ol>
-            <li>V menu otevřete Profil.</li>
-            <li>Najděte kartu Apple Kalendář.</li>
+            <li>V menu otevřete Kalendář a přejděte na záložku Apple Kalendář (Beta).</li>
             <li>Zapněte volbu Synchronizovat moje tréninky do Apple Kalendáře.</li>
-            <li>Klikněte na Uložit nastavení.</li>
-            <li>Zkopírujte soukromý Apple kalendář odkaz.</li>
-            <li>Na iPhonu nebo iPadu otevřete Nastavení &gt; Kalendář &gt; Účty &gt; Přidat účet &gt; Jiný &gt; Přidat odebíraný kalendář.</li>
-            <li>Na Macu otevřete Kalendář &gt; Soubor &gt; Nový odběr kalendáře.</li>
-            <li>Vložte soukromý odkaz a potvrďte odběr.</li>
-            <li>Neschválené termíny se zobrazí jako čekající na schválení a po schválení se automaticky změní na běžnou událost.</li>
+            <li>Vyplňte Apple ID a app-specific heslo.</li>
+            <li>Klikněte na Uložit CalDAV sync, případně na Vygenerovat URL TrainerApp.</li>
+            <li>Volitelně klikněte na Stáhnout Apple profil (.mobileconfig) a profil nainstalujte v iPhonu/iPadu.</li>
+            <li>Pokud migrujete historii, použijte tlačítko Natáhnout dřívější události.</li>
+            <li>Při duplicitách po instalaci profilu ponechte stejný kalendář zapnutý jen v jedné sekci (TrainerApp nebo iCloud).</li>
+            <li>Neschválené termíny se v kalendáři zobrazí jako Ke schválení a po schválení se automaticky přepnou.</li>
         </ol>
 
-        <h6 class="fw-bold mt-3">Jak propojit moje tréninky s Google Kalendářem</h6>
+        <h6 class="fw-bold mt-3">Google Kalendář</h6>
         <ol>
-            <li>V menu otevřete Kalendář.</li>
-            <li>Přepněte se do záložky Google Kalendář.</li>
-            <li>Zapněte volbu Synchronizovat moje tréninky do Google Kalendáře.</li>
-            <li>Klikněte na Uložit nastavení.</li>
-            <li>Zkopírujte soukromý Google kalendář odkaz (ICS).</li>
-            <li>Otevřete Google Kalendář v prohlížeči.</li>
-            <li>V levém panelu klikněte na plus u Další kalendáře a zvolte Z URL.</li>
-            <li>Vložte soukromý odkaz a potvrďte Přidat kalendář.</li>
-            <li>Neschválené termíny zůstávají označené jako čekající na schválení.</li>
+            <li>V aktuální verzi je záložka Google Kalendář u sportovce označená jako Ve vývoji.</li>
+            <li>Pokud bude aktivovaná, postup bude stejný jako dříve přes soukromý ICS odkaz.</li>
         </ol>
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-calendar-alt me-2 text-warning"></i>2) Kalendář: jak pracovat s termíny</div>
+<div class="card border-0 shadow-sm mb-4" id="athlete-calendar">
+    <div class="card-header fw-semibold"><i class="fas fa-calendar-alt me-2 text-warning"></i>2) Kalendář: jak pracovat s termíny <span class="manual-priority manual-priority-high">Každý den</span></div>
     <div class="card-body">
         <h6 class="fw-bold">Jak zkontrolovat nejbližší tréninky</h6>
         <ol>
             <li>Otevřete Kalendář.</li>
-            <li>Přepněte se na aktuální týden/měsíc podle potřeby.</li>
-            <li>Klikněte na konkrétní termín a zkontrolujte datum, čas a místo.</li>
+            <li>V Týdenním kalendáři zkontrolujte nejbližší termíny a jejich stav.</li>
+            <li>V Měsíčním seznamu si zkontrolujte přehled všech událostí v měsíci.</li>
+            <li>Klikněte na konkrétní termín a zkontrolujte datum, čas, místo a stav schválení.</li>
         </ol>
 
-        <h6 class="fw-bold mt-3">Jak požádat o změnu termínu</h6>
+        <h6 class="fw-bold mt-3">Jak řešit změnu termínu</h6>
         <ol>
-            <li>V Kalendáři otevřete termín, který potřebujete řešit.</li>
-            <li>Zvolte možnost požadavku na změnu (pokud je dostupná).</li>
-            <li>Napište stručný důvod a navrhněte alternativní čas.</li>
-            <li>Odešlete požadavek a sledujte schválení trenérem.</li>
-            <li><strong>Nově</strong> se čekající požadavky zobrazují přehledněji, takže snadno poznáte, co ještě čeká na potvrzení.</li>
+            <li>U čekajícího termínu (Ke schválení) můžete termín přímo upravit nebo zrušit.</li>
+            <li>U schváleného budoucího termínu pošlete požadavek na změnu.</li>
+            <li>Pokud je termín označený jako Nelze zrušit, je potřeba domluva s trenérem přes Zprávy.</li>
+            <li>Průběžně sledujte stav požadavku v kalendáři a v měsíčním seznamu.</li>
         </ol>
     </div>
 </div>
@@ -144,7 +223,7 @@ renderAthleteHeader('Návod pro sportovce', false, true);
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-4">
+<div class="card border-0 shadow-sm mb-4" id="athlete-food">
     <div class="card-header fw-semibold"><i class="fas fa-utensils me-2 text-warning"></i>4) Jídelníčky: jak plán používat denně</div>
     <div class="card-body">
         <h6 class="fw-bold">Jak otevřít a číst jídelníček</h6>
@@ -165,8 +244,8 @@ renderAthleteHeader('Návod pro sportovce', false, true);
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-wallet me-2 text-warning"></i>5) Platby: jak číst přehled</div>
+<div class="card border-0 shadow-sm mb-4" id="athlete-payments">
+    <div class="card-header fw-semibold"><i class="fas fa-wallet me-2 text-warning"></i>5) Platby: jak číst přehled <span class="manual-priority manual-priority-mid">Měsíčně</span></div>
     <div class="card-body">
         <ol>
             <li>V Profilu v kartě Platby zkontrolujte rychlý přehled posledních období.</li>
@@ -204,8 +283,35 @@ renderAthleteHeader('Návod pro sportovce', false, true);
     </div>
 </div>
 
+<div class="card border-0 shadow-sm mb-4" id="athlete-events">
+    <div class="card-header fw-semibold"><i class="fas fa-flag-checkered me-2 text-warning"></i>8) Events: jak pracovat se speciálními událostmi <span class="manual-priority manual-priority-low">Volitelné</span></div>
+    <div class="card-body">
+        <ol>
+            <li>Pokud je modul odemčený, otevřete na dashboardu dlaždici Events.</li>
+            <li>Vyberte konkrétní event kartu a otevřete detail.</li>
+            <li>V detailu přepínejte záložky (obsah, pravidla, formuláře, další informace).</li>
+            <li>U nadcházejících položek sledujte živý stav (zbývá / probíhá / proběhlo).</li>
+            <li>Pokud je potřeba vyplnit formulář, odešlete jej přímo v detailu eventu.</li>
+        </ol>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4" id="athlete-mycoach">
+    <div class="card-header fw-semibold"><i class="fas fa-brain me-2 text-warning"></i>9) MyCoach: cíle, dotazník a denní doporučení <span class="manual-priority manual-priority-mid">Průběžně</span></div>
+    <div class="card-body">
+        <ol>
+            <li>Pokud je modul odemčený, otevřete na dashboardu dlaždici MyCoach.</li>
+            <li>V přehledu založte nebo vyberte aktivní cíl.</li>
+            <li>Nastavte primární cíl (hvězdička), pokud máte více aktivních cílů.</li>
+            <li>Vyplňte Úvodní dotazník na samostatné stránce dotazníku.</li>
+            <li>Průběžně sledujte doporučení, readiness a timeline (Start/Taper/Finish/Archiv).</li>
+            <li>Cíle lze prodlužovat nebo ukončovat; ukončené cíle se přesouvají do archivu.</li>
+        </ol>
+    </div>
+</div>
+
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-video me-2 text-warning"></i>8) Videa od trenéra: přehrávání a orientace</div>
+    <div class="card-header fw-semibold"><i class="fas fa-video me-2 text-warning"></i>10) Videa od trenéra: přehrávání a orientace</div>
     <div class="card-body">
         <h6 class="fw-bold">Jak otevřít videa od trenéra</h6>
         <ol>
@@ -218,14 +324,14 @@ renderAthleteHeader('Návod pro sportovce', false, true);
         <h6 class="fw-bold mt-3">Na co si dát pozor</h6>
         <ol>
             <li>Videa jsou dostupná jen po přihlášení do vašeho účtu.</li>
-            <li>Pokud trenér přidá nové video, seznam se průběžně sám aktualizuje.</li>
+            <li>Pokud trenér přidá nové video, seznam se průběžně automaticky obnovuje.</li>
             <li>Když nějaké video nevidíte nebo nejde přehrát, napište trenérovi přes Zprávy.</li>
         </ol>
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-envelope me-2 text-warning"></i>9) Zprávy: komunikace s trenérem</div>
+<div class="card border-0 shadow-sm mb-4" id="athlete-messages">
+    <div class="card-header fw-semibold"><i class="fas fa-envelope me-2 text-warning"></i>11) Zprávy: komunikace s trenérem <span class="manual-priority manual-priority-high">Reakce do 24 h</span></div>
     <div class="card-body">
         <h6 class="fw-bold">Jak odeslat zprávu trenérovi</h6>
         <ol>
@@ -238,7 +344,7 @@ renderAthleteHeader('Návod pro sportovce', false, true);
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-4">
+<div class="card border-0 shadow-sm mb-4" id="athlete-routine">
     <div class="card-header fw-semibold"><i class="fas fa-calendar-week me-2 text-warning"></i>Doporučená denní rutina sportovce</div>
     <div class="card-body">
         <ol class="mb-0">
@@ -246,6 +352,7 @@ renderAthleteHeader('Návod pro sportovce', false, true);
             <li>Během dne: dodržujte jídelníček podle aktuálního plánu.</li>
             <li>Po kontrole progresu: doplňte aktuální hmotnost do profilu.</li>
             <li>Po tréninku: otevřete detail tréninku a zhodnoťte výkon.</li>
+            <li>Pokud používáte MyCoach: zapište denní vstupy a zkontrolujte doporučení.</li>
             <li>Večer: zkontrolujte Zprávy a potvrďte další kroky s trenérem.</li>
         </ol>
     </div>

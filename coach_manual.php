@@ -8,6 +8,54 @@ requireLogin();
 renderHeader('Návod pro trenéry', false, true);
 ?>
 
+<style>
+    .manual-sticky-nav {
+        position: sticky;
+        top: 72px;
+        z-index: 1015;
+    }
+
+    .manual-anchor-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .4rem;
+    }
+
+    .manual-anchor-links .btn {
+        border-radius: 999px;
+    }
+
+    .manual-priority {
+        font-size: .7rem;
+        font-weight: 700;
+        padding: .2rem .5rem;
+        border-radius: 999px;
+        margin-left: .45rem;
+        vertical-align: middle;
+    }
+
+    .manual-priority-high {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .manual-priority-mid {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .manual-priority-low {
+        background: #dbeafe;
+        color: #1e3a8a;
+    }
+
+    @media (max-width: 991.98px) {
+        .manual-sticky-nav {
+            top: 62px;
+        }
+    }
+</style>
+
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h2 class="mb-0"><i class="fas fa-book-open me-2 text-warning"></i>Návod pro trenéry</h2>
     <div class="d-flex gap-2 flex-wrap">
@@ -25,12 +73,53 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="alert alert-success shadow-sm border-0">
-    <strong>Novinky v této verzi:</strong> přibyla kompletní sekce <strong>Videa</strong> (moje videa, vlastní složky a složky sportovců), nové nahrávání až <strong>1 GB na video</strong> a přesnější chybová hlášení při uploadu. U sportovce navíc otevřete jeho videa i přímo přes tlačítko Videa.
+    <strong>Novinky v této verzi:</strong>
+    <ul class="mb-0 mt-2">
+        <li>moduly <strong>Events</strong> a <strong>MyCoach</strong> jsou řízené per-účtem (odemčeno/uzamčeno),</li>
+        <li><strong>Apple CalDAV push</strong> + stažení Apple profilu <strong>.mobileconfig</strong>,</li>
+        <li>u sad je dostupná <strong>archivace</strong> (aktivní/archiv/vše),</li>
+        <li>videa: nahrávání až <strong>1 GB na soubor</strong>, složky a sdílení po sportovcích,</li>
+        <li>Events obsah je centrálně spravovaný v administraci (eventy, záložky, média, formuláře, CSV importy).</li>
+    </ul>
+</div>
+
+<div class="card border-0 shadow-sm mb-4 manual-sticky-nav">
+    <div class="card-body py-2">
+        <div class="manual-anchor-links">
+            <a href="#coach-start" class="btn btn-outline-dark btn-sm">Start</a>
+            <a href="#coach-athletes" class="btn btn-outline-dark btn-sm">Sportovci</a>
+            <a href="#coach-training" class="btn btn-outline-dark btn-sm">Trénink</a>
+            <a href="#coach-calendar" class="btn btn-outline-dark btn-sm">Kalendář</a>
+            <a href="#coach-payments" class="btn btn-outline-dark btn-sm">Platby</a>
+            <a href="#coach-events" class="btn btn-outline-dark btn-sm">Events</a>
+            <a href="#coach-mycoach" class="btn btn-outline-dark btn-sm">MyCoach</a>
+            <a href="#coach-messages" class="btn btn-outline-dark btn-sm">Zprávy</a>
+        </div>
+    </div>
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-light fw-semibold"><i class="fas fa-compass me-2 text-warning"></i>Rychlá orientace: kde co najdu</div>
+    <div class="card-body">
+        <div class="row g-2 small">
+            <div class="col-12 col-md-6"><i class="fas fa-users me-2 text-muted"></i><strong>Sportovci:</strong> detail, historie, akce účtu</div>
+            <div class="col-12 col-md-6"><i class="fas fa-list me-2 text-muted"></i><strong>Cviky:</strong> vlastní knihovna cviků</div>
+            <div class="col-12 col-md-6"><i class="fas fa-layer-group me-2 text-muted"></i><strong>Sady:</strong> aktivní/archiv/vše, editace struktury</div>
+            <div class="col-12 col-md-6"><i class="fas fa-calendar-alt me-2 text-muted"></i><strong>Kalendář:</strong> plánování, schvalování, Apple sync</div>
+            <div class="col-12 col-md-6"><i class="fas fa-wallet me-2 text-muted"></i><strong>Platby:</strong> výzvy, stav úhrad, účtenky</div>
+            <div class="col-12 col-md-6"><i class="fas fa-utensils me-2 text-muted"></i><strong>Jídelníčky:</strong> tvorba a přiřazení plánů</div>
+            <div class="col-12 col-md-6"><i class="fas fa-video me-2 text-muted"></i><strong>Videa:</strong> upload, složky, sdílení sportovcům</div>
+            <div class="col-12 col-md-6"><i class="fas fa-flag-checkered me-2 text-muted"></i><strong>Events:</strong> práce s publikovanými eventy</div>
+            <div class="col-12 col-md-6"><i class="fas fa-brain me-2 text-muted"></i><strong>MyCoach:</strong> cíle, monitoring, dotazníky</div>
+            <div class="col-12 col-md-6"><i class="fas fa-comments me-2 text-muted"></i><strong>Zprávy:</strong> komunikace se sportovci</div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4" id="coach-start">
     <div class="card-header bg-dark text-white fw-semibold">
         <i class="fas fa-list-check me-2"></i>Jak začít od nuly (doporučené pořadí)
+        <span class="manual-priority manual-priority-high">Doporučeno ihned</span>
     </div>
     <div class="card-body">
         <ol class="mb-0">
@@ -43,12 +132,13 @@ renderHeader('Návod pro trenéry', false, true);
             <li>V Platbách založte první platbu.</li>
             <li>V Jídelníčcích vytvořte plán a přiřaďte ho sportovci.</li>
             <li>Ve Zprávách pošlete sportovci úvodní instrukce.</li>
+            <li>Pokud máte odemčené moduly, nastavte také Events a MyCoach workflow.</li>
         </ol>
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-users me-2 text-warning"></i>1) Sportovci: založení, úprava, detail</div>
+<div class="card border-0 shadow-sm mb-4" id="coach-athletes">
+    <div class="card-header fw-semibold"><i class="fas fa-users me-2 text-warning"></i>1) Sportovci: založení, úprava, detail <span class="manual-priority manual-priority-high">Denně</span></div>
     <div class="card-body">
         <h6 class="fw-bold">Jak založit nového sportovce</h6>
         <ol>
@@ -116,11 +206,20 @@ renderHeader('Návod pro trenéry', false, true);
             <li>Uložte změny.</li>
             <li>Zkontrolujte, že při spuštění tréninku se načítá nová verze sady.</li>
         </ol>
+
+        <h6 class="fw-bold mt-3">Archivace sad (nově)</h6>
+        <ol>
+            <li>V Sadách použijte přepínač Aktivní / Archiv / Vše.</li>
+            <li>Sady, které nechcete používat pro nové tréninky, archivujte místo mazání.</li>
+            <li>Archivovanou sadu lze kdykoliv obnovit mezi aktivní.</li>
+            <li>Flexibilní sadu nelze archivovat.</li>
+            <li>Sady použité v historii tréninků nemažte, doporučený postup je archivace.</li>
+        </ol>
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-stopwatch me-2 text-warning"></i>4) Trénink: živě, ručně, párově</div>
+<div class="card border-0 shadow-sm mb-4" id="coach-training">
+    <div class="card-header fw-semibold"><i class="fas fa-stopwatch me-2 text-warning"></i>4) Trénink: živě, ručně, párově <span class="manual-priority manual-priority-high">Klíčové</span></div>
     <div class="card-body">
         <h6 class="fw-bold">A. Jak spustit živý trénink</h6>
         <ol>
@@ -156,8 +255,8 @@ renderHeader('Návod pro trenéry', false, true);
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-calendar-alt me-2 text-warning"></i>5) Kalendář: nové termíny a změny</div>
+<div class="card border-0 shadow-sm mb-4" id="coach-calendar">
+    <div class="card-header fw-semibold"><i class="fas fa-calendar-alt me-2 text-warning"></i>5) Kalendář: nové termíny a změny <span class="manual-priority manual-priority-high">Denně</span></div>
     <div class="card-body">
         <h6 class="fw-bold">Jak vytvořit nový termín</h6>
         <ol>
@@ -182,33 +281,27 @@ renderHeader('Návod pro trenéry', false, true);
         <ol>
             <li>Otevřete Kalendář.</li>
             <li>Přepněte se do záložky Apple Kalendář.</li>
-            <li>Zapněte volbu Synchronizovat události do Apple Kalendáře.</li>
-            <li>Klikněte na Uložit nastavení.</li>
-            <li>Zkopírujte soukromý Apple kalendář odkaz.</li>
-            <li>Na iPhonu nebo iPadu otevřete Nastavení &gt; Kalendář &gt; Účty &gt; Přidat účet &gt; Jiný &gt; Přidat odebíraný kalendář.</li>
-            <li>Na Macu otevřete Kalendář &gt; Soubor &gt; Nový odběr kalendáře.</li>
-            <li>Vložte soukromý odkaz a potvrďte odběr.</li>
-            <li>Ověřte, že se v Apple Kalendáři zobrazil nový kalendář.</li>
-            <li>Pamatujte, že se synchronizují pouze události, ne uzamčené časy.</li>
+            <li>Zapněte volbu Zapnout Apple CalDAV push synchronizaci.</li>
+            <li>Vyplňte Apple ID, app-specific heslo a volitelně CalDAV URL.</li>
+            <li>Klikněte na Uložit Apple CalDAV nebo na Vygenerovat URL TrainerApp.</li>
+            <li>Volitelně stáhněte Apple profil (.mobileconfig) a nainstalujte jej v zařízení.</li>
+            <li>Pokud migrujete historii, použijte Natáhnout dřívější události.</li>
+            <li>Pamatujte, že se synchronizují události; uzamčené časy se neposílají.</li>
+            <li>Při duplicitách po instalaci profilu nechte stejný kalendář zapnutý jen v jedné sekci (TrainerApp nebo iCloud).</li>
         </ol>
 
         <h6 class="fw-bold mt-3">Jak propojit kalendář s Google Kalendářem</h6>
         <ol>
-            <li>Otevřete Kalendář.</li>
-            <li>Přepněte se do záložky Google Kalendář.</li>
-            <li>Zapněte volbu Synchronizovat události do Google Kalendáře.</li>
-            <li>Klikněte na Uložit nastavení.</li>
-            <li>Zkopírujte soukromý Google kalendář odkaz (ICS).</li>
-            <li>Otevřete Google Kalendář v prohlížeči.</li>
-            <li>V levém panelu klikněte na plus u Další kalendáře a zvolte Z URL.</li>
-            <li>Vložte soukromý odkaz a potvrďte Přidat kalendář.</li>
+            <li>V aktuální verzi je záložka Google Kalendář v UI označená jako Ve vývoji.</li>
+            <li>Jakmile je modul aktivní, nejdřív propojte Google účet trenéra a potom zapněte sync.</li>
+            <li>Volitelně můžete použít i ICS odkaz pro odběr v Google Kalendáři.</li>
             <li>Počítejte s tím, že Google změny načítá periodicky a ne vždy okamžitě.</li>
         </ol>
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-wallet me-2 text-warning"></i>6) Platby: zápis a kontrola</div>
+<div class="card border-0 shadow-sm mb-4" id="coach-payments">
+    <div class="card-header fw-semibold"><i class="fas fa-wallet me-2 text-warning"></i>6) Platby: zápis a kontrola <span class="manual-priority manual-priority-mid">Měsíčně</span></div>
     <div class="card-body">
         <h6 class="fw-bold">Jak připravit a otevřít výzvu k úhradě</h6>
         <ol>
@@ -272,8 +365,35 @@ renderHeader('Návod pro trenéry', false, true);
     </div>
 </div>
 
+<div class="card border-0 shadow-sm mb-4" id="coach-events">
+    <div class="card-header fw-semibold"><i class="fas fa-flag-checkered me-2 text-warning"></i>9) Events: práce s eventy <span class="manual-priority manual-priority-low">Volitelné</span></div>
+    <div class="card-body">
+        <ol>
+            <li>Na dashboardu otevřete dlaždici Events (pokud je účet odemčený).</li>
+            <li>Vyberte event kartu a přejděte do detailu eventu.</li>
+            <li>Používejte záložky eventu podle scénáře (obsah, pravidla, formuláře, harmonogram).</li>
+            <li>V části Nadcházející položky sledujte živý stav položek (zbývá / probíhá / proběhlo).</li>
+            <li>Obsah eventů (karty, záložky, média, importy) upravuje administrátor v admin/events.php.</li>
+        </ol>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4" id="coach-mycoach">
+    <div class="card-header fw-semibold"><i class="fas fa-brain me-2 text-warning"></i>10) MyCoach: cíle a monitoring <span class="manual-priority manual-priority-mid">Průběžně</span></div>
+    <div class="card-body">
+        <ol>
+            <li>Na dashboardu otevřete dlaždici MyCoach (pokud je účet odemčený).</li>
+            <li>Nastavte jeden nebo více aktivních cílů.</li>
+            <li>Určete primární cíl (hvězdička), který řídí hlavní doporučení.</li>
+            <li>Využijte stránky Dotazník, Grafy a Sportovci pro denní práci.</li>
+            <li>Sledujte badge MyCoach plán běží, readiness a stav sportovců.</li>
+            <li>Cíle lze prodloužit nebo ukončit; ukončené přecházejí do archivu.</li>
+        </ol>
+    </div>
+</div>
+
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-video me-2 text-warning"></i>9) Videa: nahrání, třídění a sdílení</div>
+    <div class="card-header fw-semibold"><i class="fas fa-video me-2 text-warning"></i>11) Videa: nahrání, třídění a sdílení</div>
     <div class="card-body">
         <h6 class="fw-bold">Jak pracovat s videosekcí</h6>
         <ol>
@@ -291,6 +411,7 @@ renderHeader('Návod pro trenéry', false, true);
             <li>Při volbě Vybraní sportovci označte konkrétní příjemce.</li>
             <li>Volitelně doplňte popis videa a zvolte vlastní složku.</li>
             <li>Po uložení ověřte, že se video zobrazilo ve správné složce.</li>
+            <li>Pokud upload padá, zkontrolujte server limity upload_max_filesize a post_max_size.</li>
         </ol>
 
         <h6 class="fw-bold mt-3">Jak upravit sdílení nebo odebrat video sportovci</h6>
@@ -303,8 +424,8 @@ renderHeader('Návod pro trenéry', false, true);
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-comments me-2 text-warning"></i>10) Zprávy: komunikace se sportovci</div>
+<div class="card border-0 shadow-sm mb-4" id="coach-messages">
+    <div class="card-header fw-semibold"><i class="fas fa-comments me-2 text-warning"></i>12) Zprávy: komunikace se sportovci <span class="manual-priority manual-priority-high">Reakce do 24 h</span></div>
     <div class="card-body">
         <h6 class="fw-bold">Jak odeslat novou zprávu</h6>
         <ol>
@@ -326,7 +447,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-chart-line me-2 text-warning"></i>11) Grafy a reporty: jak vyhodnocovat</div>
+    <div class="card-header fw-semibold"><i class="fas fa-chart-line me-2 text-warning"></i>13) Grafy a reporty: jak vyhodnocovat</div>
     <div class="card-body">
         <ol>
             <li>Otevřete Grafy nebo Reporty.</li>
@@ -339,7 +460,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-user-cog me-2 text-warning"></i>12) Profil a heslo</div>
+    <div class="card-header fw-semibold"><i class="fas fa-user-cog me-2 text-warning"></i>14) Profil a heslo</div>
     <div class="card-body">
         <ol>
             <li>Otevřete Profil.</li>
@@ -351,7 +472,7 @@ renderHeader('Návod pro trenéry', false, true);
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-4">
+<div class="card border-0 shadow-sm mb-4" id="coach-routine">
     <div class="card-header fw-semibold"><i class="fas fa-calendar-week me-2 text-warning"></i>Denní workflow trenéra</div>
     <div class="card-body">
         <ol class="mb-0">
@@ -360,6 +481,7 @@ renderHeader('Návod pro trenéry', false, true);
             <li>Odpoledne: projděte Zprávy a odpovězte na dotazy.</li>
             <li>Průběžně: kontrolujte platební výzvy ve vybraném období a označujte uhrazené položky.</li>
             <li>Večer: zkontrolujte Platby, případně doplňte chybějící záznamy.</li>
+            <li>Pokud používáte MyCoach: zkontrolujte readiness a běžící plány sportovců.</li>
             <li>1x týdně: vyhodnoťte Grafy a upravte sady/jídelníčky.</li>
         </ol>
     </div>

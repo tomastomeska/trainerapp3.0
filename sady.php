@@ -9,43 +9,107 @@ $coachId = getCurrentCoachId();
 $pdo     = getDB();
 $error   = null;
 
+$supportsArchiving = workoutSetArchivingEnabled();
+$supportsArchivedAt = workoutSetsHasColumn('archived_at');
+$scopeRaw = trim((string)($_GET['scope'] ?? 'active'));
+$scope = in_array($scopeRaw, ['active', 'archived', 'all'], true) ? $scopeRaw : 'active';
+if (!$supportsArchiving) {
+    $scope = 'all';
+}
+
 ensureFlexibleWorkoutSet($coachId);
 
-// Smazání sady
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = trim((string)($_POST['action'] ?? ''));
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
         $error = 'Neplatný bezpečnostní token.';
-    } else {
+    } elseif (in_array($action, ['delete', 'archive', 'restore'], true)) {
         $setId = intParam($_POST, 'set_id');
-        $stmt  = $pdo->prepare('SELECT id FROM workout_sets WHERE id = ? AND coach_id = ?');
+        $stmt  = $pdo->prepare('SELECT id, name FROM workout_sets WHERE id = ? AND coach_id = ?');
         $stmt->execute([$setId, $coachId]);
-        if ($stmt->fetch()) {
+        $setRow = $stmt->fetch();
+        if ($setRow) {
+            if ($action === 'archive' || $action === 'restore') {
+                if (!$supportsArchiving) {
+                    $error = 'Archivace sad zatím není dostupná. Spusťte migrační skript scripts/migrate_workout_sets_archive.php.';
+                } elseif ($action === 'archive' && ($setRow['name'] ?? '') === 'Flexibilní sada') {
+                    $error = 'Flexibilní sadu nelze archivovat.';
+                } else {
+                    if ($action === 'archive') {
+                        $archiveSql = 'UPDATE workout_sets SET is_active = 0';
+                        if ($supportsArchivedAt) {
+                            $archiveSql .= ', archived_at = NOW()';
+                        }
+                        $archiveSql .= ' WHERE id = ? AND coach_id = ?';
+                        $pdo->prepare($archiveSql)->execute([$setId, $coachId]);
+                        flash('success', 'Sada byla přesunuta do archivu.');
+                        redirect(BASE_URL . '/sady.php?scope=active');
+                    }
+
+                    $restoreSql = 'UPDATE workout_sets SET is_active = 1';
+                    if ($supportsArchivedAt) {
+                        $restoreSql .= ', archived_at = NULL';
+                    }
+                    $restoreSql .= ' WHERE id = ? AND coach_id = ?';
+                    $pdo->prepare($restoreSql)->execute([$setId, $coachId]);
+                    flash('success', 'Sada byla obnovena mezi aktivní.');
+                    redirect(BASE_URL . '/sady.php?scope=archived');
+                }
+            }
+
+            if ($action === 'delete') {
             $stmt2 = $pdo->prepare('SELECT COUNT(*) FROM training_sessions WHERE workout_set_id = ?');
             $stmt2->execute([$setId]);
             if ((int)$stmt2->fetchColumn() > 0) {
-                $error = 'Tuto sadu nelze smazat – byla již použita v tréninku.';
+                    $error = 'Tuto sadu nelze smazat, protože byla použita v tréninku. Můžete ji archivovat.';
             } else {
                 $pdo->prepare('DELETE FROM workout_sets WHERE id = ? AND coach_id = ?')
                     ->execute([$setId, $coachId]);
                 flash('success', 'Sada byla smazána.');
-                redirect(BASE_URL . '/sady.php');
+                    redirect(BASE_URL . '/sady.php?scope=' . urlencode($scope));
+                }
             }
         }
     }
 }
 
+$activeSetCount = 0;
+$archivedSetCount = 0;
+if ($supportsArchiving) {
+    $stmtCounts = $pdo->prepare(
+        'SELECT
+            SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active_count,
+            SUM(CASE WHEN is_active = 0 THEN 1 ELSE 0 END) AS archived_count
+         FROM workout_sets
+         WHERE coach_id = ?'
+    );
+    $stmtCounts->execute([$coachId]);
+    $counts = $stmtCounts->fetch();
+    $activeSetCount = (int)($counts['active_count'] ?? 0);
+    $archivedSetCount = (int)($counts['archived_count'] ?? 0);
+}
+
 // Načtení sad s cviky
-$stmt = $pdo->prepare(
-    'SELECT ws.*,
+$setsSql = 'SELECT ws.*,
             COUNT(wse.id) AS exercise_count,
             (SELECT COUNT(*) FROM training_sessions ts WHERE ts.workout_set_id = ws.id) AS session_count
      FROM workout_sets ws
      LEFT JOIN workout_set_exercises wse ON ws.id = wse.workout_set_id
-     WHERE ws.coach_id = ?
-     GROUP BY ws.id
-    ORDER BY CASE WHEN ws.name = ? THEN 0 ELSE 1 END, ws.name'
-);
-$stmt->execute([$coachId, 'Flexibilní sada']);
+     WHERE ws.coach_id = ?';
+$setsParams = [$coachId];
+if ($supportsArchiving) {
+    if ($scope === 'active') {
+        $setsSql .= ' AND ws.is_active = 1';
+    } elseif ($scope === 'archived') {
+        $setsSql .= ' AND ws.is_active = 0';
+    }
+}
+$setsSql .= ' GROUP BY ws.id
+    ORDER BY CASE WHEN ws.name = ? THEN 0 ELSE 1 END, ws.name';
+$setsParams[] = 'Flexibilní sada';
+
+$stmt = $pdo->prepare($setsSql);
+$stmt->execute($setsParams);
 $sets = $stmt->fetchAll();
 
 // Načtení cviků pro formulář
@@ -77,6 +141,23 @@ renderHeader('Sady', false, true);
     <?php endif; ?>
 </div>
 
+<?php if ($supportsArchiving): ?>
+    <div class="btn-group mb-3" role="group" aria-label="Filtr sad">
+        <a href="<?= BASE_URL ?>/sady.php?scope=active"
+           class="btn btn-sm <?= $scope === 'active' ? 'btn-dark' : 'btn-outline-dark' ?>">
+            Aktivní (<?= $activeSetCount ?>)
+        </a>
+        <a href="<?= BASE_URL ?>/sady.php?scope=archived"
+           class="btn btn-sm <?= $scope === 'archived' ? 'btn-dark' : 'btn-outline-dark' ?>">
+            Archiv (<?= $archivedSetCount ?>)
+        </a>
+        <a href="<?= BASE_URL ?>/sady.php?scope=all"
+           class="btn btn-sm <?= $scope === 'all' ? 'btn-dark' : 'btn-outline-dark' ?>">
+            Vše
+        </a>
+    </div>
+<?php endif; ?>
+
 <?php if ($error): ?>
     <div class="alert alert-danger"><?= h($error) ?></div>
 <?php endif; ?>
@@ -105,10 +186,16 @@ renderHeader('Sady', false, true);
 <?php else: ?>
     <div class="row g-3">
         <?php foreach ($sets as $ws): ?>
+            <?php $isArchived = $supportsArchiving && (int)($ws['is_active'] ?? 1) !== 1; ?>
             <div class="col-md-6 col-xl-4">
                 <div class="card border-0 shadow-sm h-100 <?= $ws['name'] === 'Flexibilní sada' ? 'border-warning' : '' ?>">
                     <div class="card-header d-flex justify-content-between align-items-center <?= $ws['name'] === 'Flexibilní sada' ? 'bg-warning text-dark' : 'bg-dark text-white' ?>">
-                        <span class="fw-bold"><i class="fas fa-layer-group me-2 <?= $ws['name'] === 'Flexibilní sada' ? 'text-dark' : 'text-warning' ?>"></i><?= h($ws['name']) ?></span>
+                        <span class="fw-bold">
+                            <i class="fas fa-layer-group me-2 <?= $ws['name'] === 'Flexibilní sada' ? 'text-dark' : 'text-warning' ?>"></i><?= h($ws['name']) ?>
+                            <?php if ($isArchived): ?>
+                                <span class="badge bg-secondary ms-1">Archiv</span>
+                            <?php endif; ?>
+                        </span>
                         <span class="badge <?= $ws['name'] === 'Flexibilní sada' ? 'bg-dark text-warning' : 'bg-secondary' ?>"><?= $ws['exercise_count'] ?> cvik<?= $ws['exercise_count'] != 1 ? ($ws['exercise_count'] < 5 ? 'y' : 'ů') : '' ?></span>
                     </div>
                     <div class="card-body">
@@ -146,6 +233,35 @@ renderHeader('Sady', false, true);
                             class="btn btn-outline-secondary btn-sm flex-fill">
                             <i class="fas fa-edit me-1"></i>Upravit
                         </a>
+                        <?php if ($supportsArchiving): ?>
+                            <?php if ($isArchived): ?>
+                                <form method="post" class="d-inline flex-fill">
+                                    <?= csrfField() ?>
+                                    <input type="hidden" name="action" value="restore">
+                                    <input type="hidden" name="set_id" value="<?= $ws['id'] ?>">
+                                    <button type="submit" class="btn btn-outline-success btn-sm w-100">
+                                        <i class="fas fa-box-open me-1"></i>Obnovit
+                                    </button>
+                                </form>
+                            <?php else: ?>
+                                <?php if ($ws['name'] === 'Flexibilní sada'): ?>
+                                    <button class="btn btn-outline-secondary btn-sm flex-fill" disabled
+                                        title="Flexibilní sadu nelze archivovat">
+                                        <i class="fas fa-box-archive me-1"></i>Archivovat
+                                    </button>
+                                <?php else: ?>
+                                    <form method="post" class="d-inline flex-fill"
+                                          onsubmit="return confirm('Přesunout sadu \'<?= h(addslashes($ws['name'])) ?>\' do archivu?')">
+                                        <?= csrfField() ?>
+                                        <input type="hidden" name="action" value="archive">
+                                        <input type="hidden" name="set_id" value="<?= $ws['id'] ?>">
+                                        <button type="submit" class="btn btn-outline-dark btn-sm w-100">
+                                            <i class="fas fa-box-archive me-1"></i>Archivovat
+                                        </button>
+                                    </form>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                        <?php endif; ?>
                         <?php if ($ws['session_count'] == 0): ?>
                             <form method="post" class="d-inline flex-fill"
                                 onsubmit="return confirm('Smazat sadu \'<?= h(addslashes($ws['name'])) ?>\'?')">
@@ -158,7 +274,7 @@ renderHeader('Sady', false, true);
                             </form>
                         <?php else: ?>
                             <button class="btn btn-outline-secondary btn-sm flex-fill" disabled
-                                title="Nelze smazat – sada byla použita v tréninku">
+                                title="Nelze smazat – sada byla použita v tréninku. Použijte archivaci.">
                                 <i class="fas fa-lock me-1"></i>Smazat
                             </button>
                         <?php endif; ?>

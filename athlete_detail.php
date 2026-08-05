@@ -279,13 +279,14 @@ $currentMonthCollapsedSessions = array_slice($currentMonthSessions, $currentMont
 
 // Sady dostupné pro trénink (pro dropdown "Spustit trénink")
 ensureFlexibleWorkoutSet($coachId);
+$activeSetFilter = workoutSetArchivingEnabled() ? ' AND ws.is_active = 1' : '';
 $stmtSets = $pdo->prepare(
     'SELECT ws.*, COUNT(wse.id) AS exercise_count,
             GROUP_CONCAT(e.name ORDER BY wse.exercise_order SEPARATOR ", ") AS exercise_names
      FROM workout_sets ws
      LEFT JOIN workout_set_exercises wse ON ws.id = wse.workout_set_id
      LEFT JOIN exercises e ON e.id = wse.exercise_id
-     WHERE ws.coach_id = ?
+     WHERE ws.coach_id = ?' . $activeSetFilter . '
      GROUP BY ws.id
      ORDER BY ws.name'
 );

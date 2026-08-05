@@ -3414,6 +3414,32 @@ function getWorkoutSetExercises(int $setId): array {
   function ensureFlexibleWorkoutSet(int $coachId): int {
     $pdo = getDB();
 
+    $hasIsActive = workoutSetsHasColumn('is_active');
+
+    if ($hasIsActive) {
+      $stmt = $pdo->prepare(
+        'SELECT id, is_active
+         FROM workout_sets
+         WHERE coach_id = ? AND name = ?
+         LIMIT 1'
+      );
+      $stmt->execute([$coachId, 'Flexibilní sada']);
+      $existing = $stmt->fetch();
+      if ($existing) {
+        $existingId = (int)($existing['id'] ?? 0);
+        if ($existingId > 0 && (int)($existing['is_active'] ?? 1) !== 1) {
+          $reactivateSql = 'UPDATE workout_sets SET is_active = 1';
+          if (workoutSetsHasColumn('archived_at')) {
+            $reactivateSql .= ', archived_at = NULL';
+          }
+          $reactivateSql .= ' WHERE id = ? AND coach_id = ?';
+          $pdo->prepare($reactivateSql)->execute([$existingId, $coachId]);
+        }
+
+        return $existingId;
+      }
+    }
+
     $stmt = $pdo->prepare(
       'SELECT id
        FROM workout_sets
@@ -3431,6 +3457,28 @@ function getWorkoutSetExercises(int $setId): array {
 
     return (int)$pdo->lastInsertId();
   }
+
+function workoutSetsHasColumn(string $column): bool {
+  static $cache = [];
+
+  if (isset($cache[$column])) {
+    return $cache[$column];
+  }
+
+  try {
+    $pdo = getDB();
+    $stmt = $pdo->query("SHOW COLUMNS FROM workout_sets LIKE " . $pdo->quote($column));
+    $cache[$column] = $stmt !== false && (bool)$stmt->fetch();
+  } catch (Throwable $e) {
+    $cache[$column] = false;
+  }
+
+  return $cache[$column];
+}
+
+function workoutSetArchivingEnabled(): bool {
+  return workoutSetsHasColumn('is_active');
+}
 
 // Vrátí cviky konkrétní session ze snapshotu; fallback pro starší data.
 function getSessionExercises(int $sessionId, int $setId): array {

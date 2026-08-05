@@ -35,14 +35,19 @@ $recentCoaches = $pdo->query(
 renderAdminHeader('Přehled');
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h4 class="fw-bold mb-0">
         <i class="fas fa-gauge-high me-2" style="color:#a78bfa"></i>Přehled systému
     </h4>
-    <a href="<?= BASE_URL ?>/admin/coach_add.php" class="btn btn-sm fw-bold"
-       style="background:#7c3aed;color:#fff;border:none">
-        <i class="fas fa-plus me-1"></i>Přidat trenéra
-    </a>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="<?= BASE_URL ?>/admin/manual.php" class="btn btn-outline-secondary btn-sm fw-bold">
+            <i class="fas fa-book-open me-1"></i>Návod
+        </a>
+        <a href="<?= BASE_URL ?>/admin/coach_add.php" class="btn btn-sm fw-bold"
+           style="background:#7c3aed;color:#fff;border:none">
+            <i class="fas fa-plus me-1"></i>Přidat trenéra
+        </a>
+    </div>
 </div>
 
 <!-- Statistiky -->

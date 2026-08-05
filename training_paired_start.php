@@ -51,10 +51,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
             }
 
-            $stmt = $pdo->prepare('SELECT id FROM workout_sets WHERE id = ? AND coach_id = ?');
+            $setCheckSql = 'SELECT id FROM workout_sets WHERE id = ? AND coach_id = ?';
+            if (workoutSetArchivingEnabled()) {
+                $setCheckSql .= ' AND is_active = 1';
+            }
+            $stmt = $pdo->prepare($setCheckSql);
             $stmt->execute([$pair['set_id'], $coachId]);
             if (!$stmt->fetch()) {
-                $errors[] = 'Sada nenalezena.';
+                $errors[] = 'Sada nenalezena nebo je archivovaná.';
                 break;
             }
 
@@ -125,7 +129,7 @@ $stmtS = $pdo->prepare(
     'SELECT ws.id, ws.name, COUNT(wse.id) AS exercise_count
      FROM workout_sets ws
      LEFT JOIN workout_set_exercises wse ON ws.id = wse.workout_set_id
-     WHERE ws.coach_id = ?
+    WHERE ws.coach_id = ?' . (workoutSetArchivingEnabled() ? ' AND ws.is_active = 1' : '') . '
      GROUP BY ws.id
      ORDER BY ws.name'
 );

@@ -23,12 +23,16 @@ if (!$stmt->fetch()) {
     redirect(BASE_URL . '/dashboard.php');
 }
 
-// Ověření sady
-$stmt = $pdo->prepare('SELECT id FROM workout_sets WHERE id = ? AND coach_id = ?');
+// Ověření sady (u archivace pustíme pouze aktivní)
+$setCheckSql = 'SELECT id FROM workout_sets WHERE id = ? AND coach_id = ?';
+if (workoutSetArchivingEnabled()) {
+    $setCheckSql .= ' AND is_active = 1';
+}
+$stmt = $pdo->prepare($setCheckSql);
 $stmt->execute([$workoutSetId, $coachId]);
 $workoutSet = $stmt->fetch();
 if (!$workoutSet) {
-    flash('danger', 'Sada nenalezena.');
+    flash('danger', 'Sada nenalezena nebo je archivovaná.');
     redirect(BASE_URL . '/athlete_detail.php?id=' . $athleteId);
 }
 
