@@ -482,6 +482,11 @@ renderHeader('Kalendář', false, true);
     animation: pendingPulse .72s ease-in-out infinite alternate;
 }
 
+.slot-event.reschedule-origin {
+    border: 3px solid rgba(251, 146, 60, .98);
+    animation: rescheduleOriginPulse .95s ease-in-out infinite alternate;
+}
+
 .slot-event.updated {
     box-shadow: inset 0 0 0 2px rgba(255,255,255,.45);
 }
@@ -512,6 +517,10 @@ renderHeader('Kalendář', false, true);
     animation: pendingPulse .72s ease-in-out infinite alternate;
 }
 
+#daypilotCalendar .coach-calendar-reschedule-origin {
+    animation: rescheduleOriginPulse .95s ease-in-out infinite alternate;
+}
+
 @keyframes pendingPulse {
     0% {
         opacity: 1;
@@ -527,9 +536,26 @@ renderHeader('Kalendář', false, true);
     }
 }
 
+@keyframes rescheduleOriginPulse {
+    0% {
+        opacity: 1;
+        transform: scale(1);
+        filter: saturate(1.02) brightness(1.01);
+        box-shadow: 0 0 0 0 rgba(251, 146, 60, .0);
+    }
+    100% {
+        opacity: .9;
+        transform: scale(1.025);
+        filter: saturate(1.32) brightness(1.1);
+        box-shadow: 0 0 0 7px rgba(251, 146, 60, .5);
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .slot-event.pending,
-    #daypilotCalendar .coach-calendar-pending {
+    .slot-event.reschedule-origin,
+    #daypilotCalendar .coach-calendar-pending,
+    #daypilotCalendar .coach-calendar-reschedule-origin {
         animation: none;
     }
 }
@@ -1490,6 +1516,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let locks = [];
     let dayPilotCalendar = null;
     let activeEvent = null;
+    let rescheduleOriginEventIds = new Set();
     let currentMakeupSuggestion = null;
     const makeupSuggestionCache = new Map();
 
@@ -1527,11 +1554,63 @@ document.addEventListener('DOMContentLoaded', () => {
         return /^reschedule:\d+$/.test(seriesId);
     }
 
+    function getRescheduleSourceEventId(event) {
+        if (!event) {
+            return 0;
+        }
+        const seriesId = String(event.series_id || '').trim();
+        const match = seriesId.match(/^reschedule:(\d+)$/);
+        return match ? Number(match[1] || 0) : 0;
+    }
+
+    function rebuildRescheduleOriginEventIds() {
+        const next = new Set();
+
+        events.forEach((event) => {
+            const isPending = (event.approval_status || 'approved') === 'pending';
+            const requestedByAthleteId = Number(event.requested_by_athlete_id || 0);
+            if (!isPending || requestedByAthleteId <= 0) {
+                return;
+            }
+
+            const sourceEventId = getRescheduleSourceEventId(event);
+            if (sourceEventId > 0) {
+                next.add(sourceEventId);
+            }
+        });
+
+        rescheduleOriginEventIds = next;
+    }
+
+    function isRescheduleOriginEvent(event) {
+        if (!event) {
+            return false;
+        }
+
+        if ((event.approval_status || 'approved') !== 'approved') {
+            return false;
+        }
+
+        const eventId = Number(event.id || 0);
+        if (eventId <= 0) {
+            return false;
+        }
+
+        return rescheduleOriginEventIds.has(eventId);
+    }
+
     function getEventStatusMeta(event) {
         if ((event.approval_status || 'approved') === 'pending') {
             return {
                 label: isRescheduleRequestEvent(event) ? 'Žádost o změnu' : 'Ke schválení',
                 className: 'pending',
+            };
+        }
+
+        if (isRescheduleOriginEvent(event)) {
+            return {
+                label: 'Čeká na změnu',
+                className: 'reschedule-origin',
             };
         }
 
@@ -1668,6 +1747,7 @@ document.addEventListener('DOMContentLoaded', () => {
             fontColor: color.fontColor,
             cssClass: [
                 statusMeta.className === 'pending' ? 'coach-calendar-pending' : '',
+                statusMeta.className === 'reschedule-origin' ? 'coach-calendar-reschedule-origin' : '',
                 isPairedTraining ? 'coach-calendar-paired' : '',
             ].filter(Boolean).join(' '),
         };
@@ -2328,6 +2408,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         events = payload.events || [];
         locks = payload.locks || [];
+        rebuildRescheduleOriginEventIds();
         renderCalendar();
         await loadMonthListData();
     }
