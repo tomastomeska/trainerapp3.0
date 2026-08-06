@@ -2,6 +2,7 @@
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/includes/health_questionnaire.php';
 
 requireLogin();
 
@@ -36,6 +37,11 @@ if (!$session) {
     flash('danger', 'Trénink nenalezen.');
     redirect(BASE_URL . '/dashboard.php');
 }
+
+$healthStatus = healthQuestionnaireFetchStatus($pdo, (int)$session['athlete_id']);
+$healthTextClass = $healthStatus['state'] === 'ok'
+    ? 'text-success'
+    : ($healthStatus['state'] === 'warning' ? 'text-warning' : 'text-danger');
 
 $stmtAvailableExercises = $pdo->prepare(
     'SELECT id, name, sport_type
@@ -80,6 +86,9 @@ renderHeader('Aktivní trénink', false, true);
                 <?php endif; ?>
             </span>
             <?php endif; ?>
+            <div class="mt-1 fw-semibold <?= h($healthTextClass) ?>">
+                <i class="fas fa-heart-pulse me-1"></i><?= h((string)$healthStatus['label']) ?>
+            </div>
             Zahájeno: <?= formatDateTime($session['started_at']) ?>
         </div>
     </div>

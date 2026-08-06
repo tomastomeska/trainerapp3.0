@@ -2,6 +2,7 @@
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/includes/health_questionnaire.php';
 
 requireLogin();
 
@@ -20,6 +21,10 @@ if (!$athlete) {
     flash('danger', 'Sportovec nenalezen.');
     redirect(BASE_URL . '/dashboard.php');
 }
+
+$healthStatus = healthQuestionnaireFetchStatus($pdo, $athleteId);
+$healthLatestSubmission = healthQuestionnaireFetchLatestSubmission($pdo, $athleteId);
+$healthUpdates = healthQuestionnaireFetchUpdatesForCoach($pdo, $athleteId, 8);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
@@ -174,6 +179,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         flash('success', 'Zpráva byla odeslána sportovci.');
         redirect(BASE_URL . '/athlete_detail.php?id=' . $athleteId);
+    }
+
+    if ($action === 'ack_health_updates') {
+        healthQuestionnaireMarkUpdatesSeen($pdo, $athleteId, $coachId);
+        flash('success', 'Zdravotní změny byly označeny jako přečtené.');
+        redirect(BASE_URL . '/athlete_detail.php?id=' . $athleteId . '#health-questionnaire');
     }
 }
 
@@ -454,6 +465,25 @@ renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']), true, true
                 <i class="fas fa-play me-2"></i>Spustit nový trénink
             </div>
             <div class="card-body">
+                <?php
+                $healthAlertClass = $healthStatus['state'] === 'ok'
+                    ? 'alert-success'
+                    : ($healthStatus['state'] === 'warning' ? 'alert-warning' : 'alert-danger');
+                ?>
+                <div class="alert <?= h($healthAlertClass) ?> py-2 mb-3">
+                    <div class="fw-semibold"><i class="fas fa-heart-pulse me-1"></i><?= h((string)$healthStatus['label']) ?></div>
+                    <?php if (!empty($healthStatus['filled_at'])): ?>
+                    <div class="small">Poslední vyplnění: <?= h(formatDateTime((string)$healthStatus['filled_at'])) ?></div>
+                    <?php endif; ?>
+                    <?php if (!empty($healthStatus['alerts'])): ?>
+                    <div class="small mt-1">
+                        <?php foreach ($healthStatus['alerts'] as $alert): ?>
+                        <div>• <?= h((string)($alert['alert_text'] ?? 'Upozornění')) ?></div>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php endif; ?>
+                </div>
+
                 <?php if ($lastSession): ?>
                 <div class="alert alert-light border mb-3 py-2">
                     <small class="text-muted">Poslední trénink:</small><br>
@@ -500,6 +530,88 @@ renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']), true, true
                 <?php endif; ?>
             </div>
         </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4" id="health-questionnaire">
+    <div class="card-header bg-danger-subtle fw-semibold">
+        <i class="fas fa-heart-pulse me-2"></i>Zdravotní dotazník sportovce
+    </div>
+    <div class="card-body">
+        <div class="d-flex justify-content-end mb-3">
+            <a href="<?= BASE_URL ?>/health_questionnaire_print.php?athlete_id=<?= (int)$athleteId ?>" target="_blank" rel="noopener" class="btn btn-outline-dark btn-sm">
+                <i class="fas fa-print me-1"></i>Tisk dotazníku
+            </a>
+        </div>
+
+        <?php if ($healthLatestSubmission): ?>
+        <div class="mb-3">
+            <div class="small text-muted">Poslední odeslání: <?= h(formatDateTime((string)$healthLatestSubmission['submitted_at'])) ?></div>
+            <div class="small text-muted">Počet upozornění: <strong><?= (int)($healthLatestSubmission['alert_count'] ?? 0) ?></strong></div>
+        </div>
+        <?php if (!empty($healthLatestSubmission['alerts'])): ?>
+        <div class="alert alert-warning py-2">
+            <div class="fw-semibold mb-1">Aktivní upozornění</div>
+            <?php foreach ($healthLatestSubmission['alerts'] as $alert): ?>
+            <div>• <?= h((string)($alert['alert_text'] ?? 'Upozornění')) ?></div>
+            <?php endforeach; ?>
+        </div>
+        <?php else: ?>
+        <div class="alert alert-success py-2 mb-3">Dotazník je vyplněný a bez rizikových odpovědí.</div>
+        <?php endif; ?>
+        <?php else: ?>
+        <div class="alert alert-danger py-2 mb-3">Sportovec zatím zdravotní dotazník nevyplnil.</div>
+        <?php endif; ?>
+
+        <?php if (!empty($healthUpdates)): ?>
+        <h6 class="mb-2">Nahlášené změny zdravotního stavu</h6>
+        <div class="table-responsive mb-3">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>Datum</th>
+                        <th>Typ</th>
+                        <th>Důležitost</th>
+                        <th>Detail</th>
+                        <th>Stav</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($healthUpdates as $update): ?>
+                    <tr>
+                        <td><?= h(formatDateTime((string)$update['created_at'])) ?></td>
+                        <td><?= h((string)$update['change_category']) ?></td>
+                        <td>
+                            <?php
+                            $severity = (string)($update['severity'] ?? 'warning');
+                            $severityClass = $severity === 'critical' ? 'danger' : ($severity === 'info' ? 'secondary' : 'warning');
+                            ?>
+                            <span class="badge bg-<?= h($severityClass) ?><?= $severityClass === 'warning' ? ' text-dark' : '' ?>"><?= h($severity) ?></span>
+                        </td>
+                        <td><?= nl2br(h((string)$update['change_details'])) ?></td>
+                        <td>
+                            <?php if (!empty($update['coach_seen_at'])): ?>
+                            <span class="badge bg-success">Přečteno</span>
+                            <?php else: ?>
+                            <span class="badge bg-danger">Nové</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+
+        <form method="post">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="ack_health_updates">
+            <button type="submit" class="btn btn-outline-success btn-sm">
+                <i class="fas fa-check me-1"></i>Označit změny jako přečtené
+            </button>
+        </form>
+        <?php else: ?>
+        <div class="text-muted">Sportovec zatím nenahlásil žádné průběžné změny zdravotního stavu.</div>
+        <?php endif; ?>
     </div>
 </div>
 

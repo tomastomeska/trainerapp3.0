@@ -2,15 +2,48 @@
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/includes/health_questionnaire.php';
 
 requireLogin();
 
 $coachId = getCurrentCoachId();
 $pdo     = getDB();
+healthQuestionnaireEnsureSchema($pdo);
 $mustChangePassword = !empty($_SESSION['coach_force_password_change']);
 $forcePasswordError = null;
 $coachSpecialTrainingEnabled = false;
 $coachMyCoachEnabled = false;
+
+if (!function_exists('coachDashboardHealthInfo')) {
+    function coachDashboardHealthInfo(array $row): array {
+        $statusFlag = trim((string)($row['health_status_flag'] ?? ''));
+        $alertCount = (int)($row['health_alert_count'] ?? 0);
+        $pendingUpdates = (int)($row['health_pending_updates'] ?? 0);
+
+        if ($statusFlag === '') {
+            return [
+                'variant' => 'danger',
+                'text' => 'Zdravotní dotazník není vyplněn!',
+            ];
+        }
+
+        if ($statusFlag === 'warning' || $alertCount > 0 || $pendingUpdates > 0) {
+            $text = 'Zdravotní dotazník obsahuje omezení';
+            if ($pendingUpdates > 0) {
+                $text .= ' + nové změny (' . $pendingUpdates . ')';
+            }
+            return [
+                'variant' => 'warning',
+                'text' => $text,
+            ];
+        }
+
+        return [
+            'variant' => 'success',
+            'text' => 'Zdravotní dotazník vyplněn, vše je v pořádku.',
+        ];
+    }
+}
 
 try {
     $specialTrainingColumnStmt = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'special_training_enabled'");
@@ -152,7 +185,21 @@ $stmt = $pdo->prepare(
                         (SELECT w.weight_kg FROM athlete_weight_logs w WHERE w.athlete_id = a.id ORDER BY w.measured_at ASC LIMIT 1) AS initial_weight,
                         (SELECT COUNT(*) FROM athlete_meal_plans amp
                          WHERE amp.athlete_id = a.id
-                             AND amp.removed_at IS NULL) AS active_meal_plan_count
+                              AND amp.removed_at IS NULL) AS active_meal_plan_count,
+                          (SELECT hq.status_flag
+                           FROM athlete_health_questionnaire_submissions hq
+                           WHERE hq.athlete_id = a.id
+                           ORDER BY hq.submitted_at DESC, hq.id DESC
+                           LIMIT 1) AS health_status_flag,
+                          (SELECT hq.alert_count
+                           FROM athlete_health_questionnaire_submissions hq
+                           WHERE hq.athlete_id = a.id
+                           ORDER BY hq.submitted_at DESC, hq.id DESC
+                           LIMIT 1) AS health_alert_count,
+                          (SELECT COUNT(*)
+                           FROM athlete_health_status_updates hu
+                           WHERE hu.athlete_id = a.id
+                            AND hu.coach_seen_at IS NULL) AS health_pending_updates
      FROM athletes a
      WHERE a.coach_id = ?
      ORDER BY ' . $athleteOrderSql
@@ -184,7 +231,21 @@ $activeSessionsStmt = $pdo->prepare(
              FROM athlete_weight_logs w
              WHERE w.athlete_id = a.id
              ORDER BY w.measured_at DESC, w.id DESC
-             LIMIT 1) AS latest_weight_measured_at
+                         LIMIT 1) AS latest_weight_measured_at,
+                        (SELECT hq.status_flag
+                         FROM athlete_health_questionnaire_submissions hq
+                         WHERE hq.athlete_id = a.id
+                         ORDER BY hq.submitted_at DESC, hq.id DESC
+                         LIMIT 1) AS health_status_flag,
+                        (SELECT hq.alert_count
+                         FROM athlete_health_questionnaire_submissions hq
+                         WHERE hq.athlete_id = a.id
+                         ORDER BY hq.submitted_at DESC, hq.id DESC
+                         LIMIT 1) AS health_alert_count,
+                        (SELECT COUNT(*)
+                         FROM athlete_health_status_updates hu
+                         WHERE hu.athlete_id = a.id
+                             AND hu.coach_seen_at IS NULL) AS health_pending_updates
      FROM training_sessions ts
      JOIN athletes a ON a.id = ts.athlete_id
      JOIN workout_sets ws ON ws.id = ts.workout_set_id
@@ -790,6 +851,7 @@ renderHeader('Dashboard', false, true);
             <div class="fw-semibold mb-2 small text-uppercase text-muted">Individuální</div>
             <div class="row g-2 row-cols-1 row-cols-md-2 row-cols-xl-3">
                 <?php foreach ($activeIndividualSessions as $session): ?>
+                <?php $healthInfo = coachDashboardHealthInfo($session); ?>
                 <div class="col">
                     <div class="border rounded-3 p-2 h-100 bg-light d-flex flex-column gap-1">
                         <div class="fw-bold small"><?= h($session['first_name'] . ' ' . $session['last_name']) ?></div>
@@ -803,6 +865,9 @@ renderHeader('Dashboard', false, true);
                             <?php endif; ?>
                         </div>
                         <?php endif; ?>
+                        <div class="small text-<?= h((string)$healthInfo['variant']) ?> fw-semibold">
+                            <i class="fas fa-heart-pulse me-1"></i><?= h((string)$healthInfo['text']) ?>
+                        </div>
                         <a href="<?= BASE_URL ?>/training_session.php?id=<?= (int)$session['session_id'] ?>"
                            class="btn btn-sm btn-warning fw-bold align-self-start">
                             <i class="fas fa-play me-1"></i>Pokračovat
@@ -846,6 +911,14 @@ renderHeader('Dashboard', false, true);
                                     <?php endif; ?>
                                 </div>
                                 <?php endif; ?>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="small mt-1">
+                            <?php foreach ($pair['sessions'] as $session): ?>
+                                <?php $healthInfo = coachDashboardHealthInfo($session); ?>
+                                <div class="text-<?= h((string)$healthInfo['variant']) ?> fw-semibold">
+                                    <i class="fas fa-heart-pulse me-1"></i><?= h($session['first_name'] . ' ' . $session['last_name']) ?>: <?= h((string)$healthInfo['text']) ?>
+                                </div>
                             <?php endforeach; ?>
                         </div>
                         <a href="<?= BASE_URL ?>/training_paired_session.php?id=<?= (int)$pair['paired_session_id'] ?>"
@@ -936,6 +1009,11 @@ renderHeader('Dashboard', false, true);
                 <div class="mb-3">
                     <span class="badge bg-light text-dark border me-1">
                         <i class="fas fa-utensils me-1"></i>Jídelníčky: <?= (int)$a['active_meal_plan_count'] ?>
+                    </span>
+                    <?php $healthInfo = coachDashboardHealthInfo($a); ?>
+                    <span class="badge bg-<?= h((string)$healthInfo['variant']) ?><?= (string)$healthInfo['variant'] === 'warning' ? ' text-dark' : '' ?> me-1">
+                        <i class="fas fa-heart-pulse me-1"></i>
+                        <?= ($a['health_status_flag'] ?? '') === '' ? 'Dotazník chybí' : ((string)$healthInfo['variant'] === 'success' ? 'Dotazník OK' : 'Dotazník: omezení') ?>
                     </span>
                     <?php if ($coachMyCoachEnabled): ?>
                         <?php $myCoachMeta = $athleteMyCoachMetaById[(int)$a['id']] ?? null; ?>

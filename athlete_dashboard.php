@@ -2,6 +2,7 @@
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/athlete_header.php';
+require_once __DIR__ . '/includes/health_questionnaire.php';
 
 if (!function_exists('getAthleteWeightLogById')) {
     function getAthleteWeightLogById(int $logId, int $athleteId = 0): ?array {
@@ -189,6 +190,21 @@ try {
     $unreadInboxCount = (int)$unreadStmt->fetchColumn();
 } catch (Throwable $e) {
     $unreadInboxCount = 0;
+}
+
+$healthQuestionnaireStatus = healthQuestionnaireFetchStatus($pdo, $athleteId);
+$healthTileClass = 'quick-tile-warning';
+$healthTileValue = '<i class="fas fa-chevron-right"></i>';
+$showHealthQuestionnairePrompt = (($healthQuestionnaireStatus['state'] ?? 'missing') === 'missing') || !empty($healthQuestionnaireStatus['needs_refresh']);
+
+if (($healthQuestionnaireStatus['state'] ?? 'missing') === 'missing') {
+    $healthTileClass = 'quick-tile-danger';
+    $healthTileValue = '<span class="badge rounded-pill bg-danger">!</span>';
+} elseif (($healthQuestionnaireStatus['state'] ?? 'ok') === 'warning') {
+    $healthTileClass = 'quick-tile-warning';
+    $healthTileValue = '<span class="badge rounded-pill bg-warning text-dark">!</span>';
+} else {
+    $healthTileClass = 'quick-tile-success';
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -1036,6 +1052,10 @@ renderAthleteHeader('Profil sportovce', false, true);
         <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
     </div>
     <?php endif; ?>
+    <a href="<?= BASE_URL ?>/athlete_health_questionnaire.php" class="quick-tile <?= h($healthTileClass) ?>">
+        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-heart-pulse me-1"></i>Z. dotazník</span>
+        <span class="quick-tile__value"><?= $healthTileValue ?></span>
+    </a>
     <a href="<?= BASE_URL ?>/athlete_manual.php" class="quick-tile quick-tile-success">
         <span class="quick-tile__label"><i class="fas fa-circle-question me-1"></i>Návod</span>
         <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
@@ -1712,6 +1732,36 @@ renderAthleteHeader('Profil sportovce', false, true);
     </div>
 </div>
 
+<?php if ($showHealthQuestionnairePrompt): ?>
+<div class="modal fade" id="healthQuestionnairePromptModal" tabindex="-1" aria-labelledby="healthQuestionnairePromptModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-warning-subtle">
+                <h5 class="modal-title" id="healthQuestionnairePromptModalLabel">
+                    <i class="fas fa-heart-pulse me-2 text-danger"></i>Zdravotní dotazník
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+            </div>
+            <div class="modal-body">
+                <?php if (!empty($healthQuestionnaireStatus['needs_refresh'])): ?>
+                <p class="mb-2 fw-semibold">Byly přidány nové otázky. Prosím aktualizujte zdravotní dotazník.</p>
+                <p class="text-muted mb-0 small">Vyplnění pomůže trenérovi bezpečně plánovat trénink podle aktuálního stavu.</p>
+                <?php else: ?>
+                <p class="mb-2 fw-semibold">Prosím vyplňte zdravotní dotazník.</p>
+                <p class="text-muted mb-0 small">Je to důležité pro bezpečné vedení tréninku a přizpůsobení zátěže.</p>
+                <?php endif; ?>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Zavřít</button>
+                <a href="<?= BASE_URL ?>/athlete_health_questionnaire.php" class="btn btn-warning fw-semibold">
+                    <i class="fas fa-arrow-right me-1"></i>Přejít do dotazníku
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <script>
 (function () {
     const supportBankAccount = <?= json_encode($supportBankAccountForQr, JSON_UNESCAPED_UNICODE) ?>;
@@ -1827,5 +1877,73 @@ renderAthleteHeader('Profil sportovce', false, true);
     });
 })();
 </script>
+
+<?php if ($showHealthQuestionnairePrompt): ?>
+<script>
+(function () {
+    const modalEl = document.getElementById('healthQuestionnairePromptModal');
+    if (!modalEl || typeof bootstrap === 'undefined' || !bootstrap.Modal) {
+        return;
+    }
+
+    const storageKeyBase = 'healthQuestionnairePrompt:' + <?= (int)$athleteId ?>;
+    const hiddenUntilKey = storageKeyBase + ':hiddenUntil';
+    const signatureKey = storageKeyBase + ':signature';
+    const currentSignature = <?= json_encode(
+        (($healthQuestionnaireStatus['state'] ?? 'missing') . '|' .
+        (!empty($healthQuestionnaireStatus['needs_refresh']) ? '1' : '0') . '|' .
+        (string)($healthQuestionnaireStatus['questions_updated_at'] ?? '') . '|' .
+        (string)($healthQuestionnaireStatus['filled_at'] ?? '')),
+        JSON_UNESCAPED_UNICODE
+    ) ?>;
+    const oneDayMs = 24 * 60 * 60 * 1000;
+
+    const canUseStorage = (() => {
+        try {
+            return typeof window.localStorage !== 'undefined';
+        } catch (e) {
+            return false;
+        }
+    })();
+
+    if (canUseStorage) {
+        try {
+            const savedSignature = String(localStorage.getItem(signatureKey) || '');
+            if (savedSignature !== currentSignature) {
+                localStorage.removeItem(hiddenUntilKey);
+                localStorage.setItem(signatureKey, currentSignature);
+            }
+
+            const hiddenUntil = Number(localStorage.getItem(hiddenUntilKey) || '0');
+            if (Number.isFinite(hiddenUntil) && hiddenUntil > Date.now()) {
+                return;
+            }
+        } catch (e) {
+            // Storage may be blocked; fallback is immediate modal display.
+        }
+    }
+
+    const modal = new bootstrap.Modal(modalEl, {
+        backdrop: true,
+        keyboard: true,
+    });
+
+    modalEl.addEventListener('hidden.bs.modal', () => {
+        if (!canUseStorage) {
+            return;
+        }
+
+        try {
+            localStorage.setItem(hiddenUntilKey, String(Date.now() + oneDayMs));
+            localStorage.setItem(signatureKey, currentSignature);
+        } catch (e) {
+            // Ignore storage write errors.
+        }
+    });
+
+    modal.show();
+})();
+</script>
+<?php endif; ?>
 
 <?php renderAthleteFooter();

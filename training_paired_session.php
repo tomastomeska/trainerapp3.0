@@ -3,6 +3,7 @@
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/includes/health_questionnaire.php';
 
 requireLogin();
 
@@ -48,6 +49,15 @@ $sessions = $stmt->fetchAll();
 if (empty($sessions)) {
     flash('danger', 'Párový trénink nenalezen.');
     redirect(BASE_URL . '/dashboard.php');
+}
+
+$healthStatusByAthleteId = [];
+foreach ($sessions as $sessionRow) {
+    $athleteIdForStatus = (int)($sessionRow['athlete_id'] ?? 0);
+    if ($athleteIdForStatus <= 0 || isset($healthStatusByAthleteId[$athleteIdForStatus])) {
+        continue;
+    }
+    $healthStatusByAthleteId[$athleteIdForStatus] = healthQuestionnaireFetchStatus($pdo, $athleteIdForStatus);
 }
 
 $stmtAvailableExercises = $pdo->prepare(
@@ -124,6 +134,8 @@ renderHeader('Párový trénink', false, true);
 <div class="row g-3" id="pairedSplitView">
     <?php foreach ($sessionData as $idx => $sd):
         $sid = (int)$sd['session']['id'];
+        $athleteStatus = $healthStatusByAthleteId[(int)$sd['session']['athlete_id']] ?? ['state' => 'missing', 'label' => 'Zdravotní dotazník není vyplněn'];
+        $healthTextClass = $athleteStatus['state'] === 'ok' ? 'text-success' : ($athleteStatus['state'] === 'warning' ? 'text-warning' : 'text-danger');
     ?>
     <div class="col-md-6 paired-athlete-col" data-col-idx="<?= $idx ?>">
 
@@ -144,6 +156,9 @@ renderHeader('Párový trénink', false, true);
                     <?php endif; ?>
                 </div>
                 <?php endif; ?>
+                <div class="small fw-semibold <?= h($healthTextClass) ?>">
+                    <i class="fas fa-heart-pulse me-1"></i><?= h((string)$athleteStatus['label']) ?>
+                </div>
             </div>
             <?php if (!empty($availableExercises)): ?>
             <div class="ms-auto d-flex gap-2 align-items-center">
