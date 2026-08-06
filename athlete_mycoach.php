@@ -299,6 +299,7 @@ $goalTypeDefault = trim((string)($_POST['goal_type'] ?? ($activeGoal['goal_type'
 $goalTargetDateDefault = trim((string)($_POST['target_date'] ?? ''));
 $goalCustomNameDefault = trim((string)($_POST['custom_goal_name'] ?? ''));
 $latestQuestionnaire = mycoachFetchLatestQuestionnaire($pdo, $myCoachUserId);
+$questionnaireHealthProfile = mycoachQuestionnaireHealthProfile($latestQuestionnaire);
 $questionnaireCompleted = $latestQuestionnaire && !empty($latestQuestionnaire['completed_at']);
 $timeline = mycoachFetchDailyTimeline($pdo, $myCoachUserId, 45);
 $latestTrainerSessionPreview = mycoachFetchLatestTrainerSessionPreview($pdo, $athleteId, 10);
@@ -664,6 +665,12 @@ renderAthleteHeader('MyCoach dotazník', false, true);
                 <div class="text-muted small text-uppercase fw-bold">Doporučení (<?= h($recommendationSourceText) ?>)</div>
                 <div class="fs-5 fw-bold"><?= h($latestRecommendation['title']) ?></div>
                 <div class="text-muted"><?= h($latestRecommendation['text']) ?></div>
+                <?php if (($questionnaireHealthProfile['count'] ?? 0) > 0): ?>
+                <div class="small text-muted mt-2">
+                    Výpočet zohledňuje zdravotní omezení z dotazníku:
+                    <?= h(implode(' · ', (array)($questionnaireHealthProfile['labels'] ?? []))) ?>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>

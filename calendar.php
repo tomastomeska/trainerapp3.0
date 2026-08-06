@@ -2077,6 +2077,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedType = getSelectedEventTitleType();
         const isGroupLesson = selectedType === 'group_lesson';
 
+        // Prevent hidden required training inputs from blocking submit in lock mode.
+        [eventDateInput, eventHourInput, eventMinuteInput].forEach((input) => {
+            input.required = !lockMode;
+            input.disabled = lockMode;
+        });
+
+        [lockStartDateInput, lockStartHourInput, lockStartMinuteInput, lockEndDateInput, lockEndHourInput, lockEndMinuteInput].forEach((input) => {
+            input.required = lockMode;
+            input.disabled = !lockMode;
+        });
+
         eventTrainingFields.classList.toggle('d-none', lockMode);
         lockFields.classList.toggle('d-none', !lockMode);
         if (eventAthleteFields) {

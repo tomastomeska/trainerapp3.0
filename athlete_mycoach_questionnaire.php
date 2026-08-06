@@ -263,6 +263,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$activeGoal) {
                 $questionnaireError = 'Nejdřív nastav alespoň jeden aktivní cíl.';
             } else {
+                $rawHealthLimits = $_POST['health_limits'] ?? [];
+                $healthLimitsInput = is_array($rawHealthLimits) ? $rawHealthLimits : [$rawHealthLimits];
+                $otherSelected = in_array('other', array_map(static fn($item) => trim((string)$item), $healthLimitsInput), true);
+                $healthLimitsOtherReason = trim((string)($_POST['health_limits_other_reason'] ?? ''));
+
+                if ($otherSelected && $healthLimitsOtherReason === '') {
+                    $questionnaireError = 'Při volbě „Jiné" v části Zdravotní omezení doplň důvod.';
+                }
+            }
+
+            if (!$questionnaireError) {
                 $payload = [
                     'age_years' => $_POST['age_years'] ?? null,
                     'gender' => $_POST['gender'] ?? null,
@@ -274,6 +285,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'sport_types' => $_POST['sport_types'] ?? [],
                     'sports_text' => $_POST['sports_text'] ?? null,
                     'health_limits' => $_POST['health_limits'] ?? [],
+                    'health_limits_other_reason' => $_POST['health_limits_other_reason'] ?? null,
                     'weekly_training_hours_target' => $_POST['weekly_training_hours_target'] ?? null,
                     'rest_days_per_week' => $_POST['rest_days_per_week'] ?? null,
                     'equipment' => $_POST['equipment'] ?? [],
@@ -324,6 +336,7 @@ if ($latestQuestionnaire) {
     $healthLimitsSelected = json_decode((string)($latestQuestionnaire['health_limits_json'] ?? '[]'), true) ?: [];
     $equipmentSelected = json_decode((string)($latestQuestionnaire['equipment_json'] ?? '[]'), true) ?: [];
 }
+$healthLimitsOtherReasonValue = trim((string)($latestQuestionnaire['health_limits_other_reason'] ?? ''));
 
 renderAthleteHeader('MyCoach dotazník', false, true);
 ?>
@@ -540,6 +553,33 @@ renderAthleteHeader('MyCoach dotazník', false, true);
 <div class="alert alert-warning shadow-sm">Nejdřív nastav alespoň jeden aktivní cíl. Dotazník se pak uloží k primárnímu cíli.</div>
 <?php endif; ?>
 
+<style>
+.mc-q-progress {
+    height: 10px;
+    background: #e9ecef;
+    border-radius: 999px;
+    overflow: hidden;
+}
+.mc-q-progress > span {
+    display: block;
+    height: 100%;
+    width: 25%;
+    background: linear-gradient(90deg, #0ea5e9 0%, #22c55e 100%);
+    transition: width .2s ease;
+}
+.mc-step-kicker {
+    font-size: .8rem;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    font-weight: 700;
+}
+.mc-step-title {
+    font-weight: 800;
+    margin-bottom: .25rem;
+}
+</style>
+
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-primary text-white fw-bold">
         <i class="fas fa-plus-circle me-2"></i>Přidat nový aktivní cíl
@@ -604,17 +644,28 @@ renderAthleteHeader('MyCoach dotazník', false, true);
             <input type="hidden" name="action" value="save_questionnaire">
 
             <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                    <div>
+                        <div class="mc-step-kicker" id="mycoachStepLabel">Krok 1 z 4</div>
+                        <div class="mc-step-title" id="mycoachStepTitle">Základní údaje</div>
+                    </div>
+                    <div class="small text-muted">Vyplnění zabere cca 2 minuty</div>
+                </div>
+                <div class="mc-q-progress mb-2"><span id="mycoachProgressBar"></span></div>
+            </div>
+
+            <div class="col-12 mc-wizard-step" data-step="1">
                 <div class="alert alert-info mb-0">
                     Dotazník se uloží k primárnímu cíli: <strong><?= $activeGoal ? h(mycoachGoalLabel((string)$activeGoal['goal_type'], (string)($activeGoal['custom_goal_name'] ?? ''))) : 'není vybrán' ?></strong>
                     <?php if ($activeGoal && !empty($activeGoal['target_date'])): ?> (cíl do <?= h(formatDate((string)$activeGoal['target_date'])) ?>).<?php endif; ?>
                 </div>
             </div>
 
-            <div class="col-12 col-md-3">
+            <div class="col-12 col-md-3 mc-wizard-step" data-step="1">
                 <label class="form-label fw-semibold">Věk</label>
                 <input type="number" name="age_years" class="form-control" min="5" max="100" value="<?= h((string)($latestQuestionnaire['age_years'] ?? $agePrefill ?? '')) ?>">
             </div>
-            <div class="col-12 col-md-3">
+            <div class="col-12 col-md-3 mc-wizard-step" data-step="1">
                 <label class="form-label fw-semibold">Pohlaví</label>
                 <select name="gender" class="form-select">
                     <option value="">Vyberte</option>
@@ -623,16 +674,16 @@ renderAthleteHeader('MyCoach dotazník', false, true);
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-12 col-md-3">
+            <div class="col-12 col-md-3 mc-wizard-step" data-step="1">
                 <label class="form-label fw-semibold">Výška (cm)</label>
                 <input type="number" name="height_cm" class="form-control" min="80" max="250" value="<?= h((string)($latestQuestionnaire['height_cm'] ?? '')) ?>">
             </div>
-            <div class="col-12 col-md-3">
+            <div class="col-12 col-md-3 mc-wizard-step" data-step="1">
                 <label class="form-label fw-semibold">Hmotnost (kg)</label>
                 <input type="number" step="0.1" name="weight_kg" class="form-control" min="20" max="300" value="<?= h((string)($latestQuestionnaire['weight_kg'] ?? $weightPrefill ?? '')) ?>">
             </div>
 
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-4 mc-wizard-step" data-step="1">
                 <label class="form-label fw-semibold">Výkonnost</label>
                 <select name="performance_level" class="form-select">
                     <option value="">Vyberte</option>
@@ -641,21 +692,21 @@ renderAthleteHeader('MyCoach dotazník', false, true);
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-4 mc-wizard-step" data-step="1">
                 <label class="form-label fw-semibold">Jak dlouho sportuješ?</label>
                 <input type="text" name="sport_years" class="form-control" placeholder="např. 3 roky" value="<?= h((string)($latestQuestionnaire['sport_years'] ?? '')) ?>">
             </div>
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-4 mc-wizard-step" data-step="1">
                 <label class="form-label fw-semibold">Kolikrát týdně sportuješ?</label>
                 <input type="number" name="sport_frequency_per_week" class="form-control" min="0" max="21" value="<?= h((string)($latestQuestionnaire['sport_frequency_per_week'] ?? '')) ?>">
             </div>
 
-            <div class="col-12">
+            <div class="col-12 mc-wizard-step" data-step="1">
                 <label class="form-label fw-semibold">Jaké sporty provozuješ?</label>
                 <textarea name="sports_text" class="form-control" rows="2" placeholder="Např. běh, posilovna, HYROX"><?= h((string)($latestQuestionnaire['sports_text'] ?? '')) ?></textarea>
             </div>
 
-            <div class="col-12">
+            <div class="col-12 mc-wizard-step" data-step="2">
                 <div class="fw-semibold mb-2">Současné aktivity</div>
                 <div class="row g-2">
                     <?php foreach ($questionnaireOptions['sport_activities'] as $key => $label): ?>
@@ -669,7 +720,7 @@ renderAthleteHeader('MyCoach dotazník', false, true);
                 </div>
             </div>
 
-            <div class="col-12">
+            <div class="col-12 mc-wizard-step" data-step="2">
                 <div class="fw-semibold mb-2">Zdravotní omezení</div>
                 <div class="row g-2">
                     <?php foreach ($questionnaireOptions['health_limits'] as $key => $label): ?>
@@ -681,9 +732,15 @@ renderAthleteHeader('MyCoach dotazník', false, true);
                     </div>
                     <?php endforeach; ?>
                 </div>
+                <div class="mt-2 <?= in_array('other', $healthLimitsSelected, true) ? '' : 'd-none' ?>" data-health-limits-other-wrap>
+                    <label class="form-label fw-semibold" for="health_limits_other_reason">
+                        Pokud Jiné, uveďte důvod <span class="text-danger">*</span>
+                    </label>
+                    <input type="text" class="form-control" id="health_limits_other_reason" name="health_limits_other_reason" placeholder="Doplňte zdravotní omezení" value="<?= h($healthLimitsOtherReasonValue) ?>" <?= in_array('other', $healthLimitsSelected, true) ? 'required' : '' ?>>
+                </div>
             </div>
 
-            <div class="col-12 col-md-6">
+            <div class="col-12 col-md-6 mc-wizard-step" data-step="3">
                 <label class="form-label fw-semibold">Kolik času můžeš týdně trénovat?</label>
                 <select name="weekly_training_hours_target" class="form-select">
                     <option value="">Vyberte</option>
@@ -692,7 +749,7 @@ renderAthleteHeader('MyCoach dotazník', false, true);
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-12 col-md-6">
+            <div class="col-12 col-md-6 mc-wizard-step" data-step="3">
                 <label class="form-label fw-semibold">Kolik dní v týdnu chceš odpočívat?</label>
                 <select name="rest_days_per_week" class="form-select">
                     <option value="">Vyberte</option>
@@ -702,7 +759,7 @@ renderAthleteHeader('MyCoach dotazník', false, true);
                 </select>
             </div>
 
-            <div class="col-12">
+            <div class="col-12 mc-wizard-step" data-step="3">
                 <div class="fw-semibold mb-2">Jaké vybavení máš?</div>
                 <div class="row g-2">
                     <?php foreach ($questionnaireOptions['equipment'] as $key => $label): ?>
@@ -716,19 +773,19 @@ renderAthleteHeader('MyCoach dotazník', false, true);
                 </div>
             </div>
 
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-4 mc-wizard-step" data-step="3">
                 <label class="form-label fw-semibold">Máš trenéra?</label>
                 <select name="has_trainer" class="form-select">
                     <option value="0" <?= (int)($latestQuestionnaire['has_trainer'] ?? $hasTrainerPrefill) === 0 ? 'selected' : '' ?>>NE</option>
                     <option value="1" <?= (int)($latestQuestionnaire['has_trainer'] ?? $hasTrainerPrefill) === 1 ? 'selected' : '' ?>>ANO</option>
                 </select>
             </div>
-            <div class="col-12 col-md-8">
+            <div class="col-12 col-md-8 mc-wizard-step" data-step="3">
                 <label class="form-label fw-semibold">Jméno trenéra</label>
                 <input type="text" name="trainer_name" class="form-control" value="<?= h((string)($latestQuestionnaire['trainer_name'] ?? $trainerNamePrefill)) ?>" placeholder="Jméno trenéra">
             </div>
 
-            <div class="col-12">
+            <div class="col-12 mc-wizard-step" data-step="4">
                 <div class="border rounded-4 p-3 bg-light <?= $selectedGoalType === 'hyrox' ? '' : 'opacity-75' ?>" id="mycoachHyroxPanel" data-goal-type="<?= h($selectedGoalType) ?>">
                     <div class="fw-bold mb-2"><i class="fas fa-flag-checkered me-2 text-warning"></i>HYROX doplňující otázky</div>
                     <div class="text-muted small mb-3" data-hyrox-hint <?= $selectedGoalType === 'hyrox' ? 'hidden' : '' ?>>Tato část se aktivuje po výběru cíle HYROX.</div>
@@ -778,7 +835,16 @@ renderAthleteHeader('MyCoach dotazník', false, true);
                 </div>
             </div>
 
-            <div class="col-12 d-flex gap-2 flex-wrap">
+            <div class="col-12 d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-secondary" id="mycoachPrevBtn">
+                    <i class="fas fa-arrow-left me-1"></i>Zpět
+                </button>
+                <button type="button" class="btn btn-primary" id="mycoachNextBtn">
+                    Další krok <i class="fas fa-arrow-right ms-1"></i>
+                </button>
+            </div>
+
+            <div class="col-12 d-flex gap-2 flex-wrap mc-wizard-step" data-step="4">
                 <button type="submit" class="btn btn-success fw-semibold" id="mycoachQuestionnaireSaveBtn" <?= $activeGoal ? '' : 'disabled' ?>>
                     <i class="fas fa-save me-1"></i>Uložit dotazník a vytvořit první plán
                 </button>
@@ -800,8 +866,93 @@ document.addEventListener('DOMContentLoaded', function () {
     const hyroxPanel = document.getElementById('mycoachHyroxPanel');
     const panelGoalType = hyroxPanel ? (hyroxPanel.dataset.goalType || '') : '';
     const saveButton = document.getElementById('mycoachQuestionnaireSaveBtn');
+    const wizardFields = Array.from(form.querySelectorAll('.mc-wizard-step'));
+    const prevBtn = document.getElementById('mycoachPrevBtn');
+    const nextBtn = document.getElementById('mycoachNextBtn');
+    const stepLabel = document.getElementById('mycoachStepLabel');
+    const stepTitle = document.getElementById('mycoachStepTitle');
+    const progressBar = document.getElementById('mycoachProgressBar');
+    const totalSteps = 4;
+    const stepTitles = {
+        1: 'Základní údaje',
+        2: 'Aktivity a omezení',
+        3: 'Čas a vybavení',
+        4: 'HYROX a odeslání',
+    };
     const hyroxHint = hyroxPanel ? hyroxPanel.querySelector('[data-hyrox-hint]') : null;
     let draftTimer = null;
+    let currentStep = 1;
+
+    function updateWizardVisibility() {
+        wizardFields.forEach(function (field) {
+            const step = Number(field.getAttribute('data-step') || '1');
+            field.classList.toggle('d-none', step !== currentStep);
+        });
+
+        if (stepLabel) {
+            stepLabel.textContent = 'Krok ' + currentStep + ' z ' + totalSteps;
+        }
+        if (stepTitle) {
+            stepTitle.textContent = stepTitles[currentStep] || 'Dotazník';
+        }
+        if (progressBar) {
+            progressBar.style.width = ((currentStep / totalSteps) * 100) + '%';
+        }
+        if (prevBtn) {
+            prevBtn.disabled = currentStep === 1;
+        }
+        if (nextBtn) {
+            nextBtn.classList.toggle('d-none', currentStep === totalSteps);
+        }
+    }
+
+    function validateCurrentStep() {
+        const currentFields = wizardFields.filter(function (field) {
+            return Number(field.getAttribute('data-step') || '1') === currentStep;
+        });
+
+        for (const fieldWrap of currentFields) {
+            const requiredFields = Array.from(fieldWrap.querySelectorAll('[required]'));
+            for (const field of requiredFields) {
+                if (field.closest('[data-health-limits-other-wrap]') && field.closest('[data-health-limits-other-wrap]').classList.contains('d-none')) {
+                    continue;
+                }
+
+                if (field.type === 'checkbox' || field.type === 'radio') {
+                    if (!field.checked) {
+                        field.focus();
+                        return false;
+                    }
+                    continue;
+                }
+
+                if ((field.value || '').trim() === '') {
+                    field.focus();
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    function updateHealthLimitsOtherReason() {
+        const wrap = form.querySelector('[data-health-limits-other-wrap]');
+        if (!wrap) {
+            return;
+        }
+
+        const otherChecked = !!form.querySelector('input[name="health_limits[]"][value="other"]:checked');
+        const input = wrap.querySelector('input, textarea');
+        wrap.classList.toggle('d-none', !otherChecked);
+
+        if (input) {
+            input.required = otherChecked;
+            if (!otherChecked) {
+                input.value = '';
+            }
+        }
+    }
 
     function setHyroxState() {
         const enabled = goalSelect ? goalSelect.value === 'hyrox' : panelGoalType === 'hyrox';
@@ -882,6 +1033,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     restoreDraft();
     setHyroxState();
+    updateHealthLimitsOtherReason();
+    updateWizardVisibility();
 
     if (goalSelect) {
         goalSelect.addEventListener('change', function () {
@@ -898,9 +1051,48 @@ document.addEventListener('DOMContentLoaded', function () {
     form.addEventListener('change', function () {
         window.clearTimeout(draftTimer);
         draftTimer = window.setTimeout(saveDraft, 100);
+        updateHealthLimitsOtherReason();
     });
 
-    form.addEventListener('submit', function () {
+    if (prevBtn) {
+        prevBtn.addEventListener('click', function () {
+            if (currentStep > 1) {
+                currentStep -= 1;
+                updateWizardVisibility();
+            }
+        });
+    }
+
+    if (nextBtn) {
+        nextBtn.addEventListener('click', function () {
+            if (!validateCurrentStep()) {
+                alert('Prosím vyplňte povinná pole v aktuálním kroku.');
+                return;
+            }
+            if (currentStep < totalSteps) {
+                currentStep += 1;
+                updateWizardVisibility();
+            }
+        });
+    }
+
+    form.addEventListener('submit', function (event) {
+        updateHealthLimitsOtherReason();
+        if (!validateCurrentStep()) {
+            event.preventDefault();
+            alert('Prosím vyplňte povinná pole v aktuálním kroku.');
+            return;
+        }
+
+        const otherChecked = !!form.querySelector('input[name="health_limits[]"][value="other"]:checked');
+        const otherReasonField = form.querySelector('[name="health_limits_other_reason"]');
+        if (otherChecked && otherReasonField && (otherReasonField.value || '').trim() === '') {
+            event.preventDefault();
+            otherReasonField.focus();
+            alert('Při volbě „Jiné" v části Zdravotní omezení doplňte důvod.');
+            return;
+        }
+
         saveDraft();
     });
 });

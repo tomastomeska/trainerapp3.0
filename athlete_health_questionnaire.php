@@ -24,6 +24,11 @@ if (!$athlete) {
     redirect(BASE_URL . '/login.php');
 }
 
+if (!healthQuestionnaireAthleteAccessEnabled()) {
+    flash('warning', 'Zdravotní dotazník je v administraci dočasně deaktivovaný.');
+    redirect(BASE_URL . '/athlete_dashboard.php');
+}
+
 $coachName = trim((string)($athlete['coach_name'] ?: $athlete['coach_username']));
 $athleteFullName = trim((string)($athlete['first_name'] . ' ' . $athlete['last_name']));
 
@@ -388,6 +393,18 @@ renderAthleteHeader('Zdravotní dotazník', false, true);
                             $showWhenKey = trim((string)($question['show_when_question_key'] ?? ''));
                             $showWhenValue = trim((string)($question['show_when_value'] ?? ''));
                             $fieldValue = $formAnswers[$questionKey] ?? ($inputType === 'multi' ? [] : '');
+                            $hasOtherOption = $inputType === 'multi' && healthQuestionnaireQuestionHasOtherOption($question);
+                            $otherReasonKey = $questionKey . '_other_reason';
+                            $otherReasonValue = trim((string)($formAnswers[$otherReasonKey] ?? ''));
+                            $otherSelected = false;
+                            if ($hasOtherOption && is_array($fieldValue)) {
+                                foreach ($fieldValue as $selectedValue) {
+                                    if (healthQuestionnaireIsOtherOptionValue((string)$selectedValue)) {
+                                        $otherSelected = true;
+                                        break;
+                                    }
+                                }
+                            }
                             ?>
                             <div class="col-12" data-question-wrap
                                  data-show-when-key="<?= h($showWhenKey) ?>"
@@ -428,6 +445,14 @@ renderAthleteHeader('Zdravotní dotazník', false, true);
                                             </label>
                                         <?php endforeach; ?>
                                     </div>
+                                    <?php if ($hasOtherOption): ?>
+                                        <div class="mt-2 <?= $otherSelected ? '' : 'd-none' ?>" data-other-reason-wrap data-other-reason-for="<?= h($questionKey) ?>">
+                                            <label class="form-label fw-semibold" for="q_<?= h($otherReasonKey) ?>">
+                                                Pokud Jiné/Jiný, uveďte důvod <span class="text-danger">*</span>
+                                            </label>
+                                            <input class="form-control" type="text" id="q_<?= h($otherReasonKey) ?>" name="<?= h($otherReasonKey) ?>" value="<?= h($otherReasonValue) ?>" placeholder="Doplňte důvod" <?= $otherSelected ? 'required' : '' ?>>
+                                        </div>
+                                    <?php endif; ?>
                                 <?php elseif ($inputType === 'textarea'): ?>
                                     <textarea class="form-control" rows="3" id="q_<?= h($questionKey) ?>" name="<?= h($questionKey) ?>" placeholder="<?= h((string)($question['placeholder'] ?? '')) ?>" <?= $required ? 'required' : '' ?>><?= h((string)$fieldValue) ?></textarea>
                                 <?php elseif ($inputType === 'number'): ?>
@@ -615,6 +640,31 @@ renderAthleteHeader('Zdravotní dotazník', false, true);
 
     let currentStep = 0;
 
+    function isOtherOptionValue(value) {
+        const normalized = String(value || '').trim().toLowerCase();
+        return ['jiné', 'jine', 'jiný', 'jiny', 'other'].includes(normalized);
+    }
+
+    function updateOtherReasonVisibility() {
+        const otherReasonWraps = form.querySelectorAll('[data-other-reason-wrap]');
+        otherReasonWraps.forEach((wrap) => {
+            const questionKey = wrap.getAttribute('data-other-reason-for') || '';
+            const reasonInput = wrap.querySelector('input, textarea');
+            if (!questionKey || !reasonInput) {
+                return;
+            }
+
+            const selectedValues = Array.from(form.querySelectorAll('[name="' + questionKey + '[]"]:checked')).map((item) => item.value);
+            const otherSelected = selectedValues.some((value) => isOtherOptionValue(value));
+
+            wrap.classList.toggle('d-none', !otherSelected);
+            reasonInput.required = otherSelected;
+            if (!otherSelected) {
+                reasonInput.value = '';
+            }
+        });
+    }
+
     function updateConditionalVisibility() {
         const wrappers = form.querySelectorAll('[data-question-wrap]');
         wrappers.forEach((wrapper) => {
@@ -661,6 +711,8 @@ renderAthleteHeader('Zdravotní dotazník', false, true);
                 });
             }
         });
+
+        updateOtherReasonVisibility();
     }
 
     function updateWizard() {
@@ -688,6 +740,10 @@ renderAthleteHeader('Zdravotní dotazník', false, true);
         const current = steps[currentStep];
         const requiredFields = Array.from(current.querySelectorAll('[required]')).filter((field) => {
             const wrapper = field.closest('[data-question-wrap]');
+            const otherReasonWrap = field.closest('[data-other-reason-wrap]');
+            if (otherReasonWrap && otherReasonWrap.classList.contains('d-none')) {
+                return false;
+            }
             return !wrapper || !wrapper.classList.contains('d-none');
         });
 
@@ -727,6 +783,13 @@ renderAthleteHeader('Zdravotní dotazník', false, true);
     });
 
     form.addEventListener('change', updateConditionalVisibility);
+    form.addEventListener('submit', (event) => {
+        updateConditionalVisibility();
+        if (!validateCurrentStep()) {
+            event.preventDefault();
+            alert('Prosím vyplňte povinné otázky v aktuálním kroku.');
+        }
+    });
     updateWizard();
 })();
 </script>

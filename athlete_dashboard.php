@@ -193,11 +193,16 @@ try {
 }
 
 $healthQuestionnaireStatus = healthQuestionnaireFetchStatus($pdo, $athleteId);
+$healthQuestionnaireAccessEnabled = healthQuestionnaireAthleteAccessEnabled();
 $healthTileClass = 'quick-tile-warning';
 $healthTileValue = '<i class="fas fa-chevron-right"></i>';
-$showHealthQuestionnairePrompt = (($healthQuestionnaireStatus['state'] ?? 'missing') === 'missing') || !empty($healthQuestionnaireStatus['needs_refresh']);
+$showHealthQuestionnairePrompt = $healthQuestionnaireAccessEnabled
+    && ((($healthQuestionnaireStatus['state'] ?? 'missing') === 'missing') || !empty($healthQuestionnaireStatus['needs_refresh']));
 
-if (($healthQuestionnaireStatus['state'] ?? 'missing') === 'missing') {
+if (!$healthQuestionnaireAccessEnabled) {
+    $healthTileClass = 'quick-tile-muted';
+    $healthTileValue = '<i class="fas fa-lock"></i>';
+} elseif (($healthQuestionnaireStatus['state'] ?? 'missing') === 'missing') {
     $healthTileClass = 'quick-tile-danger';
     $healthTileValue = '<span class="badge rounded-pill bg-danger">!</span>';
 } elseif (($healthQuestionnaireStatus['state'] ?? 'ok') === 'warning') {
@@ -1052,10 +1057,17 @@ renderAthleteHeader('Profil sportovce', false, true);
         <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
     </div>
     <?php endif; ?>
+    <?php if ($healthQuestionnaireAccessEnabled): ?>
     <a href="<?= BASE_URL ?>/athlete_health_questionnaire.php" class="quick-tile <?= h($healthTileClass) ?>">
         <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-heart-pulse me-1"></i>Z. dotazník</span>
         <span class="quick-tile__value"><?= $healthTileValue ?></span>
     </a>
+    <?php else: ?>
+    <div class="quick-tile quick-tile-muted">
+        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-lock me-1"></i>Z. dotazník <span class="badge rounded-pill bg-secondary">Vypnuto</span></span>
+        <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
+    </div>
+    <?php endif; ?>
     <a href="<?= BASE_URL ?>/athlete_manual.php" class="quick-tile quick-tile-success">
         <span class="quick-tile__label"><i class="fas fa-circle-question me-1"></i>Návod</span>
         <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>

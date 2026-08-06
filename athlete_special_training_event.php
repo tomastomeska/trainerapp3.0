@@ -282,7 +282,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     document.querySelectorAll('.event-pane form').forEach(function (form) {
         const action = (form.getAttribute('action') || '').trim();
-        if (action === '' || action === '#') {
+        const actionPathMatch = action.match(/\/event_form_submit\.php(?:\?.*)?$/i);
+        if (action === '' || action === '#' || actionPathMatch) {
             form.setAttribute('action', submitUrl);
         }
 

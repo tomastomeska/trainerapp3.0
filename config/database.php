@@ -924,6 +924,7 @@ function ensureSchemaUpgrades(PDO $pdo): void {
             `sport_types_json`       JSON NULL,
             `sports_text`            TEXT NULL,
             `health_limits_json`     JSON NULL,
+            `health_limits_other_reason` TEXT NULL,
             `weekly_training_hours_target` DECIMAL(4,1) NULL,
             `rest_days_per_week`     TINYINT UNSIGNED NULL,
             `equipment_json`         JSON NULL,
@@ -946,6 +947,11 @@ function ensureSchemaUpgrades(PDO $pdo): void {
             CONSTRAINT `fk_mycoach_questionnaires_user` FOREIGN KEY (`user_id`) REFERENCES `mycoach_users`(`id`) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
+
+    $stmtMycoachHealthLimitsOtherReason = $pdo->query("SHOW COLUMNS FROM mycoach_questionnaires LIKE 'health_limits_other_reason'");
+    if (!$stmtMycoachHealthLimitsOtherReason->fetch()) {
+        $pdo->exec('ALTER TABLE mycoach_questionnaires ADD COLUMN health_limits_other_reason TEXT NULL AFTER health_limits_json');
+    }
 
     $pdo->exec(" 
         CREATE TABLE IF NOT EXISTS `mycoach_goals` (

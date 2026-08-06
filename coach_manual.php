@@ -75,6 +75,7 @@ renderHeader('Návod pro trenéry', false, true);
 <div class="alert alert-success shadow-sm border-0">
     <strong>Novinky v této verzi:</strong>
     <ul class="mb-0 mt-2">
+        <li>nová práce se <strong>zdravotním dotazníkem sportovce</strong> v dashboardu, detailu sportovce i během tréninku,</li>
         <li>moduly <strong>Events</strong> a <strong>MyCoach</strong> jsou řízené per-účtem (odemčeno/uzamčeno),</li>
         <li><strong>Apple CalDAV push</strong> + stažení Apple profilu <strong>.mobileconfig</strong>,</li>
         <li>u sad je dostupná <strong>archivace</strong> (aktivní/archiv/vše),</li>
@@ -88,6 +89,7 @@ renderHeader('Návod pro trenéry', false, true);
         <div class="manual-anchor-links">
             <a href="#coach-start" class="btn btn-outline-dark btn-sm">Start</a>
             <a href="#coach-athletes" class="btn btn-outline-dark btn-sm">Sportovci</a>
+            <a href="#coach-health" class="btn btn-outline-dark btn-sm">Z. dotazník</a>
             <a href="#coach-training" class="btn btn-outline-dark btn-sm">Trénink</a>
             <a href="#coach-calendar" class="btn btn-outline-dark btn-sm">Kalendář</a>
             <a href="#coach-payments" class="btn btn-outline-dark btn-sm">Platby</a>
@@ -103,6 +105,7 @@ renderHeader('Návod pro trenéry', false, true);
     <div class="card-body">
         <div class="row g-2 small">
             <div class="col-12 col-md-6"><i class="fas fa-users me-2 text-muted"></i><strong>Sportovci:</strong> detail, historie, akce účtu</div>
+            <div class="col-12 col-md-6"><i class="fas fa-heart-pulse me-2 text-muted"></i><strong>Z. dotazník:</strong> zdravotní stav sportovce, upozornění a nové změny</div>
             <div class="col-12 col-md-6"><i class="fas fa-list me-2 text-muted"></i><strong>Cviky:</strong> vlastní knihovna cviků</div>
             <div class="col-12 col-md-6"><i class="fas fa-layer-group me-2 text-muted"></i><strong>Sady:</strong> aktivní/archiv/vše, editace struktury</div>
             <div class="col-12 col-md-6"><i class="fas fa-calendar-alt me-2 text-muted"></i><strong>Kalendář:</strong> plánování, schvalování, Apple sync</div>
@@ -127,6 +130,7 @@ renderHeader('Návod pro trenéry', false, true);
             <li>V Cvicích připravte nebo upravte cviky, které budete používat.</li>
             <li>V Sadách vytvořte minimálně 1 sadu pro začínajícího sportovce.</li>
             <li>V Sportovci založte nového sportovce.</li>
+            <li>Po založení zkontrolujte, zda sportovec vyplnil zdravotní dotazník.</li>
             <li>V detailu sportovce spusťte první trénink nebo vložte minulý trénink.</li>
             <li>V Kalendáři zapište příští termín tréninku.</li>
             <li>V Platbách založte první platbu.</li>
@@ -161,8 +165,37 @@ renderHeader('Návod pro trenéry', false, true);
     </div>
 </div>
 
+<div class="card border-0 shadow-sm mb-4" id="coach-health">
+    <div class="card-header fw-semibold"><i class="fas fa-heart-pulse me-2 text-warning"></i>2) Zdravotní dotazník sportovce <span class="manual-priority manual-priority-high">Kontrolovat před tréninkem</span></div>
+    <div class="card-body">
+        <h6 class="fw-bold">Kde zdravotní stav uvidíte</h6>
+        <ol>
+            <li>Na dashboardu u sportovce uvidíte stav dotazníku: nevyplněn, omezení nebo vše v pořádku.</li>
+            <li>V detailu sportovce je samostatná karta Zdravotní dotazník sportovce.</li>
+            <li>Při živém i párovém tréninku se zdravotní stav zobrazuje v hlavičce sportovce.</li>
+        </ol>
+
+        <h6 class="fw-bold mt-3">Jak s dotazníkem pracovat v detailu sportovce</h6>
+        <ol>
+            <li>Otevřete detail sportovce.</li>
+            <li>Najděte kartu Zdravotní dotazník sportovce.</li>
+            <li>Zkontrolujte datum posledního vyplnění a počet upozornění.</li>
+            <li>Pokud jsou aktivní upozornění, projděte jejich text a upravte trénink podle omezení.</li>
+            <li>Pro archivaci nebo předání použijte Tisk dotazníku.</li>
+        </ol>
+
+        <h6 class="fw-bold mt-3">Změny zdravotního stavu od sportovce</h6>
+        <ol>
+            <li>Sportovec může průběžně hlásit změny: omezení, zranění, léky, alergie nebo jiný stav.</li>
+            <li>Tyto změny uvidíte v detailu sportovce v seznamu hlášení.</li>
+            <li>Po zpracování můžete změny označit jako přečtené.</li>
+            <li>Nové změny berte jako prioritu před dalším plánováním zátěže.</li>
+        </ol>
+    </div>
+</div>
+
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-dumbbell me-2 text-warning"></i>2) Cviky: jak vytvořit a používat</div>
+    <div class="card-header fw-semibold"><i class="fas fa-dumbbell me-2 text-warning"></i>3) Cviky: jak vytvořit a používat</div>
     <div class="card-body">
         <h6 class="fw-bold">Jak vytvořit nový cvik</h6>
         <ol>
@@ -185,7 +218,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-layer-group me-2 text-warning"></i>3) Sady: kompletní postup vytvoření</div>
+    <div class="card-header fw-semibold"><i class="fas fa-layer-group me-2 text-warning"></i>4) Sady: kompletní postup vytvoření</div>
     <div class="card-body">
         <h6 class="fw-bold">Jak vytvořit novou sadu krok za krokem</h6>
         <ol>
@@ -219,13 +252,14 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4" id="coach-training">
-    <div class="card-header fw-semibold"><i class="fas fa-stopwatch me-2 text-warning"></i>4) Trénink: živě, ručně, párově <span class="manual-priority manual-priority-high">Klíčové</span></div>
+    <div class="card-header fw-semibold"><i class="fas fa-stopwatch me-2 text-warning"></i>5) Trénink: živě, ručně, párově <span class="manual-priority manual-priority-high">Klíčové</span></div>
     <div class="card-body">
         <h6 class="fw-bold">A. Jak spustit živý trénink</h6>
         <ol>
             <li>Otevřete Sportovci a přejděte do detailu sportovce.</li>
             <li>Klikněte na Spustit trénink.</li>
             <li>Vyberte sadu, kterou chcete jet.</li>
+            <li>Před zapisováním výkonu zkontrolujte stav zdravotního dotazníku v hlavičce.</li>
             <li>V hlavičce tréninku zkontrolujte poslední hmotnost sportovce (kg + datum vážení).</li>
             <li>U každého cviku vyplňujte série (opakování, váha nebo čas podle typu cviku).</li>
             <li>Průběžně kontrolujte, že se data ukládají do správného cviku/série.</li>
@@ -248,6 +282,7 @@ renderHeader('Návod pro trenéry', false, true);
             <li>Spusťte párový trénink z příslušné akce v aplikaci.</li>
             <li>Vyberte oba sportovce.</li>
             <li>Zvolte sadu pro párovou jednotku.</li>
+            <li>U obou sportovců zkontrolujte stav zdravotního dotazníku a případná omezení.</li>
             <li>U obou sportovců v hlavičce ověřte poslední hmotnost (kg + datum).</li>
             <li>Zapisujte průběh tréninku a dokončete párovou session.</li>
             <li>Zkontrolujte výsledek v detailu obou sportovců.</li>
@@ -256,7 +291,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4" id="coach-calendar">
-    <div class="card-header fw-semibold"><i class="fas fa-calendar-alt me-2 text-warning"></i>5) Kalendář: nové termíny a změny <span class="manual-priority manual-priority-high">Denně</span></div>
+    <div class="card-header fw-semibold"><i class="fas fa-calendar-alt me-2 text-warning"></i>6) Kalendář: nové termíny a změny <span class="manual-priority manual-priority-high">Denně</span></div>
     <div class="card-body">
         <h6 class="fw-bold">Jak vytvořit nový termín</h6>
         <ol>
@@ -301,7 +336,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4" id="coach-payments">
-    <div class="card-header fw-semibold"><i class="fas fa-wallet me-2 text-warning"></i>6) Platby: zápis a kontrola <span class="manual-priority manual-priority-mid">Měsíčně</span></div>
+    <div class="card-header fw-semibold"><i class="fas fa-wallet me-2 text-warning"></i>7) Platby: zápis a kontrola <span class="manual-priority manual-priority-mid">Měsíčně</span></div>
     <div class="card-body">
         <h6 class="fw-bold">Jak připravit a otevřít výzvu k úhradě</h6>
         <ol>
@@ -324,7 +359,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-utensils me-2 text-warning"></i>7) Jídelníčky: vytvoření a přiřazení</div>
+    <div class="card-header fw-semibold"><i class="fas fa-utensils me-2 text-warning"></i>8) Jídelníčky: vytvoření a přiřazení</div>
     <div class="card-body">
         <h6 class="fw-bold">Jak vytvořit nový jídelníček</h6>
         <ol>
@@ -352,7 +387,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-images me-2 text-warning"></i>8) Galerie: složky a nahrávání</div>
+    <div class="card-header fw-semibold"><i class="fas fa-images me-2 text-warning"></i>9) Galerie: složky a nahrávání</div>
     <div class="card-body">
         <h6 class="fw-bold">Jak přidat složku a soubory</h6>
         <ol>
@@ -366,7 +401,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4" id="coach-events">
-    <div class="card-header fw-semibold"><i class="fas fa-flag-checkered me-2 text-warning"></i>9) Events: práce s eventy <span class="manual-priority manual-priority-low">Volitelné</span></div>
+    <div class="card-header fw-semibold"><i class="fas fa-flag-checkered me-2 text-warning"></i>10) Events: práce s eventy <span class="manual-priority manual-priority-low">Volitelné</span></div>
     <div class="card-body">
         <ol>
             <li>Na dashboardu otevřete dlaždici Events (pokud je účet odemčený).</li>
@@ -379,7 +414,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4" id="coach-mycoach">
-    <div class="card-header fw-semibold"><i class="fas fa-brain me-2 text-warning"></i>10) MyCoach: cíle a monitoring <span class="manual-priority manual-priority-mid">Průběžně</span></div>
+    <div class="card-header fw-semibold"><i class="fas fa-brain me-2 text-warning"></i>11) MyCoach: cíle a monitoring <span class="manual-priority manual-priority-mid">Průběžně</span></div>
     <div class="card-body">
         <ol>
             <li>Na dashboardu otevřete dlaždici MyCoach (pokud je účet odemčený).</li>
@@ -393,7 +428,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-video me-2 text-warning"></i>11) Videa: nahrání, třídění a sdílení</div>
+    <div class="card-header fw-semibold"><i class="fas fa-video me-2 text-warning"></i>12) Videa: nahrání, třídění a sdílení</div>
     <div class="card-body">
         <h6 class="fw-bold">Jak pracovat s videosekcí</h6>
         <ol>
@@ -425,7 +460,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4" id="coach-messages">
-    <div class="card-header fw-semibold"><i class="fas fa-comments me-2 text-warning"></i>12) Zprávy: komunikace se sportovci <span class="manual-priority manual-priority-high">Reakce do 24 h</span></div>
+    <div class="card-header fw-semibold"><i class="fas fa-comments me-2 text-warning"></i>13) Zprávy: komunikace se sportovci <span class="manual-priority manual-priority-high">Reakce do 24 h</span></div>
     <div class="card-body">
         <h6 class="fw-bold">Jak odeslat novou zprávu</h6>
         <ol>
@@ -447,7 +482,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-chart-line me-2 text-warning"></i>13) Grafy a reporty: jak vyhodnocovat</div>
+    <div class="card-header fw-semibold"><i class="fas fa-chart-line me-2 text-warning"></i>14) Grafy a reporty: jak vyhodnocovat</div>
     <div class="card-body">
         <ol>
             <li>Otevřete Grafy nebo Reporty.</li>
@@ -460,7 +495,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-user-cog me-2 text-warning"></i>14) Profil a heslo</div>
+    <div class="card-header fw-semibold"><i class="fas fa-user-cog me-2 text-warning"></i>15) Profil a heslo</div>
     <div class="card-body">
         <ol>
             <li>Otevřete Profil.</li>
@@ -477,6 +512,7 @@ renderHeader('Návod pro trenéry', false, true);
     <div class="card-body">
         <ol class="mb-0">
             <li>Ráno: otevřete Kalendář a ověřte dnešní termíny.</li>
+            <li>Před tréninkem: zkontrolujte zdravotní stav sportovce a nové změny v dotazníku.</li>
             <li>Po každém tréninku: zkontrolujte uložení výsledků.</li>
             <li>Odpoledne: projděte Zprávy a odpovězte na dotazy.</li>
             <li>Průběžně: kontrolujte platební výzvy ve vybraném období a označujte uhrazené položky.</li>

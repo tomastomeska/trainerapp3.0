@@ -74,6 +74,23 @@ if (!function_exists('healthQuestionnaireEnsureSchema')) {
     }
 }
 
+if (!function_exists('healthQuestionnaireAthleteAccessEnabled')) {
+    function healthQuestionnaireAthleteAccessEnabled(): bool
+    {
+        $raw = trim((string)getAppSetting('athlete_health_questionnaire_enabled', '1'));
+        if ($raw === '') {
+            return true;
+        }
+
+        $normalized = mb_strtolower($raw, 'UTF-8');
+        if (in_array($normalized, ['0', 'false', 'off', 'no', 'ne', 'disabled', 'deactivated'], true)) {
+            return false;
+        }
+
+        return true;
+    }
+}
+
 if (!function_exists('healthQuestionnaireDefaultQuestions')) {
     function healthQuestionnaireDefaultQuestions(): array
     {
@@ -221,6 +238,30 @@ if (!function_exists('healthQuestionnaireNormalizeYesNo')) {
     }
 }
 
+if (!function_exists('healthQuestionnaireIsOtherOptionValue')) {
+    function healthQuestionnaireIsOtherOptionValue(string $value): bool
+    {
+        $normalized = mb_strtolower(trim($value), 'UTF-8');
+        return in_array($normalized, ['jiné', 'jine', 'jiný', 'jiny', 'other'], true);
+    }
+}
+
+if (!function_exists('healthQuestionnaireQuestionHasOtherOption')) {
+    function healthQuestionnaireQuestionHasOtherOption(array $question): bool
+    {
+        $options = (array)($question['options'] ?? []);
+        foreach ($options as $optionKey => $optionLabel) {
+            $value = is_string($optionKey) ? $optionKey : (string)$optionLabel;
+            $label = is_string($optionLabel) ? $optionLabel : (string)$optionKey;
+            if (healthQuestionnaireIsOtherOptionValue($value) || healthQuestionnaireIsOtherOptionValue($label)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
 if (!function_exists('healthQuestionnaireFetchQuestions')) {
     function healthQuestionnaireFetchQuestions(PDO $pdo, bool $activeOnly = true): array
     {
@@ -302,6 +343,11 @@ if (!function_exists('healthQuestionnaireCollectAnswersFromPost')) {
                     $values[] = $itemValue;
                 }
                 $answers[$key] = $values;
+
+                if (healthQuestionnaireQuestionHasOtherOption($question)) {
+                    $answers[$key . '_other_reason'] = trim((string)($post[$key . '_other_reason'] ?? ''));
+                }
+
                 continue;
             }
 
@@ -344,26 +390,42 @@ if (!function_exists('healthQuestionnaireValidateAnswers')) {
                 continue;
             }
 
-            $required = (int)($question['is_required'] ?? 0) === 1;
-            if (!$required) {
-                continue;
-            }
-
             $key = (string)($question['question_key'] ?? '');
             $label = (string)($question['question_label'] ?? $key);
             $value = $answers[$key] ?? null;
 
-            if (is_array($value) && count($value) === 0) {
-                $errors[] = 'Vyplňte otázku: ' . $label;
-                continue;
+            $required = (int)($question['is_required'] ?? 0) === 1;
+            if ($required) {
+                if (is_array($value) && count($value) === 0) {
+                    $errors[] = 'Vyplňte otázku: ' . $label;
+                    continue;
+                }
+
+                if (!is_array($value) && trim((string)$value) === '') {
+                    $errors[] = 'Vyplňte otázku: ' . $label;
+                }
+
+                if ((string)($question['input_type'] ?? '') === 'consent' && ($answers[$key] ?? '') !== 'ano') {
+                    $errors[] = 'Je nutné potvrdit souhlas se zpracováním informací.';
+                }
             }
 
-            if (!is_array($value) && trim((string)$value) === '') {
-                $errors[] = 'Vyplňte otázku: ' . $label;
-            }
+            if ((string)($question['input_type'] ?? '') === 'multi' && healthQuestionnaireQuestionHasOtherOption($question)) {
+                $selectedValues = is_array($answers[$key] ?? null) ? $answers[$key] : [];
+                $otherSelected = false;
+                foreach ($selectedValues as $selectedValue) {
+                    if (healthQuestionnaireIsOtherOptionValue((string)$selectedValue)) {
+                        $otherSelected = true;
+                        break;
+                    }
+                }
 
-            if ((string)($question['input_type'] ?? '') === 'consent' && ($answers[$key] ?? '') !== 'ano') {
-                $errors[] = 'Je nutné potvrdit souhlas se zpracováním informací.';
+                if ($otherSelected) {
+                    $otherReason = trim((string)($answers[$key . '_other_reason'] ?? ''));
+                    if ($otherReason === '') {
+                        $errors[] = 'U otázky "' . $label . '" doplňte důvod pro volbu Jiné/Jiný.';
+                    }
+                }
             }
         }
 

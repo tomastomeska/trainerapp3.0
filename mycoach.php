@@ -250,6 +250,7 @@ if (!$activeGoal && !empty($activeGoals)) {
 
 $activeGoalCount = count($activeGoals);
 $latestQuestionnaire = mycoachFetchLatestQuestionnaire($pdo, $myCoachUserId);
+$questionnaireHealthProfile = mycoachQuestionnaireHealthProfile($latestQuestionnaire);
 $latestReadinessMetric = mycoachFetchLatestMetricValue($pdo, $myCoachUserId, 'readiness_score');
 $latestReadinessScore = $latestReadinessMetric && isset($latestReadinessMetric['metric_value'])
     ? (int)round((float)$latestReadinessMetric['metric_value'])
@@ -259,7 +260,10 @@ $latestAcwr = mycoachCalculateAcwr($timeline);
 $achievementBadges = mycoachBuildAchievementBadges($timeline, $latestReadinessScore, $latestAcwr['ratio'] ?? null);
 $coachInsight = mycoachBuildInsight($timeline, $activeGoal, $latestReadinessScore, $latestAcwr);
 $latestDailyEntry = !empty($timeline) ? end($timeline) : null;
-$latestRecommendation = mycoachBuildRecommendation($latestReadinessScore, $latestDailyEntry ?: null);
+$latestRecommendation = mycoachBuildRecommendation($latestReadinessScore, $latestDailyEntry ?: null, $latestQuestionnaire, $timeline, $activeGoal);
+$readinessGuidance = $latestReadinessScore !== null
+    ? mycoachBuildReadinessGuidance($latestReadinessScore, $latestDailyEntry ?: null, $latestQuestionnaire, $timeline, $activeGoal)
+    : null;
 $trainingAssessment = mycoachBuildTrainingAssessment($timeline, $latestDailyEntry ?: null, $activeGoal, $latestReadinessScore);
 $trainingAcwrRatio = $trainingAssessment['acwr']['ratio'] ?? null;
 $athleteProgressRows = mycoachFetchCoachAthleteProgress($pdo, $coachId, 250);
@@ -512,8 +516,28 @@ renderHeader('MyCoach', false, true);
         <div class="text-muted small text-uppercase fw-bold">Dnešní doporučení</div>
         <div class="fs-5 fw-bold"><?= h($latestRecommendation['title']) ?></div>
         <div class="text-muted"><?= h($latestRecommendation['text']) ?></div>
+        <?php if (($questionnaireHealthProfile['count'] ?? 0) > 0): ?>
+        <div class="small text-muted mt-2">
+            MyCoach počítá se zdravotními omezeními z dotazníku:
+            <?= h(implode(' · ', (array)($questionnaireHealthProfile['labels'] ?? []))) ?>
+        </div>
+        <?php endif; ?>
     </div>
 </div>
+
+<?php if ($readinessGuidance): ?>
+<div class="card border-0 shadow-sm mb-4 border-start border-4 border-<?= h($readinessGuidance['variant']) ?>">
+    <div class="card-body">
+        <div class="text-muted small text-uppercase fw-bold">Co readiness znamená</div>
+        <div class="fs-5 fw-bold"><?= h($readinessGuidance['label']) ?></div>
+        <div class="text-muted mb-2"><?= h($readinessGuidance['detail']) ?></div>
+        <div class="small text-muted">Dnešní režim: <?= h($readinessGuidance['trainability']) ?> · doporučený strop <?= (int)$readinessGuidance['session_cap_minutes'] ?> min · <?= h($readinessGuidance['intensity_hint']) ?></div>
+        <?php if (!empty($readinessGuidance['reasons'])): ?>
+        <div class="small text-muted mt-1">Zohledněno: <?= h(implode(' · ', $readinessGuidance['reasons'])) ?></div>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
 
 <div class="card border-0 shadow-sm mb-4 border-start border-4 border-<?= h($trainingAssessment['status']['variant']) ?>">
     <div class="card-body">

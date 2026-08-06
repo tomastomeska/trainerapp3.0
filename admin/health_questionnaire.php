@@ -92,7 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'save_question' || $action === 'create_question') {
         $questionId = (int)($_POST['question_id'] ?? 0);
-        $stepIndex = max(1, min(8, (int)($_POST['step_index'] ?? 1)));
+        $stepIndex = max(1, min(250, (int)($_POST['step_index'] ?? 1)));
         $sectionTitle = trim((string)($_POST['section_title'] ?? ''));
         $questionKey = adminHealthQuestionnaireSlug((string)($_POST['question_key'] ?? ''));
         $questionLabel = trim((string)($_POST['question_label'] ?? ''));
@@ -338,6 +338,15 @@ renderAdminHeader('Zdravotní dotazník');
     <div class="small text-muted">Přehled otázek, logika zobrazení a pravidla upozornění</div>
 </div>
 
+<div class="alert alert-light border d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div class="small text-muted mb-0">
+        Potřebujete dotazník dočasně vypnout pro všechny sportovce?
+    </div>
+    <a href="<?= BASE_URL ?>/admin/settings.php#health-questionnaire-access" class="btn btn-sm btn-outline-dark fw-semibold">
+        <i class="fas fa-toggle-on me-1"></i>Globální přístup sportovců
+    </a>
+</div>
+
 <div class="row g-3 mb-3">
     <div class="col-sm-6 col-lg-3">
         <div class="card border-0 shadow-sm h-100">
@@ -402,7 +411,7 @@ renderAdminHeader('Zdravotní dotazník');
 
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Krok</label>
-                            <input type="number" class="form-control form-control-sm" name="step_index" min="1" max="8" value="1" required>
+                            <input type="number" class="form-control form-control-sm" name="step_index" min="1" max="250" value="1" required>
                         </div>
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Pořadí</label>
@@ -543,7 +552,7 @@ renderAdminHeader('Zdravotní dotazník');
 
                                         <div class="col-md-2">
                                             <label class="form-label small fw-semibold">Krok</label>
-                                            <input type="number" class="form-control form-control-sm" name="step_index" min="1" max="8" value="<?= (int)$question['step_index'] ?>" required>
+                                            <input type="number" class="form-control form-control-sm" name="step_index" min="1" max="250" value="<?= (int)$question['step_index'] ?>" required>
                                         </div>
                                         <div class="col-md-3">
                                             <label class="form-label small fw-semibold">Sekce</label>

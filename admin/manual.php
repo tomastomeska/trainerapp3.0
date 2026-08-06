@@ -70,7 +70,7 @@ renderAdminHeader('Návod pro SuperAdmin');
 </div>
 
 <div class="alert border-0 shadow-sm" style="background:linear-gradient(135deg,#ede9fe 0%,#ddd6fe 100%);color:#312e81;">
-    Tento návod popisuje kompletní provozní workflow administrace: od založení trenéra až po správu Events, podpory, e-mailových notifikací a kontrolu stability systému.
+    Tento návod popisuje kompletní provozní workflow administrace: od založení trenéra až po správu zdravotního dotazníku, Events, podpory, e-mailových notifikací a kontrolu stability systému.
 </div>
 
 <div class="card border-0 shadow-sm mb-4 manual-sticky-nav">
@@ -81,6 +81,7 @@ renderAdminHeader('Návod pro SuperAdmin');
             <a href="#coaches" class="btn btn-sm btn-outline-primary">Trenéři</a>
             <a href="#athletes" class="btn btn-sm btn-outline-primary">Sportovci</a>
             <a href="#content" class="btn btn-sm btn-outline-primary">Obsah aplikace</a>
+            <a href="#health-questionnaire-admin" class="btn btn-sm btn-outline-primary">Z. dotazník</a>
             <a href="#events" class="btn btn-sm btn-outline-primary">Events</a>
             <a href="#support" class="btn btn-sm btn-outline-primary">Podpora</a>
             <a href="#ops" class="btn btn-sm btn-outline-primary">Provoz a stabilita</a>
@@ -97,6 +98,7 @@ renderAdminHeader('Návod pro SuperAdmin');
             <li>Zkontrolujte jeho aktivní stav a základní údaje.</li>
             <li>V případě potřeby založte sportovce ručně v sekci Sportovci.</li>
             <li>Nastavte globální cviky, globální jídla a sportoviště.</li>
+            <li>Zkontrolujte konfiguraci zdravotního dotazníku a globální přístup sportovců.</li>
             <li>Zkontrolujte Events a případné publikované eventy.</li>
             <li>Projděte fronty podpory a notifikací (Podpora, E-mailové notifikace).</li>
             <li>Na závěr ověřte logy v Errorlogu.</li>
@@ -155,8 +157,30 @@ renderAdminHeader('Návod pro SuperAdmin');
     </div>
 </div>
 
+<div class="card border-0 shadow-sm mb-4" id="health-questionnaire-admin">
+    <div class="card-header fw-semibold"><i class="fas fa-heart-pulse me-2 text-warning"></i>5) Zdravotní dotazník sportovce <span class="manual-priority manual-priority-high">Nový modul</span></div>
+    <div class="card-body">
+        <h6 class="fw-bold">Správa otázek</h6>
+        <ol>
+            <li>Otevřete sekci Zdravotní dotazník v levém admin menu.</li>
+            <li>Spravujte kroky, názvy sekcí, klíče otázek, typy vstupů a pořadí.</li>
+            <li>U výběrových otázek nastavujte možnosti a podle potřeby i podmíněné zobrazení.</li>
+            <li>Pro rizikové odpovědi nastavujte alert módy a text upozornění pro trenéra.</li>
+            <li>Změny dělejte opatrně, protože přidání nové otázky může vyžádat aktualizaci dotazníků u sportovců.</li>
+        </ol>
+
+        <h6 class="fw-bold mt-3">Globální přístup sportovců</h6>
+        <ol>
+            <li>V Nastavení aplikace najděte blok Zdravotní dotazník sportovce.</li>
+            <li>Přepínačem můžete modul povolit nebo dočasně vypnout pro celý systém.</li>
+            <li>Po vypnutí se sportovci na stránku dotazníku nedostanou.</li>
+            <li>Tento zásah používejte jen výjimečně, například při servisním okně nebo redesignu formuláře.</li>
+        </ol>
+    </div>
+</div>
+
 <div class="card border-0 shadow-sm mb-4" id="events">
-    <div class="card-header fw-semibold"><i class="fas fa-flag-checkered me-2 text-warning"></i>5) Events modul <span class="manual-priority manual-priority-mid">Průběžně</span></div>
+    <div class="card-header fw-semibold"><i class="fas fa-flag-checkered me-2 text-warning"></i>6) Events modul <span class="manual-priority manual-priority-mid">Průběžně</span></div>
     <div class="card-body">
         <ol>
             <li>V sekci Events spravujete eventy, záložky a publikaci pro cílové publikum.</li>
@@ -170,7 +194,7 @@ renderAdminHeader('Návod pro SuperAdmin');
 </div>
 
 <div class="card border-0 shadow-sm mb-4" id="support">
-    <div class="card-header fw-semibold"><i class="fas fa-life-ring me-2 text-warning"></i>6) Podpora, zprávy a oznámení <span class="manual-priority manual-priority-high">Priorita</span></div>
+    <div class="card-header fw-semibold"><i class="fas fa-life-ring me-2 text-warning"></i>7) Podpora, zprávy a oznámení <span class="manual-priority manual-priority-high">Priorita</span></div>
     <div class="card-body">
         <h6 class="fw-bold">Podpora</h6>
         <ol>
@@ -189,7 +213,7 @@ renderAdminHeader('Návod pro SuperAdmin');
 </div>
 
 <div class="card border-0 shadow-sm mb-4" id="ops">
-    <div class="card-header fw-semibold"><i class="fas fa-server me-2 text-warning"></i>7) Provoz a stabilita <span class="manual-priority manual-priority-high">Kritické</span></div>
+    <div class="card-header fw-semibold"><i class="fas fa-server me-2 text-warning"></i>8) Provoz a stabilita <span class="manual-priority manual-priority-high">Kritické</span></div>
     <div class="card-body">
         <ol>
             <li>Pravidelně kontrolujte Errorlog a opakované chyby řešte prioritně.</li>
@@ -206,6 +230,7 @@ renderAdminHeader('Návod pro SuperAdmin');
     <div class="card-body">
         <ol class="mb-0">
             <li>Ráno: dashboard + nové tickety podpory.</li>
+            <li>Zkontrolujte, zda zdravotní dotazník běží v požadovaném režimu a nejsou potřeba úpravy formuláře.</li>
             <li>Dopoledne: kontrola errorlogu a kritických incidentů.</li>
             <li>Odpoledne: změny obsahu (Events, Infokanál, hlášky).</li>
             <li>Večer: rychlá kontrola notifikačních front a stavu integrací.</li>

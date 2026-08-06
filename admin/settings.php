@@ -13,6 +13,7 @@ $logoSettingKey = 'login_logo_path';
 $sublogoSettingKey = 'login_sublogo_path';
 $mycoachLogoSettingKey = 'mycoach_logo_path';
 $supportBankAccountKey = 'support_bank_account';
+$healthQuestionnaireAccessKey = 'athlete_health_questionnaire_enabled';
 $logoUploadDir = __DIR__ . '/../uploads/logo';
 $logoBasePath = 'uploads/logo';
 
@@ -42,6 +43,7 @@ $currentLogoPath = trim(getAppSetting($logoSettingKey, ''));
 $currentSublogoPath = trim(getAppSetting($sublogoSettingKey, ''));
 $currentMyCoachLogoPath = trim(getAppSetting($mycoachLogoSettingKey, ''));
 $currentSupportBankAccount = trim(getAppSetting($supportBankAccountKey, ''));
+$currentHealthQuestionnaireAccessEnabled = trim(getAppSetting($healthQuestionnaireAccessKey, '1')) !== '0';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
@@ -238,6 +240,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ? 'Číslo účtu pro dobrovolné příspěvky bylo uloženo.'
                     : 'Číslo účtu pro dobrovolné příspěvky bylo vymazáno.';
             }
+        } elseif ($action === 'save_health_questionnaire_access') {
+            $enabledValue = (string)($_POST['health_questionnaire_enabled'] ?? '0');
+            $isEnabled = $enabledValue === '1';
+
+            $pdo->prepare(
+                'INSERT INTO app_settings (`key`, `value`) VALUES (?, ?)
+                 ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)'
+            )->execute([$healthQuestionnaireAccessKey, $isEnabled ? '1' : '0']);
+
+            $currentHealthQuestionnaireAccessEnabled = $isEnabled;
+            $success = $isEnabled
+                ? 'Přístup sportovců ke zdravotnímu dotazníku byl povolen.'
+                : 'Přístup sportovců ke zdravotnímu dotazníku byl dočasně deaktivován.';
         } else {
             $version = trim($_POST['app_version'] ?? '');
             if ($version === '') {
@@ -348,6 +363,40 @@ renderAdminHeader('Nastavení aplikace');
                     <i class="fas fa-save me-1"></i>Uložit účet
                 </button>
             </div>
+        </form>
+    </div>
+</div>
+
+<div id="health-questionnaire-access" class="card border-0 shadow-sm mt-4" style="max-width:760px">
+    <div class="card-header fw-bold" style="background:#1e1e2e;color:#fff">
+        <i class="fas fa-heart-pulse me-2"></i>Zdravotní dotazník sportovce
+    </div>
+    <div class="card-body">
+        <p class="text-muted mb-3">Globální přepínač pro celý systém. Po vypnutí nebude mít žádný sportovec přístup na stránku zdravotního dotazníku.</p>
+        <form method="post">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="save_health_questionnaire_access">
+            <input type="hidden" name="health_questionnaire_enabled" value="0">
+
+            <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" role="switch" id="healthQuestionnaireAccessSwitch" name="health_questionnaire_enabled" value="1" <?= $currentHealthQuestionnaireAccessEnabled ? 'checked' : '' ?>>
+                <label class="form-check-label fw-semibold" for="healthQuestionnaireAccessSwitch">
+                    Povolit sportovcům přístup ke zdravotnímu dotazníku
+                </label>
+            </div>
+
+            <div class="small text-muted mb-3">
+                Aktuální stav:
+                <?php if ($currentHealthQuestionnaireAccessEnabled): ?>
+                    <span class="badge bg-success">Povoleno</span>
+                <?php else: ?>
+                    <span class="badge bg-secondary">Dočasně vypnuto</span>
+                <?php endif; ?>
+            </div>
+
+            <button type="submit" class="btn fw-bold" style="background:#7c3aed;color:#fff;border:none">
+                <i class="fas fa-save me-1"></i>Uložit nastavení
+            </button>
         </form>
     </div>
 </div>

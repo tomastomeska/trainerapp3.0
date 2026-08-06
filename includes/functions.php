@@ -411,6 +411,52 @@ if (!function_exists('mycoachQuestionnaireHealthLimitLabels')) {
   }
 }
 
+if (!function_exists('mycoachQuestionnaireHealthProfile')) {
+  function mycoachQuestionnaireHealthProfile(?array $questionnaire): array {
+    if (!$questionnaire) {
+      return [
+        'keys' => [],
+        'labels' => [],
+        'count' => 0,
+        'other_reason' => '',
+        'has_other_reason' => false,
+      ];
+    }
+
+    $options = mycoachQuestionnaireOptions();
+    $selected = json_decode((string)($questionnaire['health_limits_json'] ?? '[]'), true);
+    if (!is_array($selected)) {
+      $selected = [];
+    }
+
+    $keys = [];
+    $labels = [];
+    foreach ($selected as $key) {
+      $key = trim((string)$key);
+      if ($key === '' || !isset($options['health_limits'][$key]) || in_array($key, $keys, true)) {
+        continue;
+      }
+
+      $keys[] = $key;
+      $labels[] = (string)$options['health_limits'][$key];
+    }
+
+    $otherReason = trim((string)($questionnaire['health_limits_other_reason'] ?? ''));
+    $hasOther = in_array('other', $keys, true) && $otherReason !== '';
+    if ($hasOther) {
+      $labels[] = 'Jiné: ' . mb_substr($otherReason, 0, 140, 'UTF-8');
+    }
+
+    return [
+      'keys' => $keys,
+      'labels' => $labels,
+      'count' => count($keys),
+      'other_reason' => $otherReason,
+      'has_other_reason' => $hasOther,
+    ];
+  }
+}
+
 if (!function_exists('mycoachBuildReadinessGuidance')) {
   function mycoachBuildReadinessGuidance(int $readinessScore, ?array $dailyEntry = null, ?array $questionnaire = null, ?array $timeline = null, ?array $activeGoal = null): array {
     $readinessScore = max(0, min(100, $readinessScore));
@@ -421,7 +467,8 @@ if (!function_exists('mycoachBuildReadinessGuidance')) {
     $rpeScore = $dailyEntry && isset($dailyEntry['rpe_score']) && $dailyEntry['rpe_score'] !== null ? (int)$dailyEntry['rpe_score'] : null;
     $trainingDurationMinutes = $dailyEntry && isset($dailyEntry['training_duration_minutes']) && $dailyEntry['training_duration_minutes'] !== null ? (int)$dailyEntry['training_duration_minutes'] : null;
     $avgHeartRate = $dailyEntry && isset($dailyEntry['avg_heart_rate']) && $dailyEntry['avg_heart_rate'] !== null ? (int)$dailyEntry['avg_heart_rate'] : null;
-    $healthLimitLabels = mycoachQuestionnaireHealthLimitLabels($questionnaire);
+    $healthProfile = mycoachQuestionnaireHealthProfile($questionnaire);
+    $healthLimitLabels = $healthProfile['labels'];
     $goalType = trim((string)($activeGoal['goal_type'] ?? ($questionnaire['goal_snapshot_type'] ?? '')));
     $restDays = $questionnaire && isset($questionnaire['rest_days_per_week']) && $questionnaire['rest_days_per_week'] !== null ? (int)$questionnaire['rest_days_per_week'] : null;
     $weeklyHours = $questionnaire && isset($questionnaire['weekly_training_hours_target']) && $questionnaire['weekly_training_hours_target'] !== null ? (float)$questionnaire['weekly_training_hours_target'] : null;
@@ -516,6 +563,15 @@ if (!function_exists('mycoachBuildReadinessGuidance')) {
     if (!empty($healthLimitLabels)) {
       $sessionCapMinutes = min($sessionCapMinutes, 60);
       $reasons[] = 'zdravotní omezení: ' . implode(', ', $healthLimitLabels);
+    }
+    if (($healthProfile['count'] ?? 0) >= 2) {
+      $sessionCapMinutes = min($sessionCapMinutes, 50);
+      $intensityHint = 'nízká až střední intenzita';
+      $reasons[] = 'více zdravotních omezení v dotazníku';
+    }
+    if (!empty($healthProfile['has_other_reason'])) {
+      $sessionCapMinutes = min($sessionCapMinutes, 45);
+      $reasons[] = 'doplňující omezení: ' . mb_substr((string)$healthProfile['other_reason'], 0, 90, 'UTF-8');
     }
     if ($restDays !== null && $restDays <= 1) {
       $sessionCapMinutes = min($sessionCapMinutes, 60);
@@ -2746,6 +2802,79 @@ if (!function_exists('mycoachBuildTrainingAssessment')) {
     }
   }
 
+  if (!function_exists('mycoachAdjustStarterTemplatesByQuestionnaire')) {
+    function mycoachAdjustStarterTemplatesByQuestionnaire(array $templates, array $questionnaire): array {
+      if (empty($templates)) {
+        return $templates;
+      }
+
+      $healthProfile = mycoachQuestionnaireHealthProfile($questionnaire);
+      $healthCount = (int)($healthProfile['count'] ?? 0);
+      $hasOtherReason = !empty($healthProfile['has_other_reason']);
+      $weeklyHours = isset($questionnaire['weekly_training_hours_target']) && $questionnaire['weekly_training_hours_target'] !== null
+        ? (float)$questionnaire['weekly_training_hours_target']
+        : null;
+      $restDays = isset($questionnaire['rest_days_per_week']) && $questionnaire['rest_days_per_week'] !== null
+        ? (int)$questionnaire['rest_days_per_week']
+        : null;
+
+      $minutesScale = 1.0;
+      if ($weeklyHours !== null && $weeklyHours > 0) {
+        if ($weeklyHours <= 3.0) {
+          $minutesScale *= 0.78;
+        } elseif ($weeklyHours <= 5.0) {
+          $minutesScale *= 0.9;
+        } elseif ($weeklyHours >= 10.0) {
+          $minutesScale *= 1.08;
+        }
+      }
+
+      if ($restDays !== null) {
+        if ($restDays >= 3) {
+          $minutesScale *= 0.9;
+        } elseif ($restDays <= 1) {
+          $minutesScale *= 1.08;
+        }
+      }
+
+      if ($healthCount >= 1) {
+        $minutesScale *= 0.9;
+      }
+      if ($healthCount >= 2) {
+        $minutesScale *= 0.85;
+      }
+      if ($hasOtherReason) {
+        $minutesScale *= 0.88;
+      }
+
+      $minutesScale = max(0.65, min(1.15, $minutesScale));
+      $rpeDelta = 0.0;
+      if ($healthCount >= 1) {
+        $rpeDelta -= 0.4;
+      }
+      if ($healthCount >= 2) {
+        $rpeDelta -= 0.3;
+      }
+      if ($hasOtherReason) {
+        $rpeDelta -= 0.3;
+      }
+
+      $adjusted = [];
+      foreach ($templates as $template) {
+        $row = $template;
+        if (isset($row['planned_minutes']) && $row['planned_minutes'] !== null) {
+          $row['planned_minutes'] = max(20, (int)round((float)$row['planned_minutes'] * $minutesScale));
+        }
+        if (isset($row['planned_rpe']) && $row['planned_rpe'] !== null) {
+          $row['planned_rpe'] = max(2.0, min(8.5, round(((float)$row['planned_rpe']) + $rpeDelta, 1)));
+        }
+        $adjusted[] = $row;
+      }
+
+      return $adjusted;
+    }
+  }
+
   if (!function_exists('mycoachSeedStarterPlanContent')) {
     function mycoachSeedStarterPlanContent(PDO $pdo, int $planId, int $userId, array $questionnaire, ?array $activeGoal = null): bool {
       if ($planId <= 0 || $userId <= 0) {
@@ -2771,6 +2900,7 @@ if (!function_exists('mycoachBuildTrainingAssessment')) {
         $goalType = trim((string)($activeGoal['goal_type'] ?? ($questionnaire['goal_snapshot_type'] ?? 'fitness')));
         $planLevel = trim((string)($questionnaire['performance_level'] ?? ''));
         $templates = mycoachBuildStarterPlanTemplates($goalType, $planLevel !== '' ? $planLevel : null);
+        $templates = mycoachAdjustStarterTemplatesByQuestionnaire($templates, $questionnaire);
         if (empty($templates)) {
           return false;
         }
@@ -2868,6 +2998,10 @@ if (!function_exists('mycoachBuildTrainingAssessment')) {
       $sportTypes = mycoachNormalizeSelectionList($data['sport_types'] ?? [], $options['sport_activities']);
       $sportsText = trim((string)($data['sports_text'] ?? ''));
       $healthLimits = mycoachNormalizeSelectionList($data['health_limits'] ?? [], $options['health_limits']);
+      $healthLimitsOtherReason = trim((string)($data['health_limits_other_reason'] ?? ''));
+      if (!in_array('other', $healthLimits, true)) {
+        $healthLimitsOtherReason = '';
+      }
       $weeklyHours = isset($data['weekly_training_hours_target']) && $data['weekly_training_hours_target'] !== '' ? max(0, (float)str_replace(',', '.', (string)$data['weekly_training_hours_target'])) : null;
       $restDays = isset($data['rest_days_per_week']) && $data['rest_days_per_week'] !== '' ? max(0, (int)$data['rest_days_per_week']) : null;
       $equipment = mycoachNormalizeSelectionList($data['equipment'] ?? [], $options['equipment']);
@@ -2914,14 +3048,14 @@ if (!function_exists('mycoachBuildTrainingAssessment')) {
           'INSERT INTO mycoach_questionnaires (
               user_id, questionnaire_type, age_years, gender, height_cm, weight_kg,
               performance_level, sport_years, sport_frequency_per_week, sport_types_json,
-              sports_text, health_limits_json, weekly_training_hours_target, rest_days_per_week,
+              sports_text, health_limits_json, health_limits_other_reason, weekly_training_hours_target, rest_days_per_week,
               equipment_json, has_trainer, trainer_name, goal_snapshot_type, goal_snapshot_name,
               hyrox_registered, hyrox_race_date, hyrox_race_name, hyrox_race_place, hyrox_category,
               hyrox_gender_category, days_to_race, completed_at
            ) VALUES (
               ?, "onboarding", ?, ?, ?, ?,
               ?, ?, ?, ?,
-              ?, ?, ?, ?,
+              ?, ?, ?, ?, ?,
               ?, ?, ?, ?, ?,
               ?, ?, ?, ?, ?,
               ?, ?, NOW()
@@ -2937,6 +3071,7 @@ if (!function_exists('mycoachBuildTrainingAssessment')) {
               sport_types_json = VALUES(sport_types_json),
               sports_text = VALUES(sports_text),
               health_limits_json = VALUES(health_limits_json),
+              health_limits_other_reason = VALUES(health_limits_other_reason),
               weekly_training_hours_target = VALUES(weekly_training_hours_target),
               rest_days_per_week = VALUES(rest_days_per_week),
               equipment_json = VALUES(equipment_json),
@@ -2966,6 +3101,7 @@ if (!function_exists('mycoachBuildTrainingAssessment')) {
           json_encode($sportTypes, JSON_UNESCAPED_UNICODE),
           $sportsText !== '' ? $sportsText : null,
           json_encode($healthLimits, JSON_UNESCAPED_UNICODE),
+          $healthLimitsOtherReason !== '' ? mb_substr($healthLimitsOtherReason, 0, 2000, 'UTF-8') : null,
           $weeklyHours,
           $restDays,
           json_encode($equipment, JSON_UNESCAPED_UNICODE),
