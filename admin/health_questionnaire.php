@@ -82,6 +82,69 @@ if (!function_exists('adminHealthQuestionnaireSlug')) {
     }
 }
 
+if (!function_exists('adminHealthQuestionnaireResolveUniqueKey')) {
+    function adminHealthQuestionnaireResolveUniqueKey(PDO $pdo, string $baseKey, ?int $ignoreId = null): string
+    {
+        $candidate = adminHealthQuestionnaireSlug($baseKey);
+        if ($candidate === '') {
+            $candidate = 'question_' . date('YmdHis');
+        }
+
+        $index = 1;
+        while (true) {
+            if ($ignoreId !== null && $ignoreId > 0) {
+                $stmt = $pdo->prepare(
+                    'SELECT COUNT(*)
+                     FROM athlete_health_questionnaire_questions
+                     WHERE question_key = ? AND id <> ?'
+                );
+                $stmt->execute([$candidate, $ignoreId]);
+            } else {
+                $stmt = $pdo->prepare(
+                    'SELECT COUNT(*)
+                     FROM athlete_health_questionnaire_questions
+                     WHERE question_key = ?'
+                );
+                $stmt->execute([$candidate]);
+            }
+
+            $exists = (int)$stmt->fetchColumn() > 0;
+            if (!$exists) {
+                return $candidate;
+            }
+
+            $index++;
+            $candidate = adminHealthQuestionnaireSlug($baseKey) . '_' . $index;
+        }
+    }
+}
+
+if (!function_exists('adminHealthQuestionnaireResolveStepBySection')) {
+    function adminHealthQuestionnaireResolveStepBySection(PDO $pdo, string $sectionTitle): ?int
+    {
+        $sectionTitle = trim($sectionTitle);
+        if ($sectionTitle === '') {
+            return null;
+        }
+
+        $stmt = $pdo->prepare(
+            'SELECT step_index
+             FROM athlete_health_questionnaire_questions
+             WHERE section_title = ?
+             ORDER BY step_index ASC, sort_order ASC, id ASC
+             LIMIT 1'
+        );
+        $stmt->execute([$sectionTitle]);
+        $value = $stmt->fetchColumn();
+
+        if ($value === false || $value === null) {
+            return null;
+        }
+
+        return max(1, min(250, (int)$value));
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
         flash('danger', 'Neplatný bezpečnostní token.');
@@ -92,19 +155,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'save_question' || $action === 'create_question') {
         $questionId = (int)($_POST['question_id'] ?? 0);
-        $stepIndex = max(1, min(250, (int)($_POST['step_index'] ?? 1)));
-        $sectionTitle = trim((string)($_POST['section_title'] ?? ''));
+        $stepIndexRaw = (int)($_POST['step_index_custom'] ?? ($_POST['step_index'] ?? 1));
+        $stepIndex = max(1, min(250, $stepIndexRaw));
+        $sectionTitleExisting = trim((string)($_POST['section_title_existing'] ?? ''));
+        $sectionTitleNew = trim((string)($_POST['section_title_new'] ?? ''));
+        $sectionTitleRaw = trim((string)($_POST['section_title'] ?? ''));
+        $sectionTitle = $sectionTitleRaw;
+        if ($sectionTitle === '') {
+            $sectionTitle = $sectionTitleNew !== '' ? $sectionTitleNew : $sectionTitleExisting;
+        }
         $questionKey = adminHealthQuestionnaireSlug((string)($_POST['question_key'] ?? ''));
         $questionLabel = trim((string)($_POST['question_label'] ?? ''));
         $inputType = trim((string)($_POST['input_type'] ?? 'text'));
+        if ($inputType === 'checkbox') {
+            $inputType = 'multi';
+        }
         $placeholder = trim((string)($_POST['placeholder'] ?? ''));
         $isRequired = isset($_POST['is_required']) ? 1 : 0;
         $showWhenQuestionKey = adminHealthQuestionnaireSlug((string)($_POST['show_when_question_key'] ?? ''));
         $showWhenValue = trim((string)($_POST['show_when_value'] ?? ''));
         $alertMode = trim((string)($_POST['alert_mode'] ?? 'none'));
         $alertText = trim((string)($_POST['alert_text'] ?? ''));
-        $sortOrder = (int)($_POST['sort_order'] ?? 100);
+        $sortOrderRaw = (int)($_POST['sort_order_custom'] ?? ($_POST['sort_order'] ?? 100));
+        $sortOrder = $sortOrderRaw;
         $isActive = isset($_POST['is_active']) ? 1 : 0;
+
+        if ($action === 'create_question' && $sectionTitleExisting !== '' && $sectionTitleNew === '' && $sectionTitleRaw === '') {
+            $resolvedStepIndex = adminHealthQuestionnaireResolveStepBySection($pdo, $sectionTitleExisting);
+            if ($resolvedStepIndex !== null) {
+                $stepIndex = $resolvedStepIndex;
+            }
+        }
 
         $options = adminHealthQuestionnaireTextToOptions((string)($_POST['options_text'] ?? ''));
         $alertValues = adminHealthQuestionnaireTextToOptions((string)($_POST['alert_values_text'] ?? ''));
@@ -112,18 +193,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $allowedInputTypes = array_keys(healthQuestionnaireInputTypeOptions());
         $allowedAlertModes = array_keys(healthQuestionnaireAlertModeOptions());
 
+        if ($questionKey === '') {
+            $questionKey = adminHealthQuestionnaireSlug($questionLabel);
+        }
+
         if ($sectionTitle === '' || $questionLabel === '') {
             flash('danger', 'Název kroku a otázka jsou povinné.');
             redirect(BASE_URL . '/admin/health_questionnaire.php');
         }
 
         if ($questionKey === '') {
-            flash('danger', 'Klíč otázky je povinný.');
-            redirect(BASE_URL . '/admin/health_questionnaire.php');
+            $questionKey = 'question_' . date('YmdHis');
         }
 
         if (!in_array($inputType, $allowedInputTypes, true)) {
             flash('danger', 'Neplatný typ vstupu.');
+            redirect(BASE_URL . '/admin/health_questionnaire.php');
+        }
+
+        if (in_array($inputType, ['single', 'multi'], true) && empty($options)) {
+            flash('danger', 'U typu "Jedna volba" a "Checkboxy (více možností)" musíte vyplnit seznam možností.');
             redirect(BASE_URL . '/admin/health_questionnaire.php');
         }
 
@@ -137,6 +226,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         try {
             if ($action === 'create_question') {
+                $questionKey = adminHealthQuestionnaireResolveUniqueKey($pdo, $questionKey);
                 $insertStmt = $pdo->prepare(
                     'INSERT INTO athlete_health_questionnaire_questions
                     (step_index, section_title, question_key, question_label, input_type, options_json, placeholder, is_required, show_when_question_key, show_when_value, alert_mode, alert_values_json, alert_text, sort_order, is_active)
@@ -208,6 +298,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('success', 'Otázka byla upravena.');
             redirect(BASE_URL . '/admin/health_questionnaire.php');
         } catch (Throwable $e) {
+            $errorMessage = (string)$e->getMessage();
+            if (stripos($errorMessage, 'uq_health_question_key') !== false || stripos($errorMessage, 'Duplicate entry') !== false) {
+                flash('danger', 'Klíč otázky už existuje. Změňte klíč nebo ho nechte prázdný při vytváření nové otázky.');
+                redirect(BASE_URL . '/admin/health_questionnaire.php');
+            }
             flash('danger', 'Uložení se nepodařilo: ' . $e->getMessage());
             redirect(BASE_URL . '/admin/health_questionnaire.php');
         }
@@ -228,6 +323,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $questions = healthQuestionnaireFetchQuestions($pdo, false);
 $inputTypeOptions = healthQuestionnaireInputTypeOptions();
+$inputTypeOptionsForAdmin = $inputTypeOptions;
+$inputTypeOptionsForAdmin['multi'] = 'Checkboxy (více možností)';
 $alertModeOptions = healthQuestionnaireAlertModeOptions();
 
 $questionsByStep = [];
@@ -254,6 +351,14 @@ foreach ($questions as $question) {
 }
 
 ksort($questionsByStep);
+
+$existingSectionTitles = [];
+foreach ($questionsByStep as $stepData) {
+    $title = trim((string)($stepData['title'] ?? ''));
+    if ($title !== '' && !in_array($title, $existingSectionTitles, true)) {
+        $existingSectionTitles[] = $title;
+    }
+}
 
 if (!function_exists('adminHealthQuestionnaireStepName')) {
     function adminHealthQuestionnaireStepName(array $stepData, int $stepIndex): string
@@ -403,48 +508,83 @@ renderAdminHeader('Zdravotní dotazník');
             </div>
 
             <div class="card border-0 shadow-sm">
-                <div class="card-header bg-dark text-white fw-semibold">Přidat novou otázku</div>
+                <div class="card-header bg-dark text-white fw-semibold">Rychlé přidání otázky (krok za krokem)</div>
                 <div class="card-body">
-                    <form method="post" class="row g-2">
+                    <div class="alert alert-warning py-2 small mb-3">
+                        <strong>Postup:</strong> 1) Sekce, 2) Otázka, 3) Typ odpovědi, 4) U výběrů vyplň možnosti.
+                    </div>
+
+                    <form method="post" class="row g-2" id="quickCreateQuestionForm">
                         <?= csrfField() ?>
                         <input type="hidden" name="action" value="create_question">
-
-                        <div class="col-6">
-                            <label class="form-label small fw-semibold">Krok</label>
-                            <input type="number" class="form-control form-control-sm" name="step_index" min="1" max="250" value="1" required>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small fw-semibold">Pořadí</label>
-                            <input type="number" class="form-control form-control-sm" name="sort_order" value="100" required>
-                        </div>
+                        <input type="hidden" name="step_index" value="1">
+                        <input type="hidden" name="sort_order" value="100">
 
                         <div class="col-12">
-                            <label class="form-label small fw-semibold">Název sekce</label>
-                            <input type="text" class="form-control form-control-sm" name="section_title" required placeholder="Např. Zdravotní stav">
+                            <label class="form-label small fw-semibold">1) Vyberte sekci</label>
+                            <select class="form-select form-select-sm" name="section_title_existing">
+                                <option value="">Vyberte existující sekci</option>
+                                <?php foreach ($existingSectionTitles as $existingSectionTitle): ?>
+                                <option value="<?= h($existingSectionTitle) ?>"><?= h($existingSectionTitle) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <div class="form-text">Pokud vyberete existující sekci, krok se doplní automaticky.</div>
                         </div>
                         <div class="col-12">
-                            <label class="form-label small fw-semibold">Text otázky</label>
-                            <input type="text" class="form-control form-control-sm" name="question_label" required>
+                            <label class="form-label small fw-semibold">Nebo napište novou sekci</label>
+                            <input type="text" class="form-control form-control-sm" name="section_title_new" placeholder="Např. Zdravotní stav">
                         </div>
+
                         <div class="col-12">
-                            <label class="form-label small fw-semibold">Klíč</label>
-                            <input type="text" class="form-control form-control-sm" name="question_key" required placeholder="napr. health_limitation">
+                            <label class="form-label small fw-semibold">2) Napište otázku</label>
+                            <input type="text" class="form-control form-control-sm" name="question_label" required placeholder="Např. Máte nějaké zdravotní omezení?">
                         </div>
+
                         <div class="col-12">
-                            <label class="form-label small fw-semibold">Typ vstupu</label>
-                            <select class="form-select form-select-sm" name="input_type" required>
-                                <?php foreach ($inputTypeOptions as $key => $label): ?>
+                            <label class="form-label small fw-semibold">3) Vyberte typ odpovědi</label>
+                            <select class="form-select form-select-sm" name="input_type" id="quick_input_type" required>
+                                <?php foreach ($inputTypeOptionsForAdmin as $key => $label): ?>
                                 <option value="<?= h($key) ?>"><?= h($label) ?></option>
                                 <?php endforeach; ?>
                             </select>
+                            <div class="form-text">Pro zdravotní omezení obvykle zvolte <strong>Checkboxy (více možností)</strong>.</div>
+                        </div>
+
+                        <div class="col-12" id="quick_options_wrap">
+                            <label class="form-label small fw-semibold">4) Možnosti odpovědí</label>
+                            <textarea class="form-control form-control-sm" name="options_text" id="quick_options_text" rows="4" placeholder="Např.
+Koleno
+Rameno
+Bedra"></textarea>
+                            <div class="form-text">U typu Jedna volba a Checkboxy je toto pole povinné. Každá možnost na nový řádek.</div>
+                        </div>
+
+                        <div class="col-12 d-flex gap-3 mt-1">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_required" id="new_required" checked>
+                                <label class="form-check-label small" for="new_required">Povinná otázka</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="is_active" id="new_active" checked>
+                                <label class="form-check-label small" for="new_active">Aktivní</label>
+                            </div>
                         </div>
 
                         <details class="col-12 mt-2">
-                            <summary class="small fw-semibold" style="cursor:pointer">Rozšířené nastavení</summary>
+                            <summary class="small fw-semibold" style="cursor:pointer">Rozšířené nastavení (volitelné)</summary>
                             <div class="row g-2 mt-1">
+                                <div class="col-6">
+                                    <label class="form-label small fw-semibold">Krok (ručně)</label>
+                                    <input type="number" class="form-control form-control-sm" name="step_index_custom" min="1" max="250" placeholder="Automaticky dle sekce">
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label small fw-semibold">Pořadí</label>
+                                    <input type="number" class="form-control form-control-sm" name="sort_order_custom" placeholder="100">
+                                </div>
                                 <div class="col-12">
-                                    <label class="form-label small fw-semibold">Možnosti (řádky, volitelně value|label)</label>
-                                    <textarea class="form-control form-control-sm" name="options_text" rows="3"></textarea>
+                                    <label class="form-label small fw-semibold">Klíč (volitelné)</label>
+                                    <input type="text" class="form-control form-control-sm" name="question_key" placeholder="Např. health_limitation">
+                                    <div class="form-text">Když necháte prázdné, klíč se vytvoří automaticky.</div>
                                 </div>
                                 <div class="col-12">
                                     <label class="form-label small fw-semibold">Placeholder</label>
@@ -473,16 +613,6 @@ renderAdminHeader('Zdravotní dotazník');
                                 <div class="col-12">
                                     <label class="form-label small fw-semibold">Text upozornění</label>
                                     <textarea class="form-control form-control-sm" name="alert_text" rows="2"></textarea>
-                                </div>
-                                <div class="col-12 d-flex gap-3 mt-1">
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" name="is_required" id="new_required">
-                                        <label class="form-check-label small" for="new_required">Povinné</label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" name="is_active" id="new_active" checked>
-                                        <label class="form-check-label small" for="new_active">Aktivní</label>
-                                    </div>
                                 </div>
                             </div>
                         </details>
@@ -523,7 +653,7 @@ renderAdminHeader('Zdravotní dotazník');
                                     <div class="hq-question-title"><?= h((string)$question['question_label']) ?></div>
                                     <div class="hq-question-meta">
                                         <span class="badge bg-light text-dark border">Klíč: <?= h((string)$question['question_key']) ?></span>
-                                        <span class="badge bg-light text-dark border">Typ: <?= h((string)($inputTypeOptions[(string)$question['input_type']] ?? (string)$question['input_type'])) ?></span>
+                                        <span class="badge bg-light text-dark border">Typ: <?= h((string)($inputTypeOptionsForAdmin[(string)$question['input_type']] ?? (string)$question['input_type'])) ?></span>
                                         <span class="badge bg-light text-dark border">Pořadí: <?= (int)$question['sort_order'] ?></span>
                                         <?php if ((int)$question['is_required'] === 1): ?>
                                         <span class="badge bg-primary">Povinné</span>
@@ -561,14 +691,16 @@ renderAdminHeader('Zdravotní dotazník');
                                         <div class="col-md-3">
                                             <label class="form-label small fw-semibold">Klíč</label>
                                             <input type="text" class="form-control form-control-sm" name="question_key" value="<?= h((string)$question['question_key']) ?>" required>
+                                            <div class="form-text">Musí být unikátní.</div>
                                         </div>
                                         <div class="col-md-2">
                                             <label class="form-label small fw-semibold">Typ</label>
                                             <select class="form-select form-select-sm" name="input_type" required>
-                                                <?php foreach ($inputTypeOptions as $typeKey => $typeLabel): ?>
+                                                <?php foreach ($inputTypeOptionsForAdmin as $typeKey => $typeLabel): ?>
                                                 <option value="<?= h($typeKey) ?>" <?= (string)$question['input_type'] === $typeKey ? 'selected' : '' ?>><?= h($typeLabel) ?></option>
                                                 <?php endforeach; ?>
                                             </select>
+                                            <div class="form-text">Pro více odpovědí použijte Checkboxy (více možností).</div>
                                         </div>
                                         <div class="col-md-2">
                                             <label class="form-label small fw-semibold">Pořadí</label>
@@ -583,6 +715,7 @@ renderAdminHeader('Zdravotní dotazník');
                                         <div class="col-md-6">
                                             <label class="form-label small fw-semibold">Možnosti</label>
                                             <textarea class="form-control form-control-sm" name="options_text" rows="3"><?= h($optionsText) ?></textarea>
+                                            <div class="form-text">Povinné pro typy Jedna volba a Checkboxy. Každá možnost na nový řádek.</div>
                                         </div>
                                         <div class="col-md-6">
                                             <label class="form-label small fw-semibold">Placeholder</label>
@@ -650,5 +783,32 @@ renderAdminHeader('Zdravotní dotazník');
         <?php endif; ?>
     </div>
 </div>
+
+<script>
+(function () {
+    const form = document.getElementById('quickCreateQuestionForm');
+    if (!form) {
+        return;
+    }
+
+    const inputType = document.getElementById('quick_input_type');
+    const optionsWrap = document.getElementById('quick_options_wrap');
+    const optionsText = document.getElementById('quick_options_text');
+
+    if (!inputType || !optionsWrap || !optionsText) {
+        return;
+    }
+
+    const syncOptionsVisibility = () => {
+        const type = String(inputType.value || '');
+        const needsOptions = type === 'single' || type === 'multi';
+        optionsWrap.classList.toggle('d-none', !needsOptions);
+        optionsText.required = needsOptions;
+    };
+
+    inputType.addEventListener('change', syncOptionsVisibility);
+    syncOptionsVisibility();
+})();
+</script>
 
 <?php renderAdminFooter();
