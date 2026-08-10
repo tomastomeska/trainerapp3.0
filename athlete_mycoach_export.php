@@ -12,24 +12,7 @@ if ($athleteDisplayName === '') {
     $athleteDisplayName = trim((string)($athlete['email'] ?? ''));
 }
 
-if (!function_exists('athleteMyCoachUnlocked')) {
-    function athleteMyCoachUnlocked(PDO $pdo, int $athleteId): bool {
-        try {
-            $columnStmt = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'mycoach_enabled'");
-            if ($columnStmt === false || !$columnStmt->fetch()) {
-                return false;
-            }
-
-            $valueStmt = $pdo->prepare('SELECT mycoach_enabled FROM athletes WHERE id = ? LIMIT 1');
-            $valueStmt->execute([$athleteId]);
-            return ((int)$valueStmt->fetchColumn()) === 1;
-        } catch (Throwable $e) {
-            return false;
-        }
-    }
-}
-
-if (!athleteMyCoachUnlocked($pdo, $athleteId)) {
+if (!mycoachAccessEnabledForAthlete($pdo, $athleteId)) {
     flash('warning', 'MyCoach je pro váš účet zatím uzamčený.');
     redirect(BASE_URL . '/athlete_dashboard.php');
 }

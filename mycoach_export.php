@@ -12,24 +12,7 @@ if ($coachDisplayName === '') {
     $coachDisplayName = trim((string)($coach['username'] ?? ''));
 }
 
-if (!function_exists('coachMyCoachUnlocked')) {
-    function coachMyCoachUnlocked(PDO $pdo, int $coachId): bool {
-        try {
-            $columnStmt = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'mycoach_enabled'");
-            if ($columnStmt === false || !$columnStmt->fetch()) {
-                return false;
-            }
-
-            $valueStmt = $pdo->prepare('SELECT mycoach_enabled FROM coaches WHERE id = ? LIMIT 1');
-            $valueStmt->execute([$coachId]);
-            return ((int)$valueStmt->fetchColumn()) === 1;
-        } catch (Throwable $e) {
-            return false;
-        }
-    }
-}
-
-if (!coachMyCoachUnlocked($pdo, $coachId)) {
+if (!mycoachAccessEnabledForCoach($pdo, $coachId)) {
     flash('warning', 'MyCoach je pro váš účet zatím uzamčený.');
     redirect(BASE_URL . '/dashboard.php');
 }

@@ -13,24 +13,7 @@ if ($coachDisplayName === '') {
     $coachDisplayName = trim((string)($coach['username'] ?? ''));
 }
 
-if (!function_exists('coachMyCoachUnlocked')) {
-    function coachMyCoachUnlocked(PDO $pdo, int $coachId): bool {
-        try {
-            $columnStmt = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'mycoach_enabled'");
-            if ($columnStmt === false || !$columnStmt->fetch()) {
-                return false;
-            }
-
-            $valueStmt = $pdo->prepare('SELECT mycoach_enabled FROM coaches WHERE id = ? LIMIT 1');
-            $valueStmt->execute([$coachId]);
-            return ((int)$valueStmt->fetchColumn()) === 1;
-        } catch (Throwable $e) {
-            return false;
-        }
-    }
-}
-
-if (!coachMyCoachUnlocked($pdo, $coachId)) {
+if (!mycoachAccessEnabledForCoach($pdo, $coachId)) {
     flash('warning', 'MyCoach je pro váš účet zatím uzamčený.');
     redirect(BASE_URL . '/dashboard.php');
 }
@@ -44,6 +27,8 @@ if (!$myCoachUser) {
 $myCoachUserId = (int)$myCoachUser['id'];
 $latestQuestionnaire = mycoachFetchLatestQuestionnaire($pdo, $myCoachUserId);
 $athleteProgressRows = mycoachFetchCoachAthleteProgress($pdo, $coachId, 250);
+$mycoachAccessMode = mycoachAccessMode();
+$isMyCoachGlobalAll = $mycoachAccessMode === 'all';
 $runningPlanCount = 0;
 $withoutDailyDataCount = 0;
 $disabledCount = 0;
@@ -57,7 +42,7 @@ foreach ($athleteProgressRows as $athleteProgress) {
         $withoutDailyDataCount++;
     }
 
-    if (empty($athleteProgress['mycoach_enabled'])) {
+    if (!$isMyCoachGlobalAll && empty($athleteProgress['mycoach_enabled'])) {
         $disabledCount++;
     }
 }
@@ -112,9 +97,9 @@ renderHeader('MyCoach sportovci', false, true);
     <div class="col-12 col-md-4">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
-                <div class="text-muted small text-uppercase fw-bold">MyCoach vypnutý</div>
+                <div class="text-muted small text-uppercase fw-bold"><?= $isMyCoachGlobalAll ? 'MyCoach ručně omezen' : 'MyCoach vypnutý' ?></div>
                 <div class="fs-3 fw-bold text-secondary"><?= (int)$disabledCount ?></div>
-                <div class="text-muted small">sportovců</div>
+                <div class="text-muted small"><?= $isMyCoachGlobalAll ? 'sportovců (globálně je vše povoleno)' : 'sportovců' ?></div>
             </div>
         </div>
     </div>
@@ -173,7 +158,7 @@ renderHeader('MyCoach sportovci', false, true);
                         <a href="<?= BASE_URL ?>/athlete_detail.php?id=<?= (int)$athleteProgress['athlete_id'] ?>" class="btn btn-sm btn-outline-secondary">
                             <i class="fas fa-user me-1"></i>Karta sportovce
                         </a>
-                        <?php if (!empty($athleteProgress['mycoach_enabled'])): ?>
+                        <?php if ($isMyCoachGlobalAll || !empty($athleteProgress['mycoach_enabled'])): ?>
                         <a href="<?= BASE_URL ?>/progress_report.php?athlete_id=<?= (int)$athleteProgress['athlete_id'] ?>&period=<?= (int)$athleteProgress['active_plan_count'] > 0 ? 'plan' : 'last7' ?>&scope=mycoach" class="btn btn-sm btn-outline-primary">
                             <i class="fas fa-chart-line me-1"></i>Progres
                         </a>

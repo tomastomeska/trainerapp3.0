@@ -336,11 +336,23 @@ if (!function_exists('healthQuestionnaireCollectAnswersFromPost')) {
                 $rawList = is_array($raw) ? $raw : [$raw];
                 $values = [];
                 foreach ($rawList as $item) {
-                    $itemValue = trim((string)$item);
-                    if ($itemValue === '' || in_array($itemValue, $values, true)) {
-                        continue;
+                        $itemValue = trim((string)$item);
+                        if ($itemValue === '') {
+                            continue;
                     }
-                    $values[] = $itemValue;
+
+                        $parts = preg_split('/[\r\n,;]+/', $itemValue) ?: [];
+                        if (empty($parts)) {
+                            $parts = [$itemValue];
+                        }
+
+                        foreach ($parts as $part) {
+                            $part = trim((string)$part);
+                            if ($part === '' || in_array($part, $values, true)) {
+                                continue;
+                            }
+                            $values[] = $part;
+                        }
                 }
                 $answers[$key] = $values;
 
@@ -393,9 +405,18 @@ if (!function_exists('healthQuestionnaireValidateAnswers')) {
             $key = (string)($question['question_key'] ?? '');
             $label = (string)($question['question_label'] ?? $key);
             $value = $answers[$key] ?? null;
+            $inputType = (string)($question['input_type'] ?? '');
 
             $required = (int)($question['is_required'] ?? 0) === 1;
             if ($required) {
+                // Failsafe: pokud je single/multi bez nabídky možností, nemá blokovat odeslání.
+                if (in_array($inputType, ['single', 'multi'], true)) {
+                    $options = is_array($question['options'] ?? null) ? $question['options'] : [];
+                    if (empty($options)) {
+                        continue;
+                    }
+                }
+
                 if (is_array($value) && count($value) === 0) {
                     $errors[] = 'Vyplňte otázku: ' . $label;
                     continue;
@@ -405,12 +426,12 @@ if (!function_exists('healthQuestionnaireValidateAnswers')) {
                     $errors[] = 'Vyplňte otázku: ' . $label;
                 }
 
-                if ((string)($question['input_type'] ?? '') === 'consent' && ($answers[$key] ?? '') !== 'ano') {
+                if ($inputType === 'consent' && ($answers[$key] ?? '') !== 'ano') {
                     $errors[] = 'Je nutné potvrdit souhlas se zpracováním informací.';
                 }
             }
 
-            if ((string)($question['input_type'] ?? '') === 'multi' && healthQuestionnaireQuestionHasOtherOption($question)) {
+            if ($inputType === 'multi' && healthQuestionnaireQuestionHasOtherOption($question)) {
                 $selectedValues = is_array($answers[$key] ?? null) ? $answers[$key] : [];
                 $otherSelected = false;
                 foreach ($selectedValues as $selectedValue) {

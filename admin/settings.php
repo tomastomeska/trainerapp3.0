@@ -403,6 +403,18 @@ renderAdminHeader('Nastavení aplikace');
 
 <div class="card border-0 shadow-sm mt-4" style="max-width:760px">
     <div class="card-header fw-bold" style="background:#1e1e2e;color:#fff">
+        <i class="fas fa-brain me-2"></i>MyCoach administrace
+    </div>
+    <div class="card-body">
+        <p class="text-muted mb-3">Správa MyCoach režimu a výběru konkrétních uživatelů byla přesunuta do samostatné administrace.</p>
+        <a href="<?= BASE_URL ?>/admin/mycoach.php" class="btn fw-bold" style="background:#7c3aed;color:#fff;border:none">
+            <i class="fas fa-arrow-right me-1"></i>Otevřít MyCoach administraci
+        </a>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mt-4" style="max-width:760px">
+    <div class="card-header fw-bold" style="background:#1e1e2e;color:#fff">
         <i class="fas fa-image me-2"></i>Logo přihlášení
     </div>
     <div class="card-body">

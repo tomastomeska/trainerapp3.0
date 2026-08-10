@@ -168,7 +168,7 @@ if (!$athlete) {
 }
 
 $athleteSpecialTrainingEnabled = ((int)($athlete['special_training_enabled'] ?? 0)) === 1;
-$athleteMyCoachEnabled = ((int)($athlete['mycoach_enabled'] ?? 0)) === 1;
+$athleteMyCoachEnabled = mycoachAccessEnabledForAthlete($pdo, $athleteId);
 
 $supportBankAccount = trim(getAppSetting('support_bank_account', ''));
 $supportContributorName = trim((string)($athlete['first_name'] . ' ' . $athlete['last_name']));

@@ -73,13 +73,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = (string)($_POST['action'] ?? '');
 
     if ($action === 'save_health_questionnaire') {
+        $questionnaireErrorRedirect = $latestSubmission !== null
+            ? (BASE_URL . '/athlete_health_questionnaire.php?edit=1#health-form')
+            : (BASE_URL . '/athlete_health_questionnaire.php#health-form');
+
         $submittedAnswers = healthQuestionnaireCollectAnswersFromPost($questions, $_POST);
         $validationErrors = healthQuestionnaireValidateAnswers($questions, $submittedAnswers);
 
         if (!empty($validationErrors)) {
             flash('danger', implode('<br>', array_map('h', $validationErrors)), true);
             $_SESSION['health_questionnaire_form_answers'] = $submittedAnswers;
-            redirect(BASE_URL . '/athlete_health_questionnaire.php');
+            redirect($questionnaireErrorRedirect);
         }
 
         $evaluation = healthQuestionnaireEvaluateAlerts($questions, $submittedAnswers);
@@ -105,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         flash('danger', 'Dotazník se nepodařilo uložit, zkuste to prosím znovu.');
         $_SESSION['health_questionnaire_form_answers'] = $submittedAnswers;
-        redirect(BASE_URL . '/athlete_health_questionnaire.php');
+        redirect($questionnaireErrorRedirect);
     }
 
     if ($action === 'submit_health_update' || $action === 'update_health_update') {
@@ -421,37 +425,47 @@ renderAthleteHeader('Zdravotní dotazník', false, true);
                                         <option value="ne" <?= (string)$fieldValue === 'ne' ? 'selected' : '' ?>>Ne</option>
                                     </select>
                                 <?php elseif ($inputType === 'single'): ?>
-                                    <select class="form-select" id="q_<?= h($questionKey) ?>" name="<?= h($questionKey) ?>" <?= $required ? 'required' : '' ?>>
-                                        <option value="">Vyberte</option>
-                                        <?php foreach ((array)($question['options'] ?? []) as $optionKey => $optionLabel): ?>
-                                            <?php
-                                            $value = is_string($optionKey) ? $optionKey : (string)$optionLabel;
-                                            $label = is_string($optionLabel) ? $optionLabel : (string)$optionKey;
-                                            ?>
-                                            <option value="<?= h($value) ?>" <?= (string)$fieldValue === (string)$value ? 'selected' : '' ?>><?= h($label) ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
+                                    <?php if (empty((array)($question['options'] ?? []))): ?>
+                                        <textarea class="form-control" rows="2" id="q_<?= h($questionKey) ?>" name="<?= h($questionKey) ?>" placeholder="Doplňte odpověď" <?= $required ? 'required' : '' ?>><?= h((string)$fieldValue) ?></textarea>
+                                        <div class="form-text text-warning">U této otázky chybí nabídka možností, odpověď prosím napište ručně.</div>
+                                    <?php else: ?>
+                                        <select class="form-select" id="q_<?= h($questionKey) ?>" name="<?= h($questionKey) ?>" <?= $required ? 'required' : '' ?>>
+                                            <option value="">Vyberte</option>
+                                            <?php foreach ((array)($question['options'] ?? []) as $optionKey => $optionLabel): ?>
+                                                <?php
+                                                $value = is_string($optionKey) ? $optionKey : (string)$optionLabel;
+                                                $label = is_string($optionLabel) ? $optionLabel : (string)$optionKey;
+                                                ?>
+                                                <option value="<?= h($value) ?>" <?= (string)$fieldValue === (string)$value ? 'selected' : '' ?>><?= h($label) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    <?php endif; ?>
                                 <?php elseif ($inputType === 'multi'): ?>
-                                    <div class="health-option-grid">
-                                        <?php foreach ((array)($question['options'] ?? []) as $optionKey => $optionLabel): ?>
-                                            <?php
-                                            $value = is_string($optionKey) ? $optionKey : (string)$optionLabel;
-                                            $label = is_string($optionLabel) ? $optionLabel : (string)$optionKey;
-                                            $selected = is_array($fieldValue) && in_array((string)$value, $fieldValue, true);
-                                            ?>
-                                            <label class="form-check">
-                                                <input class="form-check-input" type="checkbox" name="<?= h($questionKey) ?>[]" value="<?= h($value) ?>" <?= $selected ? 'checked' : '' ?>>
-                                                <span class="form-check-label"><?= h($label) ?></span>
-                                            </label>
-                                        <?php endforeach; ?>
-                                    </div>
-                                    <?php if ($hasOtherOption): ?>
-                                        <div class="mt-2 <?= $otherSelected ? '' : 'd-none' ?>" data-other-reason-wrap data-other-reason-for="<?= h($questionKey) ?>">
-                                            <label class="form-label fw-semibold" for="q_<?= h($otherReasonKey) ?>">
-                                                Pokud Jiné/Jiný, uveďte důvod <span class="text-danger">*</span>
-                                            </label>
-                                            <input class="form-control" type="text" id="q_<?= h($otherReasonKey) ?>" name="<?= h($otherReasonKey) ?>" value="<?= h($otherReasonValue) ?>" placeholder="Doplňte důvod" <?= $otherSelected ? 'required' : '' ?>>
+                                    <?php if (empty((array)($question['options'] ?? []))): ?>
+                                        <textarea class="form-control" rows="2" id="q_<?= h($questionKey) ?>" name="<?= h($questionKey) ?>" placeholder="Doplňte odpověď (oddělte více položek čárkou)" <?= $required ? 'required' : '' ?>><?= h(is_array($fieldValue) ? implode(', ', $fieldValue) : (string)$fieldValue) ?></textarea>
+                                        <div class="form-text text-warning">U této otázky chybí nabídka možností, odpověď prosím napište ručně.</div>
+                                    <?php else: ?>
+                                        <div class="health-option-grid">
+                                            <?php foreach ((array)($question['options'] ?? []) as $optionKey => $optionLabel): ?>
+                                                <?php
+                                                $value = is_string($optionKey) ? $optionKey : (string)$optionLabel;
+                                                $label = is_string($optionLabel) ? $optionLabel : (string)$optionKey;
+                                                $selected = is_array($fieldValue) && in_array((string)$value, $fieldValue, true);
+                                                ?>
+                                                <label class="form-check">
+                                                    <input class="form-check-input" type="checkbox" name="<?= h($questionKey) ?>[]" value="<?= h($value) ?>" <?= $selected ? 'checked' : '' ?>>
+                                                    <span class="form-check-label"><?= h($label) ?></span>
+                                                </label>
+                                            <?php endforeach; ?>
                                         </div>
+                                        <?php if ($hasOtherOption): ?>
+                                            <div class="mt-2 <?= $otherSelected ? '' : 'd-none' ?>" data-other-reason-wrap data-other-reason-for="<?= h($questionKey) ?>">
+                                                <label class="form-label fw-semibold" for="q_<?= h($otherReasonKey) ?>">
+                                                    Pokud Jiné/Jiný, uveďte důvod <span class="text-danger">*</span>
+                                                </label>
+                                                <input class="form-control" type="text" id="q_<?= h($otherReasonKey) ?>" name="<?= h($otherReasonKey) ?>" value="<?= h($otherReasonValue) ?>" placeholder="Doplňte důvod" <?= $otherSelected ? 'required' : '' ?>>
+                                            </div>
+                                        <?php endif; ?>
                                     <?php endif; ?>
                                 <?php elseif ($inputType === 'textarea'): ?>
                                     <textarea class="form-control" rows="3" id="q_<?= h($questionKey) ?>" name="<?= h($questionKey) ?>" placeholder="<?= h((string)($question['placeholder'] ?? '')) ?>" <?= $required ? 'required' : '' ?>><?= h((string)$fieldValue) ?></textarea>

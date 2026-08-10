@@ -1169,6 +1169,66 @@ if (!function_exists('getAppSetting')) {
     }
 }
 
+    if (!function_exists('mycoachAccessMode')) {
+      function mycoachAccessMode(): string {
+        $rawMode = strtolower(trim(getAppSetting('mycoach_access_mode', 'selected')));
+        if (!in_array($rawMode, ['disabled', 'all', 'selected'], true)) {
+          return 'selected';
+        }
+        return $rawMode;
+      }
+    }
+
+    if (!function_exists('mycoachAccessEnabledForCoach')) {
+      function mycoachAccessEnabledForCoach(PDO $pdo, int $coachId): bool {
+        $mode = mycoachAccessMode();
+        if ($mode === 'disabled') {
+          return false;
+        }
+        if ($mode === 'all') {
+          return true;
+        }
+
+        try {
+          $columnStmt = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'mycoach_enabled'");
+          if ($columnStmt === false || !$columnStmt->fetch()) {
+            return false;
+          }
+
+          $valueStmt = $pdo->prepare('SELECT mycoach_enabled FROM coaches WHERE id = ? LIMIT 1');
+          $valueStmt->execute([$coachId]);
+          return ((int)$valueStmt->fetchColumn()) === 1;
+        } catch (Throwable $e) {
+          return false;
+        }
+      }
+    }
+
+    if (!function_exists('mycoachAccessEnabledForAthlete')) {
+      function mycoachAccessEnabledForAthlete(PDO $pdo, int $athleteId): bool {
+        $mode = mycoachAccessMode();
+        if ($mode === 'disabled') {
+          return false;
+        }
+        if ($mode === 'all') {
+          return true;
+        }
+
+        try {
+          $columnStmt = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'mycoach_enabled'");
+          if ($columnStmt === false || !$columnStmt->fetch()) {
+            return false;
+          }
+
+          $valueStmt = $pdo->prepare('SELECT mycoach_enabled FROM athletes WHERE id = ? LIMIT 1');
+          $valueStmt->execute([$athleteId]);
+          return ((int)$valueStmt->fetchColumn()) === 1;
+        } catch (Throwable $e) {
+          return false;
+        }
+      }
+    }
+
     if (!function_exists('mycoachGetAppLogoUrl')) {
       function mycoachGetAppLogoUrl(): ?string {
         $relativePath = trim(getAppSetting('mycoach_logo_path', ''));
@@ -1432,6 +1492,7 @@ if (!function_exists('getAppSetting')) {
         }
 
         $result = [];
+        $accessMode = mycoachAccessMode();
         foreach ($athletes as $row) {
           $uid = (int)($row['mycoach_user_id'] ?? 0);
           $firstName = trim((string)($row['first_name'] ?? ''));
@@ -1441,7 +1502,10 @@ if (!function_exists('getAppSetting')) {
             $fullName = trim((string)($row['email'] ?? ''));
           }
 
-          $mycoachEnabled = ((int)($row['mycoach_enabled'] ?? 0)) === 1;
+          $mycoachEnabledByAthleteFlag = ((int)($row['mycoach_enabled'] ?? 0)) === 1;
+          $mycoachEnabled = $accessMode === 'all'
+            ? true
+            : ($accessMode === 'selected' ? $mycoachEnabledByAthleteFlag : false);
           $activePlanCount = $uid > 0 ? (int)($planCountByUser[$uid] ?? 0) : 0;
           $activeGoal = $uid > 0 ? ($latestGoalByUser[$uid] ?? null) : null;
           $readiness = $uid > 0 ? ($latestReadinessByUser[$uid] ?? null) : null;
@@ -1455,6 +1519,13 @@ if (!function_exists('getAppSetting')) {
 
           $statusVariant = 'secondary';
           $statusLabel = 'MyCoach vypnutý';
+          if ($accessMode === 'all') {
+            $statusVariant = 'primary';
+            $statusLabel = 'Globálně povoleno';
+          } elseif ($accessMode === 'selected' && !$mycoachEnabledByAthleteFlag) {
+            $statusVariant = 'secondary';
+            $statusLabel = 'Čeká na ruční povolení';
+          }
           if ($mycoachEnabled && $uid <= 0) {
             $statusVariant = 'warning';
             $statusLabel = 'Čeká na první aktivaci';

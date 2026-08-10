@@ -23,16 +23,7 @@ try {
     $coachSpecialTrainingEnabled = false;
 }
 
-try {
-    $myCoachColumnStmt = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'mycoach_enabled'");
-    if ($myCoachColumnStmt !== false && $myCoachColumnStmt->fetch()) {
-        $myCoachValueStmt = $pdo->prepare('SELECT mycoach_enabled FROM coaches WHERE id = ? LIMIT 1');
-        $myCoachValueStmt->execute([$coachId]);
-        $coachMyCoachEnabled = ((int)$myCoachValueStmt->fetchColumn()) === 1;
-    }
-} catch (Throwable $e) {
-    $coachMyCoachEnabled = false;
-}
+$coachMyCoachEnabled = mycoachAccessEnabledForCoach($pdo, (int)$coachId);
 
 try {
     $unreadInboxStmt = $pdo->prepare(
