@@ -4867,6 +4867,17 @@ HTML;
     }
 }
 
+function getMailRequestTimeout(): int {
+    $timeout = (int)(defined('SMTP_TIMEOUT') ? SMTP_TIMEOUT : 5);
+    if ($timeout < 2) {
+        $timeout = 2;
+    }
+    if ($timeout > 6) {
+        $timeout = 6;
+    }
+    return $timeout;
+}
+
 /**
  * Nakonfiguruje PHPMailer instanci dle SMTP_HOST:
  * - prázdný host → isMail() (PHP mail(), bez auth, Wedos hosting)
@@ -4874,7 +4885,7 @@ HTML;
  */
 function _configureMail(object $mail): void {
     $host = defined('SMTP_HOST') ? SMTP_HOST : '';
-  $smtpTimeout = max(3, (int)(defined('SMTP_TIMEOUT') ? SMTP_TIMEOUT : 8));
+    $smtpTimeout = getMailRequestTimeout();
 
     if ($host === '') {
         $mail->isMail();
@@ -4920,6 +4931,11 @@ function sendMessageNotificationEmail(string $toEmail, string $coachName, string
         'message_id' => $messageId,
       ]
     );
+  }
+
+  if (isEmailQueueEnabled() && !emailNotificationQueueTableAvailable()) {
+    error_log('Skipping immediate message email to avoid blocking request; email queue table is unavailable.');
+    return false;
   }
 
   return sendMessageNotificationEmailNow($toEmail, $coachName, $subject, $messageId);
@@ -5066,6 +5082,11 @@ function sendAthleteCalendarNotificationEmail(string $toEmail, string $athleteNa
         'message' => $message,
       ]
     );
+  }
+
+  if (isEmailQueueEnabled() && !emailNotificationQueueTableAvailable()) {
+    error_log('Skipping immediate calendar email to avoid blocking request; email queue table is unavailable.');
+    return false;
   }
 
   return sendAthleteCalendarNotificationEmailNow($toEmail, $athleteName, $subject, $message);
