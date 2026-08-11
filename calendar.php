@@ -707,6 +707,16 @@ renderHeader('Kalendář', false, true);
         <button class="btn btn-outline-secondary btn-sm" id="nextWeekBtn">
             Další týden<i class="fas fa-chevron-right ms-1"></i>
         </button>
+        <button class="btn btn-outline-secondary btn-sm" id="prevMonthJumpBtn" title="Předchozí měsíc">
+            <i class="fas fa-angles-left me-1"></i>Předchozí měsíc
+        </button>
+        <input type="month" class="form-control form-control-sm" id="weekMonthJumpInput" style="max-width: 170px;">
+        <button class="btn btn-outline-secondary btn-sm" id="nextMonthJumpBtn" title="Další měsíc">
+            Další měsíc<i class="fas fa-angles-right ms-1"></i>
+        </button>
+        <select class="form-select form-select-sm" id="weekRangeJumpSelect" style="max-width: 120px;" title="Skok na týden v měsíci">
+            <option value="">Týden</option>
+        </select>
         <button class="btn btn-warning btn-sm fw-bold" id="quickAddBtn">
             <i class="fas fa-plus me-1"></i>Přidat trénink
         </button>
@@ -1383,6 +1393,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const monthListNextBtn = document.getElementById('monthListNextBtn');
     const monthListBody = document.getElementById('monthListBody');
     const monthListEmpty = document.getElementById('monthListEmpty');
+    const weekMonthJumpInput = document.getElementById('weekMonthJumpInput');
+    const prevMonthJumpBtn = document.getElementById('prevMonthJumpBtn');
+    const nextMonthJumpBtn = document.getElementById('nextMonthJumpBtn');
+    const weekRangeJumpSelect = document.getElementById('weekRangeJumpSelect');
     const eventAddToIosBtn = document.getElementById('eventAddToIosBtn');
     const coachAppleCaldavActive = <?= !empty($coachAppleCaldavActive) ? 'true' : 'false' ?>;
     const eventModalSubmitBtn = eventForm ? eventForm.querySelector('button[type="submit"]') : null;
@@ -2077,17 +2091,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedType = getSelectedEventTitleType();
         const isGroupLesson = selectedType === 'group_lesson';
 
-        // Prevent hidden required training inputs from blocking submit in lock mode.
-        [eventDateInput, eventHourInput, eventMinuteInput].forEach((input) => {
-            input.required = !lockMode;
-            input.disabled = lockMode;
-        });
-
-        [lockStartDateInput, lockStartHourInput, lockStartMinuteInput, lockEndDateInput, lockEndHourInput, lockEndMinuteInput].forEach((input) => {
-            input.required = lockMode;
-            input.disabled = !lockMode;
-        });
-
         eventTrainingFields.classList.toggle('d-none', lockMode);
         lockFields.classList.toggle('d-none', !lockMode);
         if (eventAthleteFields) {
@@ -2417,6 +2420,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const currentMonthValue = `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
+        if (weekMonthJumpInput) {
+            weekMonthJumpInput.value = currentMonthValue;
+        }
+        syncWeekRangeSelectWithCurrentWeek();
+
         events = payload.events || [];
         locks = payload.locks || [];
         rebuildRescheduleOriginEventIds();
@@ -2431,6 +2440,98 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         parsed.setMonth(parsed.getMonth() + offset);
         return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    async function jumpToMonthWeek(monthValue) {
+        const parsed = new Date(`${monthValue}-01T00:00:00`);
+        if (Number.isNaN(parsed.getTime())) {
+            return;
+        }
+
+        currentWeekStart = getMonday(parsed);
+        if (weekMonthJumpInput) {
+            weekMonthJumpInput.value = monthValue;
+        }
+        buildWeekRangeOptionsForMonth(monthValue);
+        await loadWeekData();
+    }
+
+    function buildWeekRangeOptionsForMonth(monthValue) {
+        if (!weekRangeJumpSelect) {
+            return;
+        }
+
+        const parsed = new Date(`${monthValue}-01T00:00:00`);
+        if (Number.isNaN(parsed.getTime())) {
+            weekRangeJumpSelect.innerHTML = '<option value="">Týden</option>';
+            return;
+        }
+
+        const year = parsed.getFullYear();
+        const monthIndex = parsed.getMonth();
+        const monthStart = new Date(year, monthIndex, 1);
+        const monthEnd = new Date(year, monthIndex + 1, 0);
+        const selectedValueBefore = weekRangeJumpSelect.value;
+
+        weekRangeJumpSelect.innerHTML = '';
+        let weekCursor = getMonday(monthStart);
+        while (weekCursor <= monthEnd) {
+            const weekStart = new Date(weekCursor);
+            const weekEnd = addDays(weekStart, 6);
+            const rangeStart = weekStart < monthStart ? monthStart : weekStart;
+            const rangeEnd = weekEnd > monthEnd ? monthEnd : weekEnd;
+            const option = document.createElement('option');
+            option.value = toDateKey(weekStart);
+            option.textContent = `${rangeStart.getDate()}-${rangeEnd.getDate()}`;
+            weekRangeJumpSelect.appendChild(option);
+
+            weekCursor = addDays(weekCursor, 7);
+        }
+
+        if (selectedValueBefore && weekRangeJumpSelect.querySelector(`option[value="${selectedValueBefore}"]`)) {
+            weekRangeJumpSelect.value = selectedValueBefore;
+        }
+    }
+
+    function syncWeekRangeSelectWithCurrentWeek() {
+        if (!weekRangeJumpSelect) {
+            return;
+        }
+
+        const currentMonthValue = `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
+        if (!weekMonthJumpInput || weekMonthJumpInput.value !== currentMonthValue || weekRangeJumpSelect.options.length === 0) {
+            buildWeekRangeOptionsForMonth(currentMonthValue);
+            if (weekMonthJumpInput) {
+                weekMonthJumpInput.value = currentMonthValue;
+            }
+        }
+
+        const currentWeekKey = toDateKey(currentWeekStart);
+        if (weekRangeJumpSelect.querySelector(`option[value="${currentWeekKey}"]`)) {
+            weekRangeJumpSelect.value = currentWeekKey;
+        }
+    }
+
+    async function jumpToWeekRangeInMonth(monthValue, weekStartKey) {
+        const parsed = new Date(`${monthValue}-01T00:00:00`);
+        if (Number.isNaN(parsed.getTime())) {
+            return;
+        }
+
+        const anchor = new Date(`${weekStartKey}T00:00:00`);
+        if (Number.isNaN(anchor.getTime())) {
+            return;
+        }
+
+        currentWeekStart = getMonday(anchor);
+        if (weekMonthJumpInput) {
+            weekMonthJumpInput.value = monthValue;
+        }
+        buildWeekRangeOptionsForMonth(monthValue);
+        if (weekRangeJumpSelect) {
+            weekRangeJumpSelect.value = toDateKey(currentWeekStart);
+        }
+        await loadWeekData();
     }
 
     function getMonthStatusBadge(statusClass, statusLabel) {
@@ -3047,11 +3148,57 @@ document.addEventListener('DOMContentLoaded', () => {
         await loadWeekData();
     });
 
+    if (weekMonthJumpInput) {
+        weekMonthJumpInput.addEventListener('change', async () => {
+            if (!weekMonthJumpInput.value) {
+                return;
+            }
+            await jumpToMonthWeek(weekMonthJumpInput.value);
+        });
+    }
+
+    if (prevMonthJumpBtn) {
+        prevMonthJumpBtn.addEventListener('click', async () => {
+            const baseMonth = (weekMonthJumpInput && weekMonthJumpInput.value)
+                ? weekMonthJumpInput.value
+                : `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
+            await jumpToMonthWeek(shiftMonthValue(baseMonth, -1));
+        });
+    }
+
+    if (nextMonthJumpBtn) {
+        nextMonthJumpBtn.addEventListener('click', async () => {
+            const baseMonth = (weekMonthJumpInput && weekMonthJumpInput.value)
+                ? weekMonthJumpInput.value
+                : `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
+            await jumpToMonthWeek(shiftMonthValue(baseMonth, 1));
+        });
+    }
+
+    if (weekRangeJumpSelect) {
+        weekRangeJumpSelect.addEventListener('change', async () => {
+            if (!weekRangeJumpSelect.value) {
+                return;
+            }
+            const monthValue = (weekMonthJumpInput && weekMonthJumpInput.value)
+                ? weekMonthJumpInput.value
+                : `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
+            await jumpToWeekRangeInMonth(monthValue, weekRangeJumpSelect.value);
+        });
+    }
+
     document.getElementById('quickAddBtn').addEventListener('click', () => {
         openEventModal();
     });
 
     monthListMonthInput.value = `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
+    if (weekMonthJumpInput) {
+        weekMonthJumpInput.value = monthListMonthInput.value;
+    }
+    if (weekRangeJumpSelect) {
+        buildWeekRangeOptionsForMonth(monthListMonthInput.value);
+        syncWeekRangeSelectWithCurrentWeek();
+    }
     monthListMonthInput.addEventListener('change', () => {
         loadMonthListData();
     });

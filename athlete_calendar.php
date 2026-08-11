@@ -588,6 +588,16 @@ renderAthleteHeader('Můj kalendář', false, true);
         <button class="btn btn-outline-secondary btn-sm" id="nextWeekBtn">
             Další týden<i class="fas fa-chevron-right ms-1"></i>
         </button>
+        <button class="btn btn-outline-secondary btn-sm" id="athletePrevMonthJumpBtn" title="Předchozí měsíc">
+            <i class="fas fa-angles-left me-1"></i>Předchozí měsíc
+        </button>
+        <input type="month" class="form-control form-control-sm" id="athleteWeekMonthJumpInput" style="max-width: 170px;">
+        <button class="btn btn-outline-secondary btn-sm" id="athleteNextMonthJumpBtn" title="Další měsíc">
+            Další měsíc<i class="fas fa-angles-right ms-1"></i>
+        </button>
+        <select class="form-select form-select-sm" id="athleteWeekRangeJumpSelect" style="max-width: 120px;" title="Skok na týden v měsíci">
+            <option value="">Týden</option>
+        </select>
     </div>
 </div>
 
@@ -1103,6 +1113,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const athleteMonthNextBtn = document.getElementById('athleteMonthNextBtn');
     const athleteMonthListBody = document.getElementById('athleteMonthListBody');
     const athleteMonthListEmpty = document.getElementById('athleteMonthListEmpty');
+    const athleteWeekMonthJumpInput = document.getElementById('athleteWeekMonthJumpInput');
+    const athletePrevMonthJumpBtn = document.getElementById('athletePrevMonthJumpBtn');
+    const athleteNextMonthJumpBtn = document.getElementById('athleteNextMonthJumpBtn');
+    const athleteWeekRangeJumpSelect = document.getElementById('athleteWeekRangeJumpSelect');
     const athleteAppleCaldavForm = document.getElementById('athleteAppleCaldavForm');
     const reserveForm = document.getElementById('reserveForm');
     const athleteAppleCaldavActive = <?= !empty($athleteAppleCaldavActive) ? 'true' : 'false' ?>;
@@ -1884,6 +1898,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const currentMonthValue = `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
+        if (athleteWeekMonthJumpInput) {
+            athleteWeekMonthJumpInput.value = currentMonthValue;
+        }
+        syncAthleteWeekRangeSelectWithCurrentWeek();
+
         events = payload.events || [];
         locks = payload.locks || [];
 
@@ -1915,6 +1935,98 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         parsed.setMonth(parsed.getMonth() + offset);
         return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    function buildAthleteWeekRangeOptionsForMonth(monthValue) {
+        if (!athleteWeekRangeJumpSelect) {
+            return;
+        }
+
+        const parsed = new Date(`${monthValue}-01T00:00:00`);
+        if (Number.isNaN(parsed.getTime())) {
+            athleteWeekRangeJumpSelect.innerHTML = '<option value="">Týden</option>';
+            return;
+        }
+
+        const year = parsed.getFullYear();
+        const monthIndex = parsed.getMonth();
+        const monthStart = new Date(year, monthIndex, 1);
+        const monthEnd = new Date(year, monthIndex + 1, 0);
+        const selectedValueBefore = athleteWeekRangeJumpSelect.value;
+
+        athleteWeekRangeJumpSelect.innerHTML = '';
+        let weekCursor = getMonday(monthStart);
+        while (weekCursor <= monthEnd) {
+            const weekStart = new Date(weekCursor);
+            const weekEnd = addDays(weekStart, 6);
+            const rangeStart = weekStart < monthStart ? monthStart : weekStart;
+            const rangeEnd = weekEnd > monthEnd ? monthEnd : weekEnd;
+            const option = document.createElement('option');
+            option.value = toDateKey(weekStart);
+            option.textContent = `${rangeStart.getDate()}-${rangeEnd.getDate()}`;
+            athleteWeekRangeJumpSelect.appendChild(option);
+
+            weekCursor = addDays(weekCursor, 7);
+        }
+
+        if (selectedValueBefore && athleteWeekRangeJumpSelect.querySelector(`option[value="${selectedValueBefore}"]`)) {
+            athleteWeekRangeJumpSelect.value = selectedValueBefore;
+        }
+    }
+
+    function syncAthleteWeekRangeSelectWithCurrentWeek() {
+        if (!athleteWeekRangeJumpSelect) {
+            return;
+        }
+
+        const currentMonthValue = `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
+        if (!athleteWeekMonthJumpInput || athleteWeekMonthJumpInput.value !== currentMonthValue || athleteWeekRangeJumpSelect.options.length === 0) {
+            buildAthleteWeekRangeOptionsForMonth(currentMonthValue);
+            if (athleteWeekMonthJumpInput) {
+                athleteWeekMonthJumpInput.value = currentMonthValue;
+            }
+        }
+
+        const currentWeekKey = toDateKey(currentWeekStart);
+        if (athleteWeekRangeJumpSelect.querySelector(`option[value="${currentWeekKey}"]`)) {
+            athleteWeekRangeJumpSelect.value = currentWeekKey;
+        }
+    }
+
+    function jumpToAthleteMonthWeek(monthValue) {
+        const parsed = new Date(`${monthValue}-01T00:00:00`);
+        if (Number.isNaN(parsed.getTime())) {
+            return;
+        }
+
+        currentWeekStart = getMonday(parsed);
+        if (athleteWeekMonthJumpInput) {
+            athleteWeekMonthJumpInput.value = monthValue;
+        }
+        buildAthleteWeekRangeOptionsForMonth(monthValue);
+        loadWeekData();
+    }
+
+    function jumpToAthleteWeekRangeInMonth(monthValue, weekStartKey) {
+        const parsed = new Date(`${monthValue}-01T00:00:00`);
+        if (Number.isNaN(parsed.getTime())) {
+            return;
+        }
+
+        const anchor = new Date(`${weekStartKey}T00:00:00`);
+        if (Number.isNaN(anchor.getTime())) {
+            return;
+        }
+
+        currentWeekStart = getMonday(anchor);
+        if (athleteWeekMonthJumpInput) {
+            athleteWeekMonthJumpInput.value = monthValue;
+        }
+        buildAthleteWeekRangeOptionsForMonth(monthValue);
+        if (athleteWeekRangeJumpSelect) {
+            athleteWeekRangeJumpSelect.value = toDateKey(currentWeekStart);
+        }
+        loadWeekData();
     }
 
     function getStatusBadge(statusClass, statusLabel) {
@@ -2102,7 +2214,53 @@ document.addEventListener('DOMContentLoaded', () => {
         loadWeekData();
     });
 
+    if (athleteWeekMonthJumpInput) {
+        athleteWeekMonthJumpInput.addEventListener('change', () => {
+            if (!athleteWeekMonthJumpInput.value) {
+                return;
+            }
+            jumpToAthleteMonthWeek(athleteWeekMonthJumpInput.value);
+        });
+    }
+
+    if (athletePrevMonthJumpBtn) {
+        athletePrevMonthJumpBtn.addEventListener('click', () => {
+            const baseMonth = (athleteWeekMonthJumpInput && athleteWeekMonthJumpInput.value)
+                ? athleteWeekMonthJumpInput.value
+                : `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
+            jumpToAthleteMonthWeek(shiftMonthValue(baseMonth, -1));
+        });
+    }
+
+    if (athleteNextMonthJumpBtn) {
+        athleteNextMonthJumpBtn.addEventListener('click', () => {
+            const baseMonth = (athleteWeekMonthJumpInput && athleteWeekMonthJumpInput.value)
+                ? athleteWeekMonthJumpInput.value
+                : `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
+            jumpToAthleteMonthWeek(shiftMonthValue(baseMonth, 1));
+        });
+    }
+
+    if (athleteWeekRangeJumpSelect) {
+        athleteWeekRangeJumpSelect.addEventListener('change', () => {
+            if (!athleteWeekRangeJumpSelect.value) {
+                return;
+            }
+            const monthValue = (athleteWeekMonthJumpInput && athleteWeekMonthJumpInput.value)
+                ? athleteWeekMonthJumpInput.value
+                : `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
+            jumpToAthleteWeekRangeInMonth(monthValue, athleteWeekRangeJumpSelect.value);
+        });
+    }
+
     athleteMonthInput.value = `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
+    if (athleteWeekMonthJumpInput) {
+        athleteWeekMonthJumpInput.value = athleteMonthInput.value;
+    }
+    if (athleteWeekRangeJumpSelect) {
+        buildAthleteWeekRangeOptionsForMonth(athleteMonthInput.value);
+        syncAthleteWeekRangeSelectWithCurrentWeek();
+    }
     athleteMonthInput.addEventListener('change', () => {
         loadAthleteMonthList();
     });
