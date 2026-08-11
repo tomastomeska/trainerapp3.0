@@ -202,7 +202,7 @@ renderAthleteHeader('Detail tréninku');
 <div class="card border-0 shadow-sm mb-4 border-start border-4 border-<?= h($detailReadinessGuidance['variant']) ?>">
     <div class="card-header bg-light fw-semibold d-flex justify-content-between align-items-center flex-wrap gap-2">
         <span><i class="fas fa-brain me-2 text-primary"></i>MyCoach data k tomuto tréninku</span>
-        <a href="<?= BASE_URL ?>/athlete_mycoach_daily.php?date=<?= urlencode($sessionEntryDate) ?>" class="btn btn-sm btn-outline-secondary">Otevřít celý den v MyCoach</a>
+        <a href="#" class="btn btn-sm btn-outline-secondary" onclick="return false;" aria-disabled="true">MyCoach je nyní jen Pro</a>
     </div>
     <div class="card-body">
         <div class="mb-3">

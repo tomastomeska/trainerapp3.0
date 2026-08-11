@@ -57,6 +57,7 @@ try {
 }
 
 $coachMyCoachEnabled = mycoachAccessEnabledForCoach($pdo, (int)$coachId);
+$mycoachAppIsLive = mycoachAppIsLive();
 
 if ($mustChangePassword && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
@@ -685,17 +686,14 @@ renderHeader('Dashboard', false, true);
                 <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
             </div>
             <?php endif; ?>
-            <?php if ($coachMyCoachEnabled): ?>
-            <a href="#" class="quick-tile quick-tile-info" onclick="return false;" aria-disabled="true">
-                <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-brain me-1"></i>MyCoach <span class="badge rounded-pill bg-success">Pro</span></span>
-                <span class="quick-tile__value"><i class="fas fa-star"></i></span>
-            </a>
+            <?php if ($mycoachAppIsLive): ?>
+            <a href="<?= BASE_URL ?>/mycoach_app.php" class="quick-tile quick-tile-warning">
             <?php else: ?>
-            <div class="quick-tile quick-tile-muted quick-tile-disabled">
-                <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-lock me-1"></i>MyCoach <span class="badge rounded-pill bg-secondary">Pro</span></span>
-                <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
-            </div>
+            <a href="#" class="quick-tile quick-tile-warning" data-bs-toggle="modal" data-bs-target="#modalMyCoachComingSoon">
             <?php endif; ?>
+                <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-brain me-1"></i>MyCoach <span class="badge rounded-pill <?= $mycoachAppIsLive ? 'bg-success' : 'bg-warning text-dark' ?>"><?= $mycoachAppIsLive ? 'Pro' : 'Brzy' ?></span></span>
+                <span class="quick-tile__value"><i class="fas fa-<?= $mycoachAppIsLive ? 'star' : 'rocket' ?>"></i></span>
+            </a>
             <a href="<?= BASE_URL ?>/coach_manual.php" class="quick-tile quick-tile-success">
                 <span class="quick-tile__label"><i class="fas fa-circle-question me-1"></i>Návod</span>
                 <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
@@ -728,17 +726,14 @@ renderHeader('Dashboard', false, true);
         <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
     </div>
     <?php endif; ?>
-    <?php if ($coachMyCoachEnabled): ?>
-    <a href="#" class="quick-tile quick-tile-info" onclick="return false;" aria-disabled="true">
-        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-brain me-1"></i>MyCoach <span class="badge rounded-pill bg-success">Pro</span></span>
-        <span class="quick-tile__value"><i class="fas fa-star"></i></span>
-    </a>
+    <?php if ($mycoachAppIsLive): ?>
+    <a href="<?= BASE_URL ?>/mycoach_app.php" class="quick-tile quick-tile-warning">
     <?php else: ?>
-    <div class="quick-tile quick-tile-muted quick-tile-disabled">
-        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-lock me-1"></i>MyCoach <span class="badge rounded-pill bg-secondary">Pro</span></span>
-        <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
-    </div>
+    <a href="#" class="quick-tile quick-tile-warning" data-bs-toggle="modal" data-bs-target="#modalMyCoachComingSoon">
     <?php endif; ?>
+        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-brain me-1"></i>MyCoach <span class="badge rounded-pill <?= $mycoachAppIsLive ? 'bg-success' : 'bg-warning text-dark' ?>"><?= $mycoachAppIsLive ? 'Pro' : 'Brzy' ?></span></span>
+        <span class="quick-tile__value"><i class="fas fa-<?= $mycoachAppIsLive ? 'star' : 'rocket' ?>"></i></span>
+    </a>
 </div>
 
 <div class="card border-0 shadow-sm mb-3 coach-today-plan-card">

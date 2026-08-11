@@ -123,9 +123,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         redirect($redirectUrl);
     }
+
+    // ── MyCoach App status (development / live) ─────────────
+    if ($action === 'save_app_status') {
+        $newStatus = in_array(trim((string)($_POST['mycoach_app_status'] ?? '')), ['development', 'live'], true)
+            ? trim((string)$_POST['mycoach_app_status'])
+            : 'development';
+        $pdo->prepare("INSERT INTO app_settings (`key`,`value`) VALUES ('mycoach_app_status',?) ON DUPLICATE KEY UPDATE `value`=VALUES(`value`)")
+            ->execute([$newStatus]);
+        flash('success', $newStatus === 'live'
+            ? 'MyCoach App je nyní LIVE – uživatelé mohou vstoupit a aktivovat trial/předplatné.'
+            : 'MyCoach App je přepnuta zpět do režimu Ve vývoji.');
+        redirect(BASE_URL . '/admin/mycoach.php');
+    }
+
+    // ── Správa předplatného / trialu ─────────────────────────
+    if ($action === 'grant_subscription') {
+        $subType  = in_array(trim((string)($_POST['sub_user_type'] ?? '')), ['coach','athlete'], true) ? trim((string)$_POST['sub_user_type']) : '';
+        $subId    = (int)($_POST['sub_user_id'] ?? 0);
+        $subStart = trim((string)($_POST['sub_start'] ?? date('Y-m-d')));
+        $subEnd   = trim((string)($_POST['sub_end'] ?? ''));
+        $subNotes = trim((string)($_POST['sub_notes'] ?? ''));
+        if ($subType && $subId > 0 && $subEnd !== '') {
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $subStart) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $subEnd)) {
+                mycoachAppGrantSubscription($pdo, $subType, $subId, $subStart, $subEnd, $subNotes);
+                flash('success', 'Předplatné bylo uděleno.');
+            } else {
+                flash('danger', 'Neplatný formát data.');
+            }
+        } else {
+            flash('danger', 'Vyplňte datum konce předplatného.');
+        }
+        redirect(BASE_URL . '/admin/mycoach.php');
+    }
+
+    if ($action === 'reset_trial') {
+        $subType = in_array(trim((string)($_POST['sub_user_type'] ?? '')), ['coach','athlete'], true) ? trim((string)$_POST['sub_user_type']) : '';
+        $subId   = (int)($_POST['sub_user_id'] ?? 0);
+        if ($subType && $subId > 0) {
+            mycoachAppResetTrial($pdo, $subType, $subId);
+            flash('success', 'Trial byl resetován – uživatel může spustit trial znovu.');
+        }
+        redirect(BASE_URL . '/admin/mycoach.php');
+    }
+
+    if ($action === 'revoke_subscription') {
+        $subType = in_array(trim((string)($_POST['sub_user_type'] ?? '')), ['coach','athlete'], true) ? trim((string)$_POST['sub_user_type']) : '';
+        $subId   = (int)($_POST['sub_user_id'] ?? 0);
+        if ($subType && $subId > 0) {
+            mycoachAppRevokeSubscription($pdo, $subType, $subId);
+            flash('success', 'Předplatné bylo odebráno.');
+        }
+        redirect(BASE_URL . '/admin/mycoach.php');
+    }
 }
 
 $currentMode = adminMyCoachNormalizeMode((string)getAppSetting($mycoachAccessModeKey, 'selected'));
+$mycoachAppCurrentStatus = getAppSetting('mycoach_app_status', 'development');
+$mycoachAppIsLive = ($mycoachAppCurrentStatus === 'live');
+
+// Předem načteme access záznamy pro všechny uživatele
+$accessByKey = [];
+try {
+    if (mycoachAppEnsureAccessTable($pdo)) {
+        $accessRows = $pdo->query('SELECT * FROM mycoach_app_access')->fetchAll();
+        foreach ($accessRows as $ar) {
+            $accessByKey[$ar['user_type'] . '_' . $ar['user_id']] = $ar;
+        }
+    }
+} catch (Throwable $e) { $accessByKey = []; }
 
 $coachSummary = [
     'total' => 0,
@@ -209,7 +275,12 @@ renderAdminHeader('MyCoach administrace');
 ?>
 
 <div class="alert alert-info border-0 shadow-sm mb-4">
-    <i class="fas fa-info-circle me-2"></i>MyCoach je teď v režimu připravenosti pro předplatné. Administrace stále rozhoduje, kdo má přístup, a uživatelé vidí jen jednoduché tlačítko s označením <strong>Pro</strong>.
+    <i class="fas fa-info-circle me-2"></i>MyCoach App je
+    <?php if ($mycoachAppIsLive): ?>
+        <strong class="text-success">LIVE</strong> – uživatelé mohou vstoupit a aktivovat trial/předplatné.
+    <?php else: ?>
+        <strong class="text-warning">Ve vývoji</strong> – všichni vidí oznámení o brzkém spuštění.
+    <?php endif; ?>
 </div>
 
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
@@ -217,12 +288,51 @@ renderAdminHeader('MyCoach administrace');
         <h4 class="fw-bold mb-1">
             <i class="fas fa-brain me-2" style="color:#a78bfa"></i>MyCoach administrace
         </h4>
-        <div class="text-muted small">Samostatná správa režimu modulu a ručního povolení pro vybrané uživatele.</div>
+        <div class="text-muted small">Správa statusu aplikace, předplatného a obsahu.</div>
     </div>
-    <a href="<?= BASE_URL ?>/admin/dashboard.php" class="btn btn-outline-secondary btn-sm">
-        <i class="fas fa-house me-1"></i>Přehled
-    </a>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="<?= BASE_URL ?>/admin/mycoach_content.php" class="btn btn-sm btn-outline-warning">
+            <i class="fas fa-layer-group me-1"></i>Správa obsahu
+        </a>
+        <a href="<?= BASE_URL ?>/admin/dashboard.php" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-house me-1"></i>Přehled
+        </a>
+    </div>
 </div>
+
+<!-- ═══ App Status karta ════════════════════════════════════════════════ -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header fw-bold" style="background:#0d0d0d;color:#f7941d;">
+        <i class="fas fa-rocket me-2"></i>Status aplikace MyCoach App
+    </div>
+    <div class="card-body">
+        <div class="d-flex align-items-center gap-4 flex-wrap">
+            <div>
+                <span class="badge <?= $mycoachAppIsLive ? 'bg-success' : 'bg-warning text-dark' ?> fs-6 px-3 py-2">
+                    <?= $mycoachAppIsLive ? '🟢 LIVE' : '🟡 Ve vývoji' ?>
+                </span>
+            </div>
+            <form method="post" class="d-inline">
+                <?= csrfField() ?>
+                <input type="hidden" name="action" value="save_app_status">
+                <input type="hidden" name="mycoach_app_status" value="<?= $mycoachAppIsLive ? 'development' : 'live' ?>">
+                <button type="submit" class="btn <?= $mycoachAppIsLive ? 'btn-outline-warning' : 'btn-success' ?>"
+                        onclick="return confirm('<?= $mycoachAppIsLive ? 'Přepnout MyCoach App do režimu VE VÝVOJI?' : 'Spustit MyCoach App jako LIVE? Uživatelé budou moci vstoupit a aktivovat trial.' ?>')">
+                    <i class="fas fa-toggle-<?= $mycoachAppIsLive ? 'off' : 'on' ?> me-1"></i>
+                    <?= $mycoachAppIsLive ? 'Přepnout zpět do Vývoje' : 'Spustit jako LIVE' ?>
+                </button>
+            </form>
+            <div class="text-muted small">
+                <?php if ($mycoachAppIsLive): ?>
+                    Kliknutím na dlaždici MyCoach uživatelé vstoupí do aplikace (trial / předplatné).
+                <?php else: ?>
+                    Kliknutím na dlaždici MyCoach uživatelé vidí jen oznámení „Brzy spouštíme".
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- ════════════════════════════════════════════════════════════════════ -->
 
 <?php if ($currentMode !== 'selected'): ?>
 <div class="alert alert-warning border-0 shadow-sm">
@@ -449,7 +559,8 @@ renderAdminHeader('MyCoach administrace');
                     <th>Sportovec</th>
                     <th>Trenér</th>
                     <th>E-mail</th>
-                    <th class="text-center">MyCoach</th>
+                    <th class="text-center">MyCoach (přístup)</th>
+                    <th class="text-center">App přístup</th>
                     <th class="text-end">Akce</th>
                 </tr>
                 </thead>
@@ -482,16 +593,51 @@ renderAdminHeader('MyCoach administrace');
                     <td class="text-center">
                         <span class="badge <?= $enabled ? 'bg-success' : 'bg-secondary' ?>"><?= $enabled ? 'Povoleno' : 'Vypnuto' ?></span>
                     </td>
+                    <?php
+                        $accRow = $accessByKey['athlete_' . (int)$athleteRow['id']] ?? null;
+                        $appStatus = mycoachAppCheckStatus($pdo, 'athlete', (int)$athleteRow['id']);
+                        $appLabel  = mycoachAppStatusLabel($appStatus);
+                    ?>
+                    <td class="text-center">
+                        <span class="badge <?= h($appLabel['badge']) ?> small"><?= h($appLabel['text']) ?></span>
+                        <?php if ($accRow && !empty($accRow['subscription_end'])): ?>
+                            <div class="text-muted" style="font-size:.72rem;">do <?= h($accRow['subscription_end']) ?></div>
+                        <?php endif; ?>
+                    </td>
                     <td class="text-end">
-                        <form method="post" class="d-inline">
-                            <?= csrfField() ?>
-                            <input type="hidden" name="action" value="set_athlete_access">
-                            <input type="hidden" name="athlete_id" value="<?= (int)$athleteRow['id'] ?>">
-                            <input type="hidden" name="enabled" value="<?= $enabled ? '0' : '1' ?>">
-                            <button type="submit" class="btn btn-sm <?= $enabled ? 'btn-outline-danger' : 'btn-outline-success' ?>">
-                                <?= $enabled ? 'Vypnout' : 'Povolit' ?>
+                        <div class="d-flex justify-content-end gap-1 flex-wrap">
+                            <form method="post" class="d-inline">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="action" value="set_athlete_access">
+                                <input type="hidden" name="athlete_id" value="<?= (int)$athleteRow['id'] ?>">
+                                <input type="hidden" name="enabled" value="<?= $enabled ? '0' : '1' ?>">
+                                <button type="submit" class="btn btn-sm <?= $enabled ? 'btn-outline-danger' : 'btn-outline-success' ?>">
+                                    <?= $enabled ? 'Vypnout' : 'Povolit' ?>
+                                </button>
+                            </form>
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-warning"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#modalGrantSub"
+                                    data-user-type="athlete"
+                                    data-user-id="<?= (int)$athleteRow['id'] ?>"
+                                    data-user-name="<?= h($fullName) ?>"
+                                    title="Přidat/upravit předplatné">
+                                <i class="fas fa-calendar-plus"></i>
                             </button>
-                        </form>
+                            <?php if ($accRow && (int)($accRow['trial_used'] ?? 0) === 1): ?>
+                            <form method="post" class="d-inline">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="action" value="reset_trial">
+                                <input type="hidden" name="sub_user_type" value="athlete">
+                                <input type="hidden" name="sub_user_id" value="<?= (int)$athleteRow['id'] ?>">
+                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Reset trial"
+                                        onclick="return confirm('Resetovat trial pro <?= h(addslashes($fullName)) ?>?')">
+                                    <i class="fas fa-rotate-left"></i>
+                                </button>
+                            </form>
+                            <?php endif; ?>
+                        </div>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -503,3 +649,57 @@ renderAdminHeader('MyCoach administrace');
 </div>
 
 <?php renderAdminFooter();
+/* ── Modál: udělení předplatného ─────────────────────────── */ ?>
+
+<div class="modal fade" id="modalGrantSub" tabindex="-1" aria-labelledby="modalGrantSubLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalGrantSubLabel">
+          <i class="fas fa-calendar-plus me-2 text-warning"></i>Předplatné MyCoach App
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post">
+        <?= csrfField() ?>
+        <input type="hidden" name="action" value="grant_subscription">
+        <input type="hidden" name="sub_user_type" id="subUserType" value="">
+        <input type="hidden" name="sub_user_id" id="subUserId" value="">
+        <div class="modal-body">
+          <p class="mb-3">Uživatel: <strong id="subUserName"></strong></p>
+          <div class="row g-3">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Od</label>
+              <input type="date" name="sub_start" class="form-control form-control-sm"
+                     value="<?= date('Y-m-d') ?>" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Do</label>
+              <input type="date" name="sub_end" class="form-control form-control-sm"
+                     value="<?= date('Y-m-d', strtotime('+1 year')) ?>" required>
+            </div>
+            <div class="col-12">
+              <label class="form-label small fw-semibold">Poznámka (nepovinná)</label>
+              <input type="text" name="sub_notes" class="form-control form-control-sm" placeholder="např. Roční předplatné">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Zrušit</button>
+          <button type="submit" class="btn btn-warning btn-sm fw-semibold">
+            <i class="fas fa-check me-1"></i>Uložit předplatné
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('modalGrantSub').addEventListener('show.bs.modal', function(e) {
+  const btn = e.relatedTarget;
+  document.getElementById('subUserType').value = btn.dataset.userType || '';
+  document.getElementById('subUserId').value   = btn.dataset.userId   || '';
+  document.getElementById('subUserName').textContent = btn.dataset.userName || '';
+});
+</script>

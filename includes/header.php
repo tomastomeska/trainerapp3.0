@@ -348,6 +348,27 @@ function renderFooter(): void {
     <small><?= h($appName) ?> &copy; <?= date('Y') ?></small>
 </footer>
 
+<div class="modal fade" id="modalMyCoachComingSoon" tabindex="-1" aria-labelledby="modalMyCoachComingSoonLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0" style="background:linear-gradient(135deg,#1a1a1a 0%,#2a2a2a 100%);border:1px solid #f7941d !important;border-radius:12px;">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title fw-bold" id="modalMyCoachComingSoonLabel" style="color:#f7941d;">
+          <i class="fas fa-brain me-2"></i>MyCoach
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+      </div>
+      <div class="modal-body text-center py-4">
+        <div class="mb-3" style="font-size:3rem;line-height:1;">⚙️</div>
+        <h4 class="fw-bold mb-2" style="color:#fff;">Aplikace je ve vývoji</h4>
+        <p class="mb-0" style="color:#bbb;">Pracujeme na platformě MyCoach – videocvičení, tréninky, encyklopedie cviků a mnoho dalšího.<br><br><strong style="color:#f7941d;">O spuštění vás budeme včas informovat.</strong></p>
+      </div>
+      <div class="modal-footer border-0 pt-0 justify-content-center">
+        <button type="button" class="btn btn-outline-warning px-4 fw-semibold" data-bs-dismiss="modal">Rozumím</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/app.js"></script>
 <?php renderSupportWidget('coach'); ?>

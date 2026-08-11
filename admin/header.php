@@ -103,6 +103,10 @@ function renderAdminHeader(string $title = ''): void {
 				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'mycoach.php' ? 'active' : '' ?>">
 					<i class="fas fa-brain me-2"></i>MyCoach administrace
 				</a>
+				<a href="<?= BASE_URL ?>/admin/mycoach_content.php"
+				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'mycoach_content.php' ? 'active' : '' ?>" style="padding-left:2.2rem;font-size:.87rem;">
+					<i class="fas fa-layer-group me-2"></i>MyCoach obsah
+				</a>
 				<a href="<?= BASE_URL ?>/admin/manual.php"
 				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'manual.php' ? 'active' : '' ?>">
 					<i class="fas fa-book-open me-2"></i>Návod

@@ -1,0 +1,477 @@
+/* ============================================================
+   MyCoach App – metalické tmavé téma s oranžovo-žlutým akcentem
+   Rozšiřuje stávající mycoach-theme.css
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+:root {
+  --mca-dark:        #0d0d0d;
+  --mca-dark-2:      #161616;
+  --mca-dark-3:      #222222;
+  --mca-metal-1:     #2e2e2e;
+  --mca-metal-2:     #3e3e3e;
+  --mca-metal-3:     #555555;
+  --mca-orange:      #f7941d;
+  --mca-orange-2:    #e07d0a;
+  --mca-yellow:      #ffd000;
+  --mca-text:        #f0f0f0;
+  --mca-text-muted:  #a0a0a0;
+  --mca-border:      rgba(247,148,29,0.18);
+  --mca-glow:        0 0 22px rgba(247,148,29,0.22);
+  --mca-radius:      16px;
+  --mca-radius-sm:   10px;
+}
+
+/* ── Tmavé pozadí aplikace ─────────────────────────────────── */
+body.mycoach-app-theme {
+  background: var(--mca-dark);
+  color: var(--mca-text);
+  font-family: 'Outfit', 'Segoe UI', Tahoma, sans-serif;
+  min-height: 100vh;
+}
+
+body.mycoach-app-theme h1,
+body.mycoach-app-theme h2,
+body.mycoach-app-theme h3,
+body.mycoach-app-theme h4,
+body.mycoach-app-theme h5 {
+  font-family: 'Space Grotesk', 'Outfit', sans-serif;
+  color: var(--mca-text);
+  letter-spacing: -0.01em;
+}
+
+/* ── Horní lišta / hero ────────────────────────────────────── */
+.mca-hero {
+  background: linear-gradient(135deg, var(--mca-dark-2) 0%, var(--mca-dark-3) 100%);
+  border-bottom: 2px solid var(--mca-border);
+  padding: 1.25rem 1.5rem;
+  position: relative;
+  overflow: hidden;
+}
+.mca-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 0% 0%, rgba(247,148,29,.12) 0%, transparent 70%);
+  pointer-events: none;
+}
+.mca-hero-title {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--mca-orange);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.mca-hero-sub {
+  font-size: .9rem;
+  color: var(--mca-text-muted);
+  margin: .2rem 0 0;
+}
+.mca-access-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .25rem .75rem;
+  border-radius: 50px;
+  font-size: .78rem;
+  font-weight: 600;
+  background: rgba(247,148,29,.15);
+  border: 1px solid rgba(247,148,29,.35);
+  color: var(--mca-orange);
+}
+
+/* ── Flex grid sekcí ───────────────────────────────────────── */
+.mca-section-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1.1rem;
+}
+
+/* ── Sekce dlaždice ────────────────────────────────────────── */
+.mca-section-tile {
+  background: var(--mca-dark-3);
+  border: 1px solid var(--mca-metal-2);
+  border-radius: var(--mca-radius);
+  padding: 1.4rem 1.2rem 1.1rem;
+  cursor: pointer;
+  transition: border-color .2s, box-shadow .2s, transform .18s;
+  text-decoration: none;
+  color: var(--mca-text);
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+  position: relative;
+  overflow: hidden;
+}
+.mca-section-tile:hover,
+.mca-section-tile:focus {
+  border-color: var(--mca-orange);
+  box-shadow: var(--mca-glow);
+  transform: translateY(-3px);
+  color: var(--mca-text);
+  text-decoration: none;
+}
+.mca-section-tile::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--mca-orange) 0%, var(--mca-yellow) 100%);
+  opacity: 0;
+  transition: opacity .2s;
+}
+.mca-section-tile:hover::before,
+.mca-section-tile:focus::before {
+  opacity: 1;
+}
+.mca-tile-icon {
+  width: 48px; height: 48px;
+  border-radius: var(--mca-radius-sm);
+  background: rgba(247,148,29,.12);
+  border: 1px solid rgba(247,148,29,.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  color: var(--mca-orange);
+  flex-shrink: 0;
+}
+.mca-tile-title {
+  font-weight: 700;
+  font-size: 1rem;
+  line-height: 1.3;
+  color: var(--mca-text);
+}
+.mca-tile-sub {
+  font-size: .8rem;
+  color: var(--mca-text-muted);
+  line-height: 1.4;
+}
+.mca-tile-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  padding: .15rem .55rem;
+  border-radius: 50px;
+  font-size: .72rem;
+  font-weight: 600;
+  background: var(--mca-metal-1);
+  border: 1px solid var(--mca-metal-3);
+  color: var(--mca-text-muted);
+  width: fit-content;
+}
+.mca-tile-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: .07;
+  border-radius: var(--mca-radius);
+  pointer-events: none;
+}
+.mca-tile-overlay-count {
+  position: absolute;
+  bottom: .75rem;
+  right: .9rem;
+  font-size: .72rem;
+  color: var(--mca-text-muted);
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+}
+
+/* ── Barevné varianty dlaždicí ────────────────────────────── */
+.mca-tile--orange { border-top: 3px solid var(--mca-orange); }
+.mca-tile--yellow { border-top: 3px solid var(--mca-yellow); }
+.mca-tile--red    { border-top: 3px solid #e03b3b; }
+.mca-tile--blue   { border-top: 3px solid #3b8fe0; }
+.mca-tile--green  { border-top: 3px solid #3be07a; }
+.mca-tile--teal   { border-top: 3px solid #11a8ab; }
+.mca-tile--purple { border-top: 3px solid #9b59b6; }
+
+.mca-tile--orange .mca-tile-icon { color: var(--mca-orange);  background: rgba(247,148,29,.12); border-color: rgba(247,148,29,.25); }
+.mca-tile--yellow .mca-tile-icon { color: var(--mca-yellow);  background: rgba(255,208,0,.12);  border-color: rgba(255,208,0,.25); }
+.mca-tile--red    .mca-tile-icon { color: #e03b3b; background: rgba(224,59,59,.12); border-color: rgba(224,59,59,.25); }
+.mca-tile--blue   .mca-tile-icon { color: #3b8fe0; background: rgba(59,143,224,.12); border-color: rgba(59,143,224,.25); }
+.mca-tile--green  .mca-tile-icon { color: #3be07a; background: rgba(59,224,122,.12); border-color: rgba(59,224,122,.25); }
+.mca-tile--teal   .mca-tile-icon { color: #11a8ab; background: rgba(17,168,171,.12); border-color: rgba(17,168,171,.25); }
+.mca-tile--purple .mca-tile-icon { color: #9b59b6; background: rgba(155,89,182,.12); border-color: rgba(155,89,182,.25); }
+
+/* ── Přístupová / paywall stránka ──────────────────────────── */
+.mca-paywall {
+  max-width: 520px;
+  margin: 3rem auto;
+  background: var(--mca-dark-3);
+  border: 1px solid var(--mca-border);
+  border-radius: var(--mca-radius);
+  padding: 2.5rem 2rem;
+  text-align: center;
+  box-shadow: var(--mca-glow);
+}
+.mca-paywall-icon {
+  font-size: 3rem;
+  color: var(--mca-orange);
+  margin-bottom: 1rem;
+}
+.mca-paywall h2 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--mca-text);
+  margin-bottom: .5rem;
+}
+.mca-paywall p {
+  color: var(--mca-text-muted);
+  margin-bottom: 1.5rem;
+}
+.mca-btn-primary {
+  background: linear-gradient(135deg, var(--mca-orange) 0%, var(--mca-orange-2) 100%);
+  border: none;
+  color: #fff;
+  font-weight: 700;
+  padding: .7rem 2rem;
+  border-radius: 50px;
+  font-size: .95rem;
+  transition: opacity .2s, transform .15s;
+  display: inline-block;
+  cursor: pointer;
+  text-decoration: none;
+}
+.mca-btn-primary:hover {
+  opacity: .9;
+  transform: translateY(-1px);
+  color: #fff;
+}
+.mca-btn-outline {
+  background: transparent;
+  border: 1px solid var(--mca-metal-3);
+  color: var(--mca-text-muted);
+  font-weight: 600;
+  padding: .65rem 1.5rem;
+  border-radius: 50px;
+  font-size: .9rem;
+  transition: border-color .2s, color .2s;
+  display: inline-block;
+  cursor: pointer;
+  text-decoration: none;
+}
+.mca-btn-outline:hover {
+  border-color: var(--mca-orange);
+  color: var(--mca-orange);
+}
+.mca-trial-box {
+  background: rgba(247,148,29,.08);
+  border: 1px dashed rgba(247,148,29,.35);
+  border-radius: var(--mca-radius-sm);
+  padding: 1rem 1.25rem;
+  margin: 1rem 0;
+  color: var(--mca-text);
+  font-size: .9rem;
+}
+.mca-trial-box strong { color: var(--mca-orange); }
+
+/* ── Video player stránka ──────────────────────────────────── */
+.mca-video-wrap {
+  background: #000;
+  border-radius: var(--mca-radius);
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  position: relative;
+}
+.mca-video-wrap iframe,
+.mca-video-wrap video {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+.mca-progress-bar-wrap {
+  background: var(--mca-metal-1);
+  border-radius: 50px;
+  height: 6px;
+  overflow: hidden;
+  margin: .5rem 0;
+}
+.mca-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--mca-orange) 0%, var(--mca-yellow) 100%);
+  border-radius: 50px;
+  transition: width .5s;
+}
+.mca-watched-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .2rem .65rem;
+  background: rgba(59,224,122,.15);
+  border: 1px solid rgba(59,224,122,.3);
+  border-radius: 50px;
+  font-size: .78rem;
+  font-weight: 600;
+  color: #3be07a;
+}
+
+/* ── Video karta v seznamu ──────────────────────────────────── */
+.mca-video-card {
+  background: var(--mca-dark-3);
+  border: 1px solid var(--mca-metal-2);
+  border-radius: var(--mca-radius-sm);
+  display: flex;
+  gap: .9rem;
+  padding: .9rem;
+  align-items: flex-start;
+  text-decoration: none;
+  color: var(--mca-text);
+  transition: border-color .18s, box-shadow .18s;
+}
+.mca-video-card:hover {
+  border-color: var(--mca-orange);
+  box-shadow: 0 0 12px rgba(247,148,29,.15);
+  color: var(--mca-text);
+  text-decoration: none;
+}
+.mca-video-thumb {
+  width: 100px;
+  height: 64px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--mca-metal-1);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mca-text-muted);
+  font-size: 1.5rem;
+}
+.mca-video-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
+.mca-video-title { font-weight: 600; font-size: .92rem; margin-bottom: .2rem; }
+.mca-video-meta  { font-size: .78rem; color: var(--mca-text-muted); }
+
+/* ── Encyklopedie cviků ─────────────────────────────────────── */
+.mca-exercise-card {
+  background: var(--mca-dark-3);
+  border: 1px solid var(--mca-metal-2);
+  border-radius: var(--mca-radius-sm);
+  padding: 1rem 1.1rem;
+  display: flex;
+  align-items: flex-start;
+  gap: .85rem;
+  text-decoration: none;
+  color: var(--mca-text);
+  transition: border-color .18s;
+}
+.mca-exercise-card:hover { border-color: var(--mca-orange); color: var(--mca-text); }
+.mca-exercise-thumb {
+  width: 70px; height: 70px;
+  border-radius: 8px;
+  background: var(--mca-metal-1);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.6rem; color: var(--mca-orange); flex-shrink: 0;
+}
+.mca-exercise-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
+.mca-difficulty-beginner  { color: #3be07a; }
+.mca-difficulty-intermediate { color: var(--mca-orange); }
+.mca-difficulty-advanced  { color: #e03b3b; }
+
+/* ── Tréninková karta ───────────────────────────────────────── */
+.mca-workout-card {
+  background: var(--mca-dark-3);
+  border: 1px solid var(--mca-metal-2);
+  border-radius: var(--mca-radius);
+  padding: 1.25rem;
+  transition: border-color .18s, box-shadow .18s;
+}
+.mca-workout-card:hover { border-color: var(--mca-orange); box-shadow: var(--mca-glow); }
+.mca-workout-title { font-weight: 700; font-size: 1rem; margin-bottom: .3rem; }
+
+/* ── Tmavý navbar override ───────────────────────────────────── */
+body.mycoach-app-theme .navbar-dark,
+body.mycoach-app-theme .navbar {
+  background: var(--mca-dark-2) !important;
+  border-bottom: 1px solid var(--mca-metal-1);
+}
+
+/* ── Breadcrumb ─────────────────────────────────────────────── */
+.mca-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .82rem;
+  color: var(--mca-text-muted);
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+.mca-breadcrumb a { color: var(--mca-orange); text-decoration: none; }
+.mca-breadcrumb a:hover { text-decoration: underline; }
+.mca-breadcrumb-sep { color: var(--mca-metal-3); }
+
+/* ── Timer pro trial ─────────────────────────────────────────── */
+.mca-trial-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .82rem;
+  color: var(--mca-orange);
+  background: rgba(247,148,29,.1);
+  border: 1px solid rgba(247,148,29,.25);
+  border-radius: 50px;
+  padding: .2rem .75rem;
+}
+
+/* ── Inline workout exercice list ────────────────────────────── */
+.mca-workout-exercise-row {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .75rem;
+  background: var(--mca-metal-1);
+  border-radius: var(--mca-radius-sm);
+}
+.mca-workout-exercise-row .mca-ex-num {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: rgba(247,148,29,.15);
+  border: 1px solid rgba(247,148,29,.3);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: .8rem;
+  color: var(--mca-orange);
+  flex-shrink: 0;
+}
+
+/* ── Search input ────────────────────────────────────────────── */
+.mca-search-wrap { position: relative; }
+.mca-search-wrap .form-control {
+  background: var(--mca-dark-3);
+  border: 1px solid var(--mca-metal-2);
+  color: var(--mca-text);
+  border-radius: 50px;
+  padding-left: 2.4rem;
+}
+.mca-search-wrap .form-control:focus {
+  border-color: var(--mca-orange);
+  box-shadow: 0 0 0 2px rgba(247,148,29,.2);
+  background: var(--mca-dark-3);
+  color: var(--mca-text);
+}
+.mca-search-wrap .mca-search-icon {
+  position: absolute;
+  left: .85rem; top: 50%;
+  transform: translateY(-50%);
+  color: var(--mca-text-muted);
+  pointer-events: none;
+}
+.mca-search-wrap .form-control::placeholder { color: var(--mca-text-muted); }
+
+/* ── Responsive ──────────────────────────────────────────────── */
+@media (max-width: 576px) {
+  .mca-section-grid { grid-template-columns: 1fr 1fr; gap: .75rem; }
+  .mca-section-tile { padding: 1rem .9rem .85rem; }
+  .mca-tile-icon { width: 40px; height: 40px; font-size: 1.1rem; }
+  .mca-paywall { padding: 1.75rem 1.25rem; margin: 1.5rem auto; }
+}
+@media (max-width: 380px) {
+  .mca-section-grid { grid-template-columns: 1fr; }
+}

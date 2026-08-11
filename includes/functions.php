@@ -9438,3 +9438,380 @@ function athleteAppleCaldavEventLinksTableAvailable(): bool {
 
   return $available;
 }
+
+// ============================================================
+// MyCoach App – přístupový systém (trial / předplatné)
+// ============================================================
+
+if (!function_exists('mycoachAppStatus')) {
+  function mycoachAppStatus(): string {
+    $s = strtolower(trim(getAppSetting('mycoach_app_status', 'development')));
+    return in_array($s, ['development', 'live'], true) ? $s : 'development';
+  }
+}
+
+if (!function_exists('mycoachAppIsLive')) {
+  function mycoachAppIsLive(): bool {
+    return mycoachAppStatus() === 'live';
+  }
+}
+
+if (!function_exists('mycoachAppTrialDays')) {
+  function mycoachAppTrialDays(): int {
+    $d = (int)getAppSetting('mycoach_app_trial_days', '3');
+    return max(1, min(30, $d));
+  }
+}
+
+if (!function_exists('mycoachAppEnsureAccessTable')) {
+  function mycoachAppEnsureAccessTable(PDO $pdo): bool {
+    static $checked = false;
+    if ($checked) return true;
+    try {
+      $r = $pdo->query("SHOW TABLES LIKE 'mycoach_app_access'");
+      $checked = ($r !== false && (bool)$r->fetch());
+    } catch (Throwable $e) {
+      $checked = false;
+    }
+    return $checked;
+  }
+}
+
+if (!function_exists('mycoachAppGetAccess')) {
+  /** Vrátí řádek z mycoach_app_access nebo null. */
+  function mycoachAppGetAccess(PDO $pdo, string $userType, int $userId): ?array {
+    if (!mycoachAppEnsureAccessTable($pdo)) return null;
+    try {
+      $stmt = $pdo->prepare(
+        'SELECT * FROM mycoach_app_access WHERE user_type = ? AND user_id = ? LIMIT 1'
+      );
+      $stmt->execute([$userType, $userId]);
+      $row = $stmt->fetch();
+      return $row ?: null;
+    } catch (Throwable $e) {
+      return null;
+    }
+  }
+}
+
+if (!function_exists('mycoachAppCheckStatus')) {
+  /**
+   * Vrátí stav přístupu:
+   *  'subscribed'      – aktivní předplatné
+   *  'active_trial'    – zkušební doba běží
+   *  'trial_expired'   – trial proběhl, předplatné není
+   *  'sub_expired'     – předplatné expirované (trial byl použit)
+   *  'no_access'       – žádný záznam ani trial
+   */
+  function mycoachAppCheckStatus(PDO $pdo, string $userType, int $userId): string {
+    $row = mycoachAppGetAccess($pdo, $userType, $userId);
+
+    $now = new DateTimeImmutable('now');
+
+    // Aktivní předplatné
+    if ($row && !empty($row['subscription_end'])) {
+      try {
+        $end = new DateTimeImmutable((string)$row['subscription_end'] . ' 23:59:59');
+        if ($now <= $end) return 'subscribed';
+      } catch (Throwable $e) {}
+    }
+
+    // Expirované předplatné (trial byl dříve použit)
+    if ($row && !empty($row['subscription_start']) && (int)($row['trial_used'] ?? 0) === 1) {
+      return 'sub_expired';
+    }
+
+    // Aktivní trial
+    if ($row && !empty($row['trial_started_at']) && (int)($row['trial_used'] ?? 0) === 1) {
+      try {
+        $trialStart = new DateTimeImmutable((string)$row['trial_started_at']);
+        $trialEnd   = $trialStart->modify('+' . mycoachAppTrialDays() . ' days');
+        if ($now <= $trialEnd) return 'active_trial';
+        return 'trial_expired';
+      } catch (Throwable $e) {
+        return 'trial_expired';
+      }
+    }
+
+    return 'no_access';
+  }
+}
+
+if (!function_exists('mycoachAppCanAccess')) {
+  function mycoachAppCanAccess(PDO $pdo, string $userType, int $userId): bool {
+    $s = mycoachAppCheckStatus($pdo, $userType, $userId);
+    return in_array($s, ['subscribed', 'active_trial'], true);
+  }
+}
+
+if (!function_exists('mycoachAppTrialExpiresAt')) {
+  /** Vrátí DateTime konce trialu nebo null. */
+  function mycoachAppTrialExpiresAt(?array $row): ?DateTimeImmutable {
+    if (!$row || empty($row['trial_started_at'])) return null;
+    try {
+      $start = new DateTimeImmutable((string)$row['trial_started_at']);
+      return $start->modify('+' . mycoachAppTrialDays() . ' days');
+    } catch (Throwable $e) {
+      return null;
+    }
+  }
+}
+
+if (!function_exists('mycoachAppStartTrial')) {
+  /** Spustí 3denní trial – lze jen jednou (trial_used=0). Vrátí true při úspěchu. */
+  function mycoachAppStartTrial(PDO $pdo, string $userType, int $userId): bool {
+    if (!mycoachAppEnsureAccessTable($pdo)) return false;
+    $existing = mycoachAppGetAccess($pdo, $userType, $userId);
+    if ($existing && (int)($existing['trial_used'] ?? 0) === 1) return false; // již použit
+    try {
+      $pdo->prepare(
+        'INSERT INTO mycoach_app_access (user_type, user_id, trial_started_at, trial_used)
+         VALUES (?, ?, NOW(), 1)
+         ON DUPLICATE KEY UPDATE trial_started_at = NOW(), trial_used = 1'
+      )->execute([$userType, $userId]);
+      return true;
+    } catch (Throwable $e) {
+      error_log('mycoachAppStartTrial: ' . $e->getMessage());
+      return false;
+    }
+  }
+}
+
+if (!function_exists('mycoachAppGrantSubscription')) {
+  /** Udělí předplatné od $startDate do $endDate. */
+  function mycoachAppGrantSubscription(
+    PDO $pdo,
+    string $userType,
+    int $userId,
+    string $startDate,
+    string $endDate,
+    string $notes = ''
+  ): bool {
+    if (!mycoachAppEnsureAccessTable($pdo)) return false;
+    try {
+      $pdo->prepare(
+        'INSERT INTO mycoach_app_access
+           (user_type, user_id, subscription_start, subscription_end, notes)
+         VALUES (?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           subscription_start = VALUES(subscription_start),
+           subscription_end   = VALUES(subscription_end),
+           notes              = VALUES(notes)'
+      )->execute([$userType, $userId, $startDate, $endDate, $notes]);
+      return true;
+    } catch (Throwable $e) {
+      error_log('mycoachAppGrantSubscription: ' . $e->getMessage());
+      return false;
+    }
+  }
+}
+
+if (!function_exists('mycoachAppResetTrial')) {
+  /** Admin: resetuje trial_used=0 a vymaže trial_started_at. */
+  function mycoachAppResetTrial(PDO $pdo, string $userType, int $userId): bool {
+    if (!mycoachAppEnsureAccessTable($pdo)) return false;
+    try {
+      $pdo->prepare(
+        'INSERT INTO mycoach_app_access (user_type, user_id, trial_used, trial_started_at)
+         VALUES (?, ?, 0, NULL)
+         ON DUPLICATE KEY UPDATE trial_used = 0, trial_started_at = NULL'
+      )->execute([$userType, $userId]);
+      return true;
+    } catch (Throwable $e) {
+      error_log('mycoachAppResetTrial: ' . $e->getMessage());
+      return false;
+    }
+  }
+}
+
+if (!function_exists('mycoachAppRevokeSubscription')) {
+  /** Admin: zruší předplatné. */
+  function mycoachAppRevokeSubscription(PDO $pdo, string $userType, int $userId): bool {
+    if (!mycoachAppEnsureAccessTable($pdo)) return false;
+    try {
+      $pdo->prepare(
+        'UPDATE mycoach_app_access
+         SET subscription_start = NULL, subscription_end = NULL
+         WHERE user_type = ? AND user_id = ?'
+      )->execute([$userType, $userId]);
+      return true;
+    } catch (Throwable $e) {
+      error_log('mycoachAppRevokeSubscription: ' . $e->getMessage());
+      return false;
+    }
+  }
+}
+
+if (!function_exists('mycoachAppStatusLabel')) {
+  /** Lidsky čitelný stav přístupu pro admin UI. */
+  function mycoachAppStatusLabel(string $status): array {
+    return match ($status) {
+      'subscribed'    => ['badge' => 'bg-success',   'text' => 'Aktivní předplatné'],
+      'active_trial'  => ['badge' => 'bg-info text-dark', 'text' => 'Trial (běží)'],
+      'trial_expired' => ['badge' => 'bg-warning text-dark', 'text' => 'Trial expiroval'],
+      'sub_expired'   => ['badge' => 'bg-danger',    'text' => 'Předplatné expirované'],
+      default         => ['badge' => 'bg-secondary', 'text' => 'Bez přístupu'],
+    };
+  }
+}
+
+if (!function_exists('mycoachAppSectionTypes')) {
+  function mycoachAppSectionTypes(): array {
+    return [
+      'videos'    => ['label' => 'Videa',        'icon' => 'fa-play-circle'],
+      'workout'   => ['label' => 'Tréninky',      'icon' => 'fa-dumbbell'],
+      'exercises' => ['label' => 'Cviky',         'icon' => 'fa-person-running'],
+      'article'   => ['label' => 'Článek',        'icon' => 'fa-file-lines'],
+      'foods'     => ['label' => 'Výživa',        'icon' => 'fa-utensils'],
+      'mixed'     => ['label' => 'Smíšené',       'icon' => 'fa-grid-2'],
+    ];
+  }
+}
+
+if (!function_exists('mycoachAppLoadSections')) {
+  function mycoachAppLoadSections(PDO $pdo, string $audience = 'all'): array {
+    try {
+      $stmt = $pdo->prepare(
+        "SELECT * FROM mycoach_app_sections
+         WHERE is_active = 1 AND (audience = 'all' OR audience = ?)
+         ORDER BY sort_order ASC, id ASC"
+      );
+      $stmt->execute([$audience]);
+      return $stmt->fetchAll();
+    } catch (Throwable $e) {
+      return [];
+    }
+  }
+}
+
+if (!function_exists('mycoachAppLoadVideos')) {
+  function mycoachAppLoadVideos(PDO $pdo, ?int $sectionId = null): array {
+    try {
+      if ($sectionId !== null) {
+        $stmt = $pdo->prepare(
+          'SELECT * FROM mycoach_app_videos
+           WHERE is_active = 1 AND section_id = ?
+           ORDER BY sort_order ASC, id ASC'
+        );
+        $stmt->execute([$sectionId]);
+      } else {
+        $stmt = $pdo->query(
+          'SELECT * FROM mycoach_app_videos
+           WHERE is_active = 1
+           ORDER BY sort_order ASC, id ASC'
+        );
+      }
+      return $stmt->fetchAll();
+    } catch (Throwable $e) {
+      return [];
+    }
+  }
+}
+
+if (!function_exists('mycoachAppVideoEmbedUrl')) {
+  /** Převede URL/ID YouTube/Vimeo na embed URL. */
+  function mycoachAppVideoEmbedUrl(array $video): ?string {
+    $type = (string)($video['video_type'] ?? 'upload');
+    $url  = trim((string)($video['video_url'] ?? ''));
+    if ($url === '') return null;
+
+    if ($type === 'youtube') {
+      // Extrahuj ID z různých formátů YouTube
+      $id = null;
+      if (preg_match('/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/', $url, $m)) {
+        $id = $m[1];
+      } elseif (preg_match('/^[a-zA-Z0-9_-]{11}$/', $url)) {
+        $id = $url;
+      }
+      return $id ? "https://www.youtube.com/embed/{$id}?rel=0&modestbranding=1" : null;
+    }
+
+    if ($type === 'vimeo') {
+      $id = null;
+      if (preg_match('/vimeo\.com\/(\d+)/', $url, $m)) {
+        $id = $m[1];
+      } elseif (preg_match('/^\d+$/', $url)) {
+        $id = $url;
+      }
+      return $id ? "https://player.vimeo.com/video/{$id}" : null;
+    }
+
+    return $url; // upload nebo přímé URL
+  }
+}
+
+if (!function_exists('mycoachAppSaveVideoProgress')) {
+  /** Uloží/aktualizuje pozici přehrávání videa. */
+  function mycoachAppSaveVideoProgress(
+    PDO $pdo,
+    string $userType,
+    int $userId,
+    int $videoId,
+    int $watchedSeconds,
+    ?int $durationSeconds = null
+  ): bool {
+    try {
+      $completed = 0;
+      if ($durationSeconds !== null && $durationSeconds > 0) {
+        $completed = ($watchedSeconds >= $durationSeconds * 0.90) ? 1 : 0;
+      }
+      $pdo->prepare(
+        'INSERT INTO mycoach_app_video_progress
+           (user_type, user_id, video_id, watched_seconds, duration_seconds, is_completed, last_watched_at)
+         VALUES (?, ?, ?, ?, ?, ?, NOW())
+         ON DUPLICATE KEY UPDATE
+           watched_seconds  = IF(VALUES(watched_seconds) > watched_seconds, VALUES(watched_seconds), watched_seconds),
+           duration_seconds = COALESCE(VALUES(duration_seconds), duration_seconds),
+           is_completed     = IF(VALUES(is_completed) = 1, 1, is_completed),
+           last_watched_at  = NOW()'
+      )->execute([$userType, $userId, $videoId, $watchedSeconds, $durationSeconds, $completed]);
+      return true;
+    } catch (Throwable $e) {
+      error_log('mycoachAppSaveVideoProgress: ' . $e->getMessage());
+      return false;
+    }
+  }
+}
+
+if (!function_exists('mycoachAppLoadVideoProgress')) {
+  /** Vrátí mapu video_id => progress pro daného uživatele. */
+  function mycoachAppLoadVideoProgress(PDO $pdo, string $userType, int $userId): array {
+    try {
+      $stmt = $pdo->prepare(
+        'SELECT video_id, watched_seconds, duration_seconds, is_completed, last_watched_at
+         FROM mycoach_app_video_progress
+         WHERE user_type = ? AND user_id = ?'
+      );
+      $stmt->execute([$userType, $userId]);
+      $map = [];
+      foreach ($stmt->fetchAll() as $row) {
+        $map[(int)$row['video_id']] = $row;
+      }
+      return $map;
+    } catch (Throwable $e) {
+      return [];
+    }
+  }
+}
+
+if (!function_exists('mycoachAppFormatDuration')) {
+  function mycoachAppFormatDuration(?int $seconds): string {
+    if ($seconds === null || $seconds <= 0) return '';
+    $m = intdiv($seconds, 60);
+    $s = $seconds % 60;
+    return $m . ':' . str_pad((string)$s, 2, '0', STR_PAD_LEFT);
+  }
+}
+
+if (!function_exists('mycoachAppExerciseSlugify')) {
+  function mycoachAppExerciseSlugify(string $name): string {
+    $name = mb_strtolower(trim($name), 'UTF-8');
+    $trans = [
+      'á'=>'a','č'=>'c','ď'=>'d','é'=>'e','ě'=>'e','í'=>'i','ň'=>'n',
+      'ó'=>'o','ř'=>'r','š'=>'s','ť'=>'t','ú'=>'u','ů'=>'u','ý'=>'y','ž'=>'z',
+    ];
+    $name = strtr($name, $trans);
+    $name = preg_replace('/[^a-z0-9]+/', '-', $name) ?? '';
+    return trim($name, '-');
+  }
+}
