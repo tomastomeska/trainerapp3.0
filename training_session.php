@@ -89,6 +89,11 @@ renderHeader('Aktivní trénink', false, true);
             <div class="mt-1 fw-semibold <?= h($healthTextClass) ?>">
                 <i class="fas fa-heart-pulse me-1"></i><?= h((string)$healthStatus['label']) ?>
             </div>
+            <div class="mt-1">
+                <a href="<?= BASE_URL ?>/health_questionnaire_print.php?athlete_id=<?= (int)$session['athlete_id'] ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline-dark">
+                    <i class="fas fa-file-medical me-1"></i>Náhled dotazníku
+                </a>
+            </div>
             Zahájeno: <?= formatDateTime($session['started_at']) ?>
         </div>
     </div>

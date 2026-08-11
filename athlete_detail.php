@@ -540,7 +540,7 @@ renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']), true, true
     <div class="card-body">
         <div class="d-flex justify-content-end mb-3">
             <a href="<?= BASE_URL ?>/health_questionnaire_print.php?athlete_id=<?= (int)$athleteId ?>" target="_blank" rel="noopener" class="btn btn-outline-dark btn-sm">
-                <i class="fas fa-print me-1"></i>Tisk dotazníku
+                <i class="fas fa-print me-1"></i>Ukázat dotazník k tisku
             </a>
         </div>
 

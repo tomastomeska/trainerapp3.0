@@ -189,6 +189,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $options = adminHealthQuestionnaireTextToOptions((string)($_POST['options_text'] ?? ''));
         $alertValues = adminHealthQuestionnaireTextToOptions((string)($_POST['alert_values_text'] ?? ''));
+        $ignoreNoIssueOptions = isset($_POST['ignore_no_issue_options']) ? 1 : 0;
+        $noIssueValues = adminHealthQuestionnaireTextToOptions((string)($_POST['no_issue_values_text'] ?? ''));
 
         $allowedInputTypes = array_keys(healthQuestionnaireInputTypeOptions());
         $allowedAlertModes = array_keys(healthQuestionnaireAlertModeOptions());
@@ -223,14 +225,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $optionsJson = !empty($options) ? json_encode($options, JSON_UNESCAPED_UNICODE) : null;
         $alertValuesJson = !empty($alertValues) ? json_encode($alertValues, JSON_UNESCAPED_UNICODE) : null;
+        $noIssueValuesJson = !empty($noIssueValues) ? json_encode($noIssueValues, JSON_UNESCAPED_UNICODE) : null;
 
         try {
             if ($action === 'create_question') {
                 $questionKey = adminHealthQuestionnaireResolveUniqueKey($pdo, $questionKey);
                 $insertStmt = $pdo->prepare(
                     'INSERT INTO athlete_health_questionnaire_questions
-                    (step_index, section_title, question_key, question_label, input_type, options_json, placeholder, is_required, show_when_question_key, show_when_value, alert_mode, alert_values_json, alert_text, sort_order, is_active)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                    (step_index, section_title, question_key, question_label, input_type, options_json, placeholder, is_required, show_when_question_key, show_when_value, alert_mode, alert_values_json, alert_text, ignore_no_issue_options, no_issue_values_json, sort_order, is_active)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
                 );
                 $insertStmt->execute([
                     $stepIndex,
@@ -246,6 +249,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $alertMode,
                     $alertValuesJson,
                     $alertText !== '' ? $alertText : null,
+                    $ignoreNoIssueOptions,
+                    $noIssueValuesJson,
                     $sortOrder,
                     $isActive,
                 ]);
@@ -273,6 +278,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      alert_mode = ?,
                      alert_values_json = ?,
                      alert_text = ?,
+                     ignore_no_issue_options = ?,
+                     no_issue_values_json = ?,
                      sort_order = ?,
                      is_active = ?
                  WHERE id = ?'
@@ -291,6 +298,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $alertMode,
                 $alertValuesJson,
                 $alertText !== '' ? $alertText : null,
+                $ignoreNoIssueOptions,
+                $noIssueValuesJson,
                 $sortOrder,
                 $isActive,
                 $questionId,
@@ -614,6 +623,19 @@ Bedra"></textarea>
                                     <label class="form-label small fw-semibold">Text upozornění</label>
                                     <textarea class="form-control form-control-sm" name="alert_text" rows="2"></textarea>
                                 </div>
+                                <div class="col-12">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="new_ignore_no_issue_options" name="ignore_no_issue_options" checked>
+                                        <label class="form-check-label small fw-semibold" for="new_ignore_no_issue_options">Ignorovat neutrální volby (např. žádné/bez omezení/nemám)</label>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small fw-semibold">Neutrální hodnoty (volitelné)</label>
+                                    <textarea class="form-control form-control-sm" name="no_issue_values_text" rows="2" placeholder="žádné
+bez omezení
+nemám"></textarea>
+                                    <div class="form-text">Každá hodnota na nový řádek. Pokud je přepínač zapnutý, tyto volby nebudou brané jako omezení.</div>
+                                </div>
                             </div>
                         </details>
 
@@ -645,6 +667,7 @@ Bedra"></textarea>
                         $id = (int)$question['id'];
                         $optionsText = adminHealthQuestionnaireOptionsToText((array)($question['options'] ?? []));
                         $alertValuesText = adminHealthQuestionnaireOptionsToText((array)($question['alert_values'] ?? []));
+                        $noIssueValuesText = adminHealthQuestionnaireOptionsToText((array)($question['no_issue_values'] ?? []));
                         $collapseId = 'q-edit-' . $id;
                         ?>
                         <article class="hq-question-card">
@@ -665,6 +688,9 @@ Bedra"></textarea>
                                         <?php endif; ?>
                                         <?php if ((string)$question['alert_mode'] !== 'none'): ?>
                                         <span class="badge bg-warning text-dark">Upozornění</span>
+                                        <?php endif; ?>
+                                        <?php if ((int)($question['ignore_no_issue_options'] ?? 1) === 1): ?>
+                                        <span class="badge bg-info text-dark">Ignorovat "žádné"</span>
                                         <?php endif; ?>
                                     </div>
                                 </div>
@@ -742,6 +768,17 @@ Bedra"></textarea>
                                             </select>
                                             <textarea class="form-control form-control-sm mb-2" name="alert_values_text" rows="2" placeholder="Alert hodnoty"><?= h($alertValuesText) ?></textarea>
                                             <textarea class="form-control form-control-sm" name="alert_text" rows="2" placeholder="Text upozornění"><?= h((string)($question['alert_text'] ?? '')) ?></textarea>
+                                        </div>
+
+                                        <div class="col-12">
+                                            <div class="form-check form-switch mb-2">
+                                                <input class="form-check-input" type="checkbox" role="switch" name="ignore_no_issue_options" id="ignore_no_issue_options_<?= $id ?>" <?= (int)($question['ignore_no_issue_options'] ?? 1) === 1 ? 'checked' : '' ?>>
+                                                <label class="form-check-label small fw-semibold" for="ignore_no_issue_options_<?= $id ?>">Ignorovat neutrální volby (např. žádné/bez omezení/nemám)</label>
+                                            </div>
+                                            <label class="form-label small fw-semibold">Neutrální hodnoty (volitelné)</label>
+                                            <textarea class="form-control form-control-sm" name="no_issue_values_text" rows="2" placeholder="žádné
+bez omezení
+nemám"><?= h($noIssueValuesText) ?></textarea>
                                         </div>
 
                                         <div class="col-12 d-flex justify-content-between align-items-center mt-2 flex-wrap gap-2">

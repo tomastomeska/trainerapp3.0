@@ -159,6 +159,11 @@ renderHeader('Párový trénink', false, true);
                 <div class="small fw-semibold <?= h($healthTextClass) ?>">
                     <i class="fas fa-heart-pulse me-1"></i><?= h((string)$athleteStatus['label']) ?>
                 </div>
+                <div class="mt-1">
+                    <a href="<?= BASE_URL ?>/health_questionnaire_print.php?athlete_id=<?= (int)$sd['session']['athlete_id'] ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline-dark">
+                        <i class="fas fa-file-medical me-1"></i>Náhled dotazníku
+                    </a>
+                </div>
             </div>
             <?php if (!empty($availableExercises)): ?>
             <div class="ms-auto d-flex gap-2 align-items-center">

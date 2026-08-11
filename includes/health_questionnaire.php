@@ -24,6 +24,8 @@ if (!function_exists('healthQuestionnaireEnsureSchema')) {
                 `alert_mode` ENUM('none','when_yes','when_no','when_nonempty','when_selected') NOT NULL DEFAULT 'none',
                 `alert_values_json` JSON NULL,
                 `alert_text` VARCHAR(255) NULL,
+                `ignore_no_issue_options` TINYINT(1) NOT NULL DEFAULT 1,
+                `no_issue_values_json` JSON NULL,
                 `sort_order` INT NOT NULL DEFAULT 100,
                 `is_active` TINYINT(1) NOT NULL DEFAULT 1,
                 `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -68,6 +70,24 @@ if (!function_exists('healthQuestionnaireEnsureSchema')) {
                 CONSTRAINT `fk_health_update_coach` FOREIGN KEY (`coach_id`) REFERENCES `coaches`(`id`) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         ");
+
+        try {
+            $ignoreNoIssueCol = $pdo->query("SHOW COLUMNS FROM athlete_health_questionnaire_questions LIKE 'ignore_no_issue_options'")->fetch();
+            if (!$ignoreNoIssueCol) {
+                $pdo->exec("ALTER TABLE athlete_health_questionnaire_questions ADD COLUMN ignore_no_issue_options TINYINT(1) NOT NULL DEFAULT 1 AFTER alert_text");
+            }
+        } catch (Throwable $e) {
+            // Ignore runtime schema change errors.
+        }
+
+        try {
+            $noIssueValuesCol = $pdo->query("SHOW COLUMNS FROM athlete_health_questionnaire_questions LIKE 'no_issue_values_json'")->fetch();
+            if (!$noIssueValuesCol) {
+                $pdo->exec("ALTER TABLE athlete_health_questionnaire_questions ADD COLUMN no_issue_values_json JSON NULL AFTER ignore_no_issue_options");
+            }
+        } catch (Throwable $e) {
+            // Ignore runtime schema change errors.
+        }
 
         healthQuestionnaireSeedDefaults($pdo);
         $ready = true;
@@ -246,6 +266,106 @@ if (!function_exists('healthQuestionnaireIsOtherOptionValue')) {
     }
 }
 
+if (!function_exists('healthQuestionnaireIsNoIssueOptionValue')) {
+    function healthQuestionnaireIsNoIssueOptionValue(string $value): bool
+    {
+        $normalized = mb_strtolower(trim($value), 'UTF-8');
+        if ($normalized === '') {
+            return false;
+        }
+
+        $ascii = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $normalized);
+        if ($ascii === false || $ascii === null) {
+            $ascii = $normalized;
+        }
+        $ascii = strtolower(trim((string)$ascii));
+
+        $exact = [
+            'zadne',
+            'zadny problem',
+            'zadne problemy',
+            'bez omezeni',
+            'bez obtizi',
+            'bez problemu',
+            'bez problemu a bolesti',
+            'nemam',
+            'nic',
+            'none',
+            'no issues',
+            'no problem',
+            'ne',
+        ];
+
+        if (in_array($ascii, $exact, true)) {
+            return true;
+        }
+
+        if (strpos($ascii, 'bez omezen') !== false) {
+            return true;
+        }
+        if (strpos($ascii, 'bez obtiz') !== false) {
+            return true;
+        }
+        if (strpos($ascii, 'zadn') === 0) {
+            return true;
+        }
+        if (strpos($ascii, 'nemam') === 0) {
+            return true;
+        }
+
+        return false;
+    }
+}
+
+if (!function_exists('healthQuestionnaireComparableOptionValue')) {
+    function healthQuestionnaireComparableOptionValue(string $value): string
+    {
+        $normalized = mb_strtolower(trim($value), 'UTF-8');
+        if ($normalized === '') {
+            return '';
+        }
+
+        $ascii = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $normalized);
+        if ($ascii === false || $ascii === null) {
+            $ascii = $normalized;
+        }
+
+        $ascii = strtolower(trim((string)$ascii));
+        return preg_replace('/\s+/', ' ', $ascii) ?? $ascii;
+    }
+}
+
+if (!function_exists('healthQuestionnaireShouldIgnoreValueForQuestion')) {
+    function healthQuestionnaireShouldIgnoreValueForQuestion(string $value, array $question): bool
+    {
+        if ((int)($question['ignore_no_issue_options'] ?? 1) !== 1) {
+            return false;
+        }
+
+        if (healthQuestionnaireIsNoIssueOptionValue($value)) {
+            return true;
+        }
+
+        $configured = is_array($question['no_issue_values'] ?? null) ? $question['no_issue_values'] : [];
+        if (empty($configured)) {
+            return false;
+        }
+
+        $valueComparable = healthQuestionnaireComparableOptionValue($value);
+        if ($valueComparable === '') {
+            return false;
+        }
+
+        foreach ($configured as $candidate) {
+            if ($valueComparable === healthQuestionnaireComparableOptionValue((string)$candidate)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
 if (!function_exists('healthQuestionnaireQuestionHasOtherOption')) {
     function healthQuestionnaireQuestionHasOtherOption(array $question): bool
     {
@@ -277,6 +397,8 @@ if (!function_exists('healthQuestionnaireFetchQuestions')) {
         foreach ($rows as &$row) {
             $row['options'] = [];
             $row['alert_values'] = [];
+            $row['no_issue_values'] = [];
+            $row['ignore_no_issue_options'] = (int)($row['ignore_no_issue_options'] ?? 1);
 
             $optionsRaw = trim((string)($row['options_json'] ?? ''));
             if ($optionsRaw !== '') {
@@ -291,6 +413,14 @@ if (!function_exists('healthQuestionnaireFetchQuestions')) {
                 $decodedAlertValues = json_decode($alertValuesRaw, true);
                 if (is_array($decodedAlertValues)) {
                     $row['alert_values'] = $decodedAlertValues;
+                }
+            }
+
+            $noIssueValuesRaw = trim((string)($row['no_issue_values_json'] ?? ''));
+            if ($noIssueValuesRaw !== '') {
+                $decodedNoIssueValues = json_decode($noIssueValuesRaw, true);
+                if (is_array($decodedNoIssueValues)) {
+                    $row['no_issue_values'] = $decodedNoIssueValues;
                 }
             }
         }
@@ -478,13 +608,33 @@ if (!function_exists('healthQuestionnaireEvaluateAlerts')) {
             } elseif ($mode === 'when_no') {
                 $trigger = trim((string)$value) === 'ne';
             } elseif ($mode === 'when_nonempty') {
-                $trigger = is_array($value) ? count($value) > 0 : trim((string)$value) !== '';
+                if (is_array($value)) {
+                    $meaningfulValues = array_values(array_filter($value, function ($item) use ($question): bool {
+                        return !healthQuestionnaireShouldIgnoreValueForQuestion((string)$item, $question);
+                    }));
+                    $trigger = count($meaningfulValues) > 0;
+                } else {
+                    $textValue = trim((string)$value);
+                    $trigger = $textValue !== '' && !healthQuestionnaireShouldIgnoreValueForQuestion($textValue, $question);
+                }
             } elseif ($mode === 'when_selected') {
                 $alertValues = is_array($question['alert_values'] ?? null) ? $question['alert_values'] : [];
                 if (is_array($value)) {
-                    $trigger = count(array_intersect($value, $alertValues)) > 0;
+                    $selectedValues = array_values(array_filter($value, function ($item) use ($question): bool {
+                        return !healthQuestionnaireShouldIgnoreValueForQuestion((string)$item, $question);
+                    }));
+                    $filteredAlertValues = array_values(array_filter($alertValues, function ($item) use ($question): bool {
+                        return !healthQuestionnaireShouldIgnoreValueForQuestion((string)$item, $question);
+                    }));
+                    $trigger = count(array_intersect($selectedValues, $filteredAlertValues)) > 0;
                 } else {
-                    $trigger = in_array(trim((string)$value), $alertValues, true);
+                    $singleValue = trim((string)$value);
+                    if (!healthQuestionnaireShouldIgnoreValueForQuestion($singleValue, $question)) {
+                        $filteredAlertValues = array_values(array_filter($alertValues, function ($item) use ($question): bool {
+                            return !healthQuestionnaireShouldIgnoreValueForQuestion((string)$item, $question);
+                        }));
+                        $trigger = in_array($singleValue, $filteredAlertValues, true);
+                    }
                 }
             }
 
@@ -558,6 +708,19 @@ if (!function_exists('healthQuestionnaireFetchLatestSubmission')) {
         $alerts = json_decode((string)($row['alerts_json'] ?? '[]'), true);
         if (is_array($alerts)) {
             $row['alerts'] = $alerts;
+        }
+
+        // Recompute alert summary from current rules so neutral choices (e.g. "žádné") do not create false warnings.
+        try {
+            $activeQuestions = healthQuestionnaireFetchQuestions($pdo, true);
+            if (!empty($activeQuestions)) {
+                $evaluation = healthQuestionnaireEvaluateAlerts($activeQuestions, $row['answers']);
+                $row['alerts'] = is_array($evaluation['alerts'] ?? null) ? $evaluation['alerts'] : [];
+                $row['alert_count'] = (int)($evaluation['alert_count'] ?? 0);
+                $row['status_flag'] = (string)($evaluation['status_flag'] ?? 'ok');
+            }
+        } catch (Throwable $e) {
+            // Keep stored values if runtime recompute fails.
         }
 
         return $row;
