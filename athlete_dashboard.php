@@ -1047,13 +1047,13 @@ renderAthleteHeader('Profil sportovce', false, true);
     </div>
     <?php endif; ?>
     <?php if ($athleteMyCoachEnabled): ?>
-    <a href="<?= BASE_URL ?>/athlete_mycoach.php" class="quick-tile quick-tile-info">
-        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-brain me-1"></i>MyCoach</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+    <a href="#" class="quick-tile quick-tile-info" onclick="return false;" aria-disabled="true">
+        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-brain me-1"></i>MyCoach <span class="badge rounded-pill bg-success">Pro</span></span>
+        <span class="quick-tile__value"><i class="fas fa-star"></i></span>
     </a>
     <?php else: ?>
     <div class="quick-tile quick-tile-muted">
-        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-lock me-1"></i>MyCoach <span class="badge rounded-pill bg-secondary">Uzamčeno</span></span>
+        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-lock me-1"></i>MyCoach <span class="badge rounded-pill bg-secondary">Pro</span></span>
         <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
     </div>
     <?php endif; ?>

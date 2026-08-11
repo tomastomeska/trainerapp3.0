@@ -208,6 +208,10 @@ try {
 renderAdminHeader('MyCoach administrace');
 ?>
 
+<div class="alert alert-info border-0 shadow-sm mb-4">
+    <i class="fas fa-info-circle me-2"></i>MyCoach je teď v režimu připravenosti pro předplatné. Administrace stále rozhoduje, kdo má přístup, a uživatelé vidí jen jednoduché tlačítko s označením <strong>Pro</strong>.
+</div>
+
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <div>
         <h4 class="fw-bold mb-1">

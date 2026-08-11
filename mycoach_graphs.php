@@ -5,6 +5,9 @@ require_once __DIR__ . '/includes/header.php';
 
 requireLogin();
 
+flash('info', 'MyCoach je nyní jen Pro modul. Přístup je řízen administrací.');
+redirect(BASE_URL . '/dashboard.php');
+
 $pdo = getDB();
 $coachId = (int)getCurrentCoachId();
 $coach = getCurrentCoach();

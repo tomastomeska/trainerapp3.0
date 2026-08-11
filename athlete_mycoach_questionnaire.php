@@ -5,6 +5,9 @@ require_once __DIR__ . '/includes/athlete_header.php';
 
 requireAthleteLogin();
 
+flash('info', 'MyCoach je nyní jen Pro modul. Přístup je řízen administrací.');
+redirect(BASE_URL . '/athlete_dashboard.php');
+
 $pdo = getDB();
 $athleteId = (int)getCurrentAthleteId();
 $athlete = getCurrentAthlete();
