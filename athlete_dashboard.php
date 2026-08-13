@@ -170,6 +170,7 @@ if (!$athlete) {
 $athleteSpecialTrainingEnabled = ((int)($athlete['special_training_enabled'] ?? 0)) === 1;
 $athleteMyCoachEnabled = mycoachAccessEnabledForAthlete($pdo, $athleteId);
 $mycoachAppIsLive = mycoachAppIsLive();
+$mycoachAppUserCanAccess = $mycoachAppIsLive || mycoachAppCanAccess($pdo, 'athlete', $athleteId);
 
 $supportBankAccount = trim(getAppSetting('support_bank_account', ''));
 $supportContributorName = trim((string)($athlete['first_name'] . ' ' . $athlete['last_name']));
@@ -1047,13 +1048,13 @@ renderAthleteHeader('Profil sportovce', false, true);
         <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
     </div>
     <?php endif; ?>
-    <?php if ($mycoachAppIsLive): ?>
+    <?php if ($mycoachAppUserCanAccess): ?>
     <a href="<?= BASE_URL ?>/athlete_mycoach_app.php" class="quick-tile quick-tile-warning">
     <?php else: ?>
     <a href="#" class="quick-tile quick-tile-warning" data-bs-toggle="modal" data-bs-target="#modalMyCoachComingSoon">
     <?php endif; ?>
-        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-brain me-1"></i>MyCoach <span class="badge rounded-pill <?= $mycoachAppIsLive ? 'bg-success' : 'bg-warning text-dark' ?>"><?= $mycoachAppIsLive ? 'Pro' : 'Brzy' ?></span></span>
-        <span class="quick-tile__value"><i class="fas fa-<?= $mycoachAppIsLive ? 'star' : 'rocket' ?>"></i></span>
+        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-brain me-1"></i>MyCoach <span class="badge rounded-pill <?= $mycoachAppUserCanAccess ? 'bg-success' : 'bg-warning text-dark' ?>"><?= $mycoachAppUserCanAccess ? 'Pro' : 'Brzy' ?></span></span>
+        <span class="quick-tile__value"><i class="fas fa-<?= $mycoachAppUserCanAccess ? 'star' : 'rocket' ?>"></i></span>
     </a>
     <?php if ($healthQuestionnaireAccessEnabled): ?>
     <a href="<?= BASE_URL ?>/athlete_health_questionnaire.php" class="quick-tile <?= h($healthTileClass) ?>">

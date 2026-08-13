@@ -5080,6 +5080,64 @@ function ensurePasswordAuditColumns(PDO $pdo): void {
   }
 }
 
+if (!function_exists('sendMyCoachSubscriptionActivatedEmail')) {
+  function sendMyCoachSubscriptionActivatedEmail(PDO $pdo, string $userType, int $userId, string $startDate, string $endDate): bool {
+    // Načti email a jméno uživatele
+    $email = '';
+    $name  = '';
+    try {
+      if ($userType === 'athlete') {
+        $row = $pdo->prepare('SELECT first_name, last_name, email FROM athletes WHERE id = ? LIMIT 1');
+        $row->execute([$userId]);
+        $row = $row->fetch();
+        if ($row) { $email = (string)($row['email'] ?? ''); $name = trim((string)($row['first_name'] ?? '') . ' ' . (string)($row['last_name'] ?? '')); }
+      } else {
+        $row = $pdo->prepare('SELECT name, username, email FROM coaches WHERE id = ? LIMIT 1');
+        $row->execute([$userId]);
+        $row = $row->fetch();
+        if ($row) { $email = (string)($row['email'] ?? ''); $name = trim((string)($row['name'] ?? $row['username'] ?? '')); }
+      }
+    } catch (Throwable $e) { return false; }
+
+    if ($email === '') return false;
+
+    $startFmt = date('j. n. Y', strtotime($startDate));
+    $endFmt   = date('j. n. Y', strtotime($endDate));
+    $subject  = 'Vaše předplatné MyCoach App bylo aktivováno';
+    $body = "Dobrý den,\n\n"
+          . "předplatné MyCoach App bylo pro váš účet aktivováno.\n\n"
+          . "Platnost předplatného: {$startFmt} – {$endFmt}\n\n"
+          . "Nyní máte plný přístup ke všem funkcím aplikace. Přihlaste se a začněte.\n\n"
+          . "S pozdravem,\nTým MyCoach";
+
+    $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
+    if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
+      // @phan-suppress-next-line PhanUndeclaredFunction
+      return function_exists('isMail') ? isMail($email, $subject, nl2br(htmlspecialchars($body)), strip_tags($body)) : false;
+    }
+    require_once $phpmailerSrc . '/Exception.php';
+    require_once $phpmailerSrc . '/PHPMailer.php';
+    require_once $phpmailerSrc . '/SMTP.php';
+
+    try {
+      $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+      // @phan-suppress-next-line PhanUndeclaredFunction
+      if (function_exists('configureSmtp')) { configureSmtp($mail); }
+      $mail->addAddress($email, $name);
+      $mail->Subject = $subject;
+      $mail->isHTML(true);
+      $mail->Body    = '<p>' . nl2br(htmlspecialchars($body)) . '</p>';
+      $mail->AltBody = $body;
+      $mail->send();
+      return true;
+    } catch (Throwable $e) {
+      error_log('sendMyCoachSubscriptionActivatedEmail SMTP: ' . $e->getMessage());
+      // @phan-suppress-next-line PhanUndeclaredFunction
+      return function_exists('isMail') ? isMail($email, $subject, nl2br(htmlspecialchars($body)), $body) : false;
+    }
+  }
+}
+
 function sendAthleteWelcomeEmail(string $toEmail, string $athleteName, string $password, string $loginUrl): bool {
   $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
   if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {

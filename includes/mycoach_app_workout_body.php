@@ -3,7 +3,7 @@
 
 $workoutId = (int)($_GET['id'] ?? 0);
 if ($workoutId <= 0) { flash('danger','Neplatný trénink.'); redirect($appUrl); }
-if (!mycoachAppIsLive() || !mycoachAppCanAccess($pdo, $userType, $userId)) {
+if (!mycoachAppIsLive() && !mycoachAppCanAccess($pdo, $userType, $userId)) {
     flash('warning','Přístup k MyCoach není aktivní.'); redirect($appUrl);
 }
 

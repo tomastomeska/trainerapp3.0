@@ -50,12 +50,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare('UPDATE mycoach_app_sections SET title=?,subtitle=?,icon_class=?,tile_color=?,section_type=?,description=?,sort_order=?,is_active=?,audience=? WHERE id=?')
                 ->execute([$title,$subtitle,$icon,$color,$type,$desc,$sort,$active,$audience,$id]);
             flash('success', 'Sekce byla uložena.');
+            redirect(BASE_URL . '/admin/mycoach_content.php?sec=' . $id);
         } else {
             $pdo->prepare('INSERT INTO mycoach_app_sections (title,subtitle,icon_class,tile_color,section_type,description,sort_order,is_active,audience) VALUES (?,?,?,?,?,?,?,?,?)')
                 ->execute([$title,$subtitle,$icon,$color,$type,$desc,$sort,$active,$audience]);
-            flash('success', 'Sekce byla přidána.');
+            flash('success', 'Sekce byla přidána. Klikněte na novou záložku pro přidání obsahu.');
+            redirect(BASE_URL . '/admin/mycoach_content.php?sec=' . (int)$pdo->lastInsertId());
         }
-        redirect(BASE_URL . '/admin/mycoach_content.php#sections');
     }
 
     if ($action === 'delete_section') {
@@ -79,7 +80,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $sort     = (int)($_POST['sort_order'] ?? 0);
         $active   = isset($_POST['is_active']) ? 1 : 0;
 
-        if ($title === '') { flash('danger', 'Název videa je povinný.'); redirect(BASE_URL . '/admin/mycoach_content.php#videos'); }
+        if ($title === '') { 
+            $redirectTarget = $secId > 0 ? (BASE_URL . '/admin/mycoach_content.php?sec=' . $secId) : (BASE_URL . '/admin/mycoach_content.php#videos');
+            flash('danger', 'Název videa je povinný.'); 
+            redirect($redirectTarget); 
+        }
 
         if ($id > 0) {
             $pdo->prepare('UPDATE mycoach_app_videos SET section_id=?,title=?,description=?,video_type=?,video_url=?,video_path=?,thumbnail=?,duration_seconds=?,tags=?,sort_order=?,is_active=? WHERE id=?')
@@ -90,13 +95,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ->execute([$secId,$title,$desc,$vtype,$vurl,$vpath,$thumb,$dur,$tags,$sort,$active]);
             flash('success', 'Video bylo přidáno.');
         }
-        redirect(BASE_URL . '/admin/mycoach_content.php#videos');
+        $redirectTarget = $secId > 0 ? (BASE_URL . '/admin/mycoach_content.php?sec=' . $secId) : (BASE_URL . '/admin/mycoach_content.php#videos');
+        redirect($redirectTarget);
     }
 
     if ($action === 'delete_video') {
         $id = (int)($_POST['video_id'] ?? 0);
+        $secId = (int)($_POST['section_id'] ?? 0);
         if ($id > 0) { $pdo->prepare('DELETE FROM mycoach_app_videos WHERE id=?')->execute([$id]); flash('success','Video smazáno.'); }
-        redirect(BASE_URL . '/admin/mycoach_content.php#videos');
+        $redirectTarget = $secId > 0 ? (BASE_URL . '/admin/mycoach_content.php?sec=' . $secId) : (BASE_URL . '/admin/mycoach_content.php#videos');
+        redirect($redirectTarget);
     }
 
     // ── Cviky ──────────────────────────────────────────────
@@ -111,15 +119,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $equip  = trim((string)($_POST['equipment'] ?? ''));
         $diff   = in_array(trim((string)($_POST['difficulty'] ?? '')), ['beginner','intermediate','advanced'], true) ? trim((string)$_POST['difficulty']) : 'intermediate';
         $vurl   = trim((string)($_POST['video_url'] ?? ''));
+        // Nahraný soubor videa má přednost před URL
+        $vupload = trim((string)($_POST['video_path_upload'] ?? ''));
+        if ($vupload !== '') $vurl = $vupload;
         $thumb  = trim((string)($_POST['thumbnail'] ?? ''));
+        // Nahraný obrázek má přednost
+        $thumbUp = trim((string)($_POST['thumbnail_upload'] ?? ''));
+        if ($thumbUp !== '') $thumb = $thumbUp;
         $sort   = (int)($_POST['sort_order'] ?? 0);
         $active = isset($_POST['is_active']) ? 1 : 0;
 
         if ($name === '') { flash('danger', 'Název cviku je povinný.'); redirect(BASE_URL . '/admin/mycoach_content.php#exercises'); }
 
         if ($id > 0) {
-            $pdo->prepare('UPDATE mycoach_app_exercises SET name=?,category=?,description=?,instructions=?,muscle_groups=?,equipment=?,difficulty=?,video_url=?,thumbnail=?,sort_order=?,is_active=? WHERE id=?')
-                ->execute([$name,$cat,$desc,$instr,$muscles,$equip,$diff,$vurl,$thumb,$sort,$active,$id]);
+            $baseSlug = $slug; $i = 1;
+            while (true) {
+                $chk = $pdo->prepare('SELECT id FROM mycoach_app_exercises WHERE slug=? AND id != ? LIMIT 1');
+                $chk->execute([$slug, $id]);
+                if (!$chk->fetch()) break;
+                $slug = $baseSlug . '-' . $i++;
+            }
+            $pdo->prepare('UPDATE mycoach_app_exercises SET name=?,slug=?,category=?,description=?,instructions=?,muscle_groups=?,equipment=?,difficulty=?,video_url=?,thumbnail=?,sort_order=?,is_active=? WHERE id=?')
+                ->execute([$name,$slug,$cat,$desc,$instr,$muscles,$equip,$diff,$vurl,$thumb,$sort,$active,$id]);
             flash('success', 'Cvik byl uložen.');
         } else {
             // Unikátní slug při duplicitách
@@ -155,7 +176,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $sort  = (int)($_POST['sort_order'] ?? 0);
         $active= isset($_POST['is_active']) ? 1 : 0;
 
-        if ($title === '') { flash('danger', 'Název tréninku je povinný.'); redirect(BASE_URL . '/admin/mycoach_content.php#workouts'); }
+        if ($title === '') {
+            $redirectTarget = $secId > 0 ? (BASE_URL . '/admin/mycoach_content.php?sec=' . $secId) : (BASE_URL . '/admin/mycoach_content.php#workouts');
+            flash('danger', 'Název tréninku je povinný.');
+            redirect($redirectTarget);
+        }
 
         if ($id > 0) {
             $pdo->prepare('UPDATE mycoach_app_workouts SET section_id=?,title=?,description=?,difficulty=?,duration_minutes=?,thumbnail=?,sort_order=?,is_active=? WHERE id=?')
@@ -165,13 +190,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ->execute([$secId,$title,$desc,$diff,$dur,$thumb,$sort,$active]);
         }
         flash('success', 'Trénink byl uložen.');
-        redirect(BASE_URL . '/admin/mycoach_content.php#workouts');
+        $redirectTarget = $secId > 0 ? (BASE_URL . '/admin/mycoach_content.php?sec=' . $secId) : (BASE_URL . '/admin/mycoach_content.php#workouts');
+        redirect($redirectTarget);
     }
 
     if ($action === 'delete_workout') {
         $id = (int)($_POST['workout_id'] ?? 0);
+        $secId = (int)($_POST['section_id'] ?? 0);
         if ($id > 0) { $pdo->prepare('DELETE FROM mycoach_app_workouts WHERE id=?')->execute([$id]); flash('success','Trénink smazán.'); }
-        redirect(BASE_URL . '/admin/mycoach_content.php#workouts');
+        $redirectTarget = $secId > 0 ? (BASE_URL . '/admin/mycoach_content.php?sec=' . $secId) : (BASE_URL . '/admin/mycoach_content.php#workouts');
+        redirect($redirectTarget);
     }
 
     // ── Cviky v tréninku ───────────────────────────────────
@@ -199,6 +227,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($id > 0) { $pdo->prepare('DELETE FROM mycoach_app_workout_exercises WHERE id=?')->execute([$id]); flash('success','Cvik odebrán.'); }
         redirect(BASE_URL . '/admin/mycoach_content.php?edit_workout=' . $wid . '#workouts');
     }
+
+    // ── Obsah sekce (section_items) ────────────────────────
+    if ($action === 'save_section_item') {
+        $id     = (int)($_POST['item_id'] ?? 0);
+        $secId  = (int)($_POST['item_section_id'] ?? 0);
+        $type   = in_array(trim((string)($_POST['item_type'] ?? '')), ['video_youtube','video_vimeo','video_upload','link','article','image'], true)
+                  ? trim((string)$_POST['item_type']) : 'video_youtube';
+        $title  = trim((string)($_POST['item_title'] ?? ''));
+        $desc   = trim((string)($_POST['item_description'] ?? ''));
+        $url    = trim((string)($_POST['item_url'] ?? ''));
+        $fpath  = trim((string)($_POST['item_file_path'] ?? ''));
+        $thumb  = trim((string)($_POST['item_thumbnail'] ?? ''));
+        $dur    = is_numeric($_POST['item_duration_seconds'] ?? '') ? (int)$_POST['item_duration_seconds'] : null;
+        $cont   = trim((string)($_POST['item_content'] ?? ''));
+        $sort   = (int)($_POST['item_sort_order'] ?? 0);
+        $active = isset($_POST['item_is_active']) ? 1 : 0;
+
+        if ($title === '') { flash('danger', 'Název položky je povinný.'); redirect(BASE_URL . '/admin/mycoach_content.php?sec=' . $secId); }
+        if ($secId <= 0)   { flash('danger', 'Chybí sekce.'); redirect(BASE_URL . '/admin/mycoach_content.php'); }
+
+        if ($id > 0) {
+            $pdo->prepare('UPDATE mycoach_app_section_items SET item_type=?,title=?,description=?,url=?,file_path=?,thumbnail=?,duration_seconds=?,content=?,sort_order=?,is_active=? WHERE id=?')
+                ->execute([$type,$title,$desc,$url,$fpath,$thumb,$dur,$cont,$sort,$active,$id]);
+            flash('success', 'Položka uložena.');
+        } else {
+            $pdo->prepare('INSERT INTO mycoach_app_section_items (section_id,item_type,title,description,url,file_path,thumbnail,duration_seconds,content,sort_order,is_active) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+                ->execute([$secId,$type,$title,$desc,$url,$fpath,$thumb,$dur,$cont,$sort,$active]);
+            flash('success', 'Položka přidána.');
+        }
+        redirect(BASE_URL . '/admin/mycoach_content.php?sec=' . $secId);
+    }
+
+    if ($action === 'delete_section_item') {
+        $id    = (int)($_POST['item_id'] ?? 0);
+        $secId = (int)($_POST['item_section_id'] ?? 0);
+        if ($id > 0) { $pdo->prepare('DELETE FROM mycoach_app_section_items WHERE id=?')->execute([$id]); flash('success', 'Položka smazána.'); }
+        redirect(BASE_URL . '/admin/mycoach_content.php?sec=' . $secId);
+    }
+
+    // ── Výchozí sekce ──────────────────────────────────────
+    if ($action === 'create_default_sections') {
+        $defaults = [
+            ['Cviky',         'Encyklopedie cviků',   'fa-person-running', 'blue',   'exercises', 0],
+            ['Videa',         'Video obsah',           'fa-play-circle',    'orange', 'videos',    10],
+            ['Tréninky',      'Tréninkové plány',      'fa-dumbbell',       'red',    'workout',   20],
+        ];
+        $lastId = 0;
+        foreach ($defaults as [$title, $sub, $icon, $color, $type, $sort]) {
+            $exists = $pdo->prepare('SELECT id FROM mycoach_app_sections WHERE title=? LIMIT 1');
+            $exists->execute([$title]);
+            if (!$exists->fetch()) {
+                $pdo->prepare('INSERT INTO mycoach_app_sections (title,subtitle,icon_class,tile_color,section_type,sort_order,is_active,audience) VALUES (?,?,?,?,?,?,1,"all")')
+                    ->execute([$title,$sub,$icon,$color,$type,$sort]);
+                if ($lastId === 0) $lastId = (int)$pdo->lastInsertId();
+            }
+        }
+        flash('success', 'Výchozí sekce byly vytvořeny. Klikněte na záložku sekce a přidejte obsah.');
+        redirect(BASE_URL . '/admin/mycoach_content.php');
+    }
 }
 
 // ── Načtení dat ───────────────────────────────────────────────
@@ -210,6 +297,50 @@ try { $sections  = $pdo->query('SELECT * FROM mycoach_app_sections ORDER BY sort
 try { $videos    = $pdo->query('SELECT v.*, s.title AS section_title FROM mycoach_app_videos v LEFT JOIN mycoach_app_sections s ON s.id=v.section_id ORDER BY v.sort_order ASC, v.id ASC')->fetchAll() ?: []; } catch(Throwable $e){}
 try { $exercises = $pdo->query('SELECT * FROM mycoach_app_exercises ORDER BY sort_order ASC, name ASC')->fetchAll() ?: []; } catch(Throwable $e){}
 try { $workouts  = $pdo->query('SELECT w.*, s.title AS section_title FROM mycoach_app_workouts w LEFT JOIN mycoach_app_sections s ON s.id=w.section_id ORDER BY w.sort_order ASC, w.id ASC')->fetchAll() ?: []; } catch(Throwable $e){}
+
+// Načtení section_items (všechny; pro display se filtrují per sekce v šabloně)
+$sectionItems = [];
+try {
+    $siStmt = $pdo->query('SELECT * FROM mycoach_app_section_items ORDER BY sort_order ASC, id ASC');
+    foreach ($siStmt->fetchAll() ?: [] as $si) {
+        $sectionItems[(int)$si['section_id']][] = $si;
+    }
+} catch(Throwable $e){}
+
+// Automaticky vytvoř výchozí sekce při prvním spuštění (prázdná DB)
+if (empty($sections)) {
+    $defaults = [
+        ['Cviky',    'Encyklopedie cviků',  'fa-person-running', 'blue',   'exercises', 0],
+        ['Videa',    'Video obsah',          'fa-play-circle',    'orange', 'videos',    10],
+        ['Tréninky', 'Tréninkové plány',     'fa-dumbbell',       'red',    'workout',   20],
+    ];
+    foreach ($defaults as [$t, $s, $ic, $co, $ty, $so]) {
+        try {
+            $pdo->prepare('INSERT IGNORE INTO mycoach_app_sections (title,subtitle,icon_class,tile_color,section_type,sort_order,is_active,audience) VALUES (?,?,?,?,?,?,1,"all")')
+                ->execute([$t,$s,$ic,$co,$ty,$so]);
+        } catch(Throwable $e){}
+    }
+    try { $sections = $pdo->query('SELECT * FROM mycoach_app_sections ORDER BY sort_order ASC, id ASC')->fetchAll() ?: []; } catch(Throwable $e){}
+}
+
+// Aktivní sekce z URL parametru (pro přímý skok po POST)
+$activeSectionId = (int)($_GET['sec'] ?? 0);
+
+$exerciseCategories = [];
+$exerciseMuscles = [];
+foreach ($exercises as $exItem) {
+    $cat = trim((string)($exItem['category'] ?? ''));
+    if ($cat !== '') { $exerciseCategories[$cat] = $cat; }
+    $musclesRaw = trim((string)($exItem['muscle_groups'] ?? ''));
+    if ($musclesRaw !== '') {
+        foreach (preg_split('/[,;|\/]+/', $musclesRaw) as $part) {
+            $part = trim((string)$part);
+            if ($part !== '') { $exerciseMuscles[$part] = $part; }
+        }
+    }
+}
+ksort($exerciseCategories, SORT_NATURAL | SORT_FLAG_CASE);
+ksort($exerciseMuscles, SORT_NATURAL | SORT_FLAG_CASE);
 
 // Detail tréninku pro edit
 $editWorkoutId = (int)($_GET['edit_workout'] ?? 0);
@@ -275,17 +406,38 @@ if ($_flash): ?>
 <?php endif; ?>
 
 <!-- Tabs -->
-<ul class="nav nav-tabs mcc-tab-nav mb-4" id="mccTabs">
-  <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabSections"><i class="fas fa-grid-2 me-1"></i>Sekce</a></li>
-  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabVideos"><i class="fas fa-play-circle me-1"></i>Videa</a></li>
-  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabExercises"><i class="fas fa-person-running me-1"></i>Cviky</a></li>
-  <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabWorkouts"><i class="fas fa-dumbbell me-1"></i>Tréninky</a></li>
+<ul class="nav nav-tabs mcc-tab-nav mb-4 flex-wrap" id="mccTabs">
+  <li class="nav-item">
+    <a class="nav-link <?= $activeSectionId === 0 ? 'active' : '' ?>" data-bs-toggle="tab" data-bs-target="#tabSections">
+      <i class="fas fa-grid-2 me-1"></i>Sekce
+    </a>
+  </li>
+  <?php foreach ($sections as $sec): ?>
+  <li class="nav-item">
+    <a class="nav-link <?= $activeSectionId === (int)$sec['id'] ? 'active' : '' ?>"
+       data-bs-toggle="tab" data-bs-target="#tabSection<?= (int)$sec['id'] ?>">
+      <i class="fas <?= h($sec['icon_class'] ?? 'fa-cube') ?> me-1"></i><?= h($sec['title']) ?>
+    </a>
+  </li>
+  <?php endforeach; ?>
+  <li class="nav-item ms-auto">
+    <a class="nav-link text-muted border-start ps-3" data-bs-toggle="tab" data-bs-target="#tabExercises"
+       title="Globální encyklopedie cviků – není viditelná jako sekce v app, slouží jen pro správu obsahu">
+      <i class="fas fa-wrench me-1"></i>Správa cviků
+    </a>
+  </li>
 </ul>
 
 <div class="tab-content">
 
 <!-- ══════════ SEKCE ══════════ -->
 <div class="tab-pane fade show active" id="tabSections">
+  <div class="alert alert-info border-0 mb-3 small">
+    <i class="fas fa-circle-info me-1"></i>
+    <strong>Jak to funguje:</strong> Sekce = dlaždice, které vidí uživatelé v aplikaci.
+    Každá sekce má svoji záložku v tomto adminu — klikni na záložku sekce a přidej obsah (video, odkaz, článek, obrázek).
+    Sekce s typem <strong>Cviky</strong> automaticky zobrazí globální encyklopedii cviků (spravuje se v záložce <em>Cviky</em> napravo).
+  </div>
   <div class="row g-3">
     <div class="col-lg-4">
       <div class="card mcc-card">
@@ -361,7 +513,16 @@ if ($_flash): ?>
         <div class="card-header bg-dark text-white">Sekce (<?= count($sections) ?>)</div>
         <div class="card-body p-0">
           <?php if (empty($sections)): ?>
-            <p class="p-3 text-muted">Zatím žádné sekce.</p>
+            <div class="p-4 text-center">
+              <p class="text-muted mb-3">Zatím žádné sekce. Vytvořte vlastní vlevo, nebo začněte s výchozími.</p>
+              <form method="post" class="d-inline">
+                <?= csrfField() ?>
+                <input type="hidden" name="action" value="create_default_sections">
+                <button type="submit" class="btn btn-warning btn-sm fw-semibold">
+                  <i class="fas fa-magic me-1"></i>Vytvořit výchozí sekce (Cviky, Videa, Tréninky)
+                </button>
+              </form>
+            </div>
           <?php else: ?>
           <div class="table-responsive">
           <table class="table table-sm align-middle mb-0">
@@ -383,9 +544,23 @@ if ($_flash): ?>
               </td>
               <td class="text-end">
                 <button type="button" class="btn btn-xs btn-outline-primary btn-sm"
-                        onclick="sectionFormFill(<?= json_encode($sec) ?>)">
+                        onclick='sectionFormFill(<?= json_encode($sec, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>)'>
                   <i class="fas fa-pen"></i>
                 </button>
+                <?php if (in_array($sec['section_type'], ['videos','mixed'], true)): ?>
+                <button type="button" class="btn btn-xs btn-outline-warning btn-sm"
+                        title="Přidat video do této sekce"
+                        onclick="jumpToAddVideo(<?= (int)$sec['id'] ?>)">
+                  <i class="fas fa-film"></i>+
+                </button>
+                <?php endif; ?>
+                <?php if (in_array($sec['section_type'], ['workout','mixed'], true)): ?>
+                <button type="button" class="btn btn-xs btn-outline-info btn-sm"
+                        title="Přidat trénink do této sekce"
+                        onclick="jumpToAddWorkout(<?= (int)$sec['id'] ?>)">
+                  <i class="fas fa-dumbbell"></i>+
+                </button>
+                <?php endif; ?>
                 <form method="post" class="d-inline" onsubmit="return confirm('Smazat sekci?')">
                   <?= csrfField() ?><input type="hidden" name="action" value="delete_section">
                   <input type="hidden" name="section_id" value="<?= (int)$sec['id'] ?>">
@@ -440,8 +615,21 @@ if ($_flash): ?>
               <input type="text" name="video_url" id="vfUrl" class="form-control form-control-sm" placeholder="https://youtube.com/watch?v=...">
             </div>
             <div class="mb-2 d-none" id="vfPathWrap">
-              <label class="form-label small fw-semibold">Cesta k souboru (uploads/...)</label>
-              <input type="text" name="video_path" id="vfPath" class="form-control form-control-sm" placeholder="uploads/movie/...">
+              <label class="form-label small fw-semibold">Nahrát video ze zařízení</label>
+              <input type="hidden" name="video_path" id="vfPath">
+              <div class="input-group input-group-sm">
+                <input type="text" id="vfPathDisplay" class="form-control form-control-sm" placeholder="Žádný soubor nevybrán" readonly>
+                <label class="btn btn-outline-warning btn-sm mb-0" for="vfFileInput" style="cursor:pointer;">
+                  <i class="fas fa-folder-open me-1"></i>Vybrat
+                </label>
+              </div>
+              <input type="file" id="vfFileInput" accept="video/mp4,video/webm,video/ogg,video/quicktime,video/x-msvideo,video/x-matroska" class="d-none">
+              <div id="vfUploadProgress" class="d-none mt-1">
+                <div class="progress" style="height:6px;">
+                  <div id="vfUploadBar" class="progress-bar bg-warning" style="width:0%"></div>
+                </div>
+                <div id="vfUploadStatus" class="small text-muted mt-1">Nahrávám...</div>
+              </div>
             </div>
             <div class="mb-2">
               <label class="form-label small fw-semibold">Náhledový obrázek (URL/cesta)</label>
@@ -502,7 +690,7 @@ if ($_flash): ?>
               <td class="text-center small"><?= $vid['duration_seconds'] ? mycoachAppFormatDuration((int)$vid['duration_seconds']) : '–' ?></td>
               <td class="text-end">
                 <button type="button" class="btn btn-xs btn-outline-primary btn-sm"
-                        onclick="videoFormFill(<?= json_encode($vid) ?>)">
+                        onclick='videoFormFill(<?= json_encode($vid, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>)'>
                   <i class="fas fa-pen"></i>
                 </button>
                 <form method="post" class="d-inline" onsubmit="return confirm('Smazat video?')">
@@ -523,13 +711,194 @@ if ($_flash): ?>
   </div>
 </div>
 
+<!-- ══════════ DYNAMICKÉ SEKCE ══════════ -->
+<?php
+$itemTypeLabels = [
+    'video_youtube' => ['label'=>'YouTube video','icon'=>'fa-youtube','color'=>'text-danger'],
+    'video_vimeo'   => ['label'=>'Vimeo video',  'icon'=>'fa-vimeo', 'color'=>'text-info'],
+    'video_upload'  => ['label'=>'Vlastní video (upload)','icon'=>'fa-video','color'=>'text-warning'],
+    'link'          => ['label'=>'Odkaz',         'icon'=>'fa-link',  'color'=>'text-primary'],
+    'article'       => ['label'=>'Článek / text', 'icon'=>'fa-file-lines','color'=>'text-success'],
+    'image'         => ['label'=>'Obrázek',       'icon'=>'fa-image', 'color'=>'text-secondary'],
+];
+foreach ($sections as $sec):
+    $secId    = (int)$sec['id'];
+    $secItems = $sectionItems[$secId] ?? [];
+    $isActive = $activeSectionId === $secId;
+?>
+<div class="tab-pane fade <?= $isActive ? 'show active' : '' ?>" id="tabSection<?= $secId ?>">
+  <div class="row g-3">
+    <!-- Formulář pro přidání/editaci položky -->
+    <div class="col-lg-4">
+      <div class="card mcc-card">
+        <div class="card-header" style="background:#1a1a2e;color:#f7941d;">
+          <i class="fas fa-plus me-1"></i><span id="sifTitle_<?= $secId ?>">Přidat položku</span>
+        </div>
+        <div class="card-body">
+          <form method="post" id="sifForm_<?= $secId ?>">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="save_section_item">
+            <input type="hidden" name="item_id" id="sifId_<?= $secId ?>" value="0">
+            <input type="hidden" name="item_section_id" value="<?= $secId ?>">
+
+            <div class="mb-2">
+              <label class="form-label small fw-semibold">Typ obsahu</label>
+              <select name="item_type" id="sifType_<?= $secId ?>" class="form-select form-select-sm"
+                      onchange="sifTypeChange(<?= $secId ?>)">
+                <?php foreach ($itemTypeLabels as $k => $v): ?>
+                <option value="<?= $k ?>"><?= $v['label'] ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label small fw-semibold">Název *</label>
+              <input type="text" name="item_title" id="sifItemTitle_<?= $secId ?>" class="form-control form-control-sm" required>
+            </div>
+
+            <!-- URL (pro video_youtube, video_vimeo, link) -->
+            <div class="mb-2" id="sifUrlWrap_<?= $secId ?>">
+              <label class="form-label small fw-semibold" id="sifUrlLabel_<?= $secId ?>">URL</label>
+              <input type="text" name="item_url" id="sifUrl_<?= $secId ?>" class="form-control form-control-sm"
+                     placeholder="https://...">
+              <div id="sifLinkHint_<?= $secId ?>" class="form-text d-none">
+                <i class="fas fa-circle-info me-1"></i>Odkaz se v aplikaci otevře v integrovaném prohlížeči.
+              </div>
+            </div>
+
+            <!-- Soubor (pro video_upload, image) -->
+            <div class="mb-2 d-none" id="sifFileWrap_<?= $secId ?>">
+              <label class="form-label small fw-semibold" id="sifFileLabel_<?= $secId ?>">Nahrát soubor</label>
+              <input type="hidden" name="item_file_path" id="sifFilePath_<?= $secId ?>">
+              <div class="input-group input-group-sm">
+                <input type="text" id="sifFileDisplay_<?= $secId ?>" class="form-control form-control-sm" placeholder="Žádný soubor" readonly>
+                <label class="btn btn-outline-warning btn-sm mb-0" for="sifFileInput_<?= $secId ?>" style="cursor:pointer;">
+                  <i class="fas fa-folder-open me-1"></i>Vybrat
+                </label>
+              </div>
+              <input type="file" id="sifFileInput_<?= $secId ?>" class="d-none">
+              <div id="sifFileProgress_<?= $secId ?>" class="d-none mt-1">
+                <div class="progress" style="height:6px;">
+                  <div id="sifFileBar_<?= $secId ?>" class="progress-bar bg-warning" style="width:0%"></div>
+                </div>
+                <div id="sifFileStatus_<?= $secId ?>" class="small text-muted mt-1">Nahrávám...</div>
+              </div>
+            </div>
+
+            <!-- Obsah článku -->
+            <div class="mb-2 d-none" id="sifContentWrap_<?= $secId ?>">
+              <label class="form-label small fw-semibold">Text / obsah článku</label>
+              <textarea name="item_content" id="sifContent_<?= $secId ?>" class="form-control form-control-sm" rows="6"></textarea>
+            </div>
+
+            <!-- Náhled -->
+            <div class="mb-2" id="sifThumbWrap_<?= $secId ?>">
+              <label class="form-label small fw-semibold">Náhledový obrázek (URL nebo cesta)</label>
+              <input type="text" name="item_thumbnail" id="sifThumb_<?= $secId ?>" class="form-control form-control-sm" placeholder="https://...">
+            </div>
+
+            <!-- Délka (jen pro videa) -->
+            <div class="mb-2 d-none" id="sifDurWrap_<?= $secId ?>">
+              <label class="form-label small fw-semibold">Délka videa (sekundy)</label>
+              <input type="number" name="item_duration_seconds" id="sifDur_<?= $secId ?>" class="form-control form-control-sm" min="0">
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label small fw-semibold">Popis</label>
+              <textarea name="item_description" id="sifDesc_<?= $secId ?>" class="form-control form-control-sm" rows="2"></textarea>
+            </div>
+
+            <div class="row g-2 mb-2">
+              <div class="col-6">
+                <label class="form-label small fw-semibold">Pořadí</label>
+                <input type="number" name="item_sort_order" id="sifSort_<?= $secId ?>" class="form-control form-control-sm" value="<?= count($secItems) * 10 ?>">
+              </div>
+            </div>
+            <div class="mb-3 form-check">
+              <input type="checkbox" name="item_is_active" id="sifActive_<?= $secId ?>" class="form-check-input" value="1" checked>
+              <label class="form-check-label small" for="sifActive_<?= $secId ?>">Aktivní</label>
+            </div>
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-warning btn-sm fw-semibold flex-grow-1">Uložit</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm"
+                      onclick="sifReset(<?= $secId ?>)">Reset</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Seznam položek sekce -->
+    <div class="col-lg-8">
+      <div class="card mcc-card">
+        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+          <span><?= h($sec['title']) ?> (<?= count($secItems) ?> položek)</span>
+          <span class="badge bg-secondary small"><?= h($sectionTypes[$sec['section_type']]['label'] ?? $sec['section_type']) ?></span>
+        </div>
+        <div class="card-body p-0">
+          <?php if (empty($secItems)): ?>
+            <p class="p-3 text-muted small">Žádné položky. Přidejte první pomocí formuláře vlevo.</p>
+          <?php else: ?>
+          <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr><th>#</th><th>Typ</th><th>Název</th><th class="text-center">Aktivní</th><th class="text-end">Akce</th></tr>
+            </thead>
+            <tbody>
+            <?php foreach ($secItems as $si): ?>
+            <?php
+              $itInfo = $itemTypeLabels[$si['item_type']] ?? ['label'=>$si['item_type'],'icon'=>'fa-cube','color'=>''];
+            ?>
+            <tr>
+              <td class="text-muted small"><?= (int)$si['sort_order'] ?></td>
+              <td>
+                <span class="<?= $itInfo['color'] ?>">
+                  <i class="fas <?= $itInfo['icon'] ?>"></i>
+                </span>
+                <span class="small ms-1"><?= $itInfo['label'] ?></span>
+              </td>
+              <td>
+                <div class="fw-semibold"><?= h($si['title']) ?></div>
+                <?php if (!empty($si['url'])): ?>
+                  <div class="small text-muted text-truncate" style="max-width:220px;"><?= h($si['url']) ?></div>
+                <?php endif; ?>
+              </td>
+              <td class="text-center">
+                <span class="badge <?= $si['is_active'] ? 'bg-success' : 'bg-secondary' ?>"><?= $si['is_active'] ? 'Ano' : 'Ne' ?></span>
+              </td>
+              <td class="text-end">
+                <button type="button" class="btn btn-xs btn-outline-primary btn-sm"
+                        onclick='sifFill(<?= $secId ?>, <?= json_encode($si, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>)'>
+                  <i class="fas fa-pen"></i>
+                </button>
+                <form method="post" class="d-inline" onsubmit="return confirm('Smazat položku?')">
+                  <?= csrfField() ?>
+                  <input type="hidden" name="action" value="delete_section_item">
+                  <input type="hidden" name="item_id" value="<?= (int)$si['id'] ?>">
+                  <input type="hidden" name="item_section_id" value="<?= $secId ?>">
+                  <button class="btn btn-xs btn-outline-danger btn-sm"><i class="fas fa-trash"></i></button>
+                </form>
+              </td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+          </table>
+          </div>
+          <?php endif; ?>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<?php endforeach; ?>
+
 <!-- ══════════ CVIKY ══════════ -->
 <div class="tab-pane fade" id="tabExercises">
   <div class="row g-3">
     <div class="col-lg-4">
       <div class="card mcc-card">
         <div class="card-header" style="background:#1a1a2e;color:#f7941d;">
-          <i class="fas fa-plus me-1"></i>Přidat / upravit cvik
+          <i class="fas fa-plus me-1"></i><span id="exerciseFormTitle">Přidat / upravit cvik</span>
         </div>
         <div class="card-body">
           <form method="post" id="exerciseForm">
@@ -560,20 +929,58 @@ if ($_flash): ?>
               <input type="text" name="equipment" id="efEquip" class="form-control form-control-sm" placeholder="např. Činka, Kettlebell">
             </div>
             <div class="mb-2">
-              <label class="form-label small fw-semibold">Video URL</label>
-              <input type="text" name="video_url" id="efVideo" class="form-control form-control-sm" placeholder="YouTube/Vimeo URL">
+              <label class="form-label small fw-semibold">
+                Video
+                <span class="text-muted fw-normal small">– YouTube/Vimeo URL, nebo nahraj soubor</span>
+              </label>
+              <input type="text" name="video_url" id="efVideo" class="form-control form-control-sm mb-1" placeholder="https://youtube.com/watch?v=...">
+              <input type="hidden" name="video_path_upload" id="efVideoPath">
+              <div class="input-group input-group-sm">
+                <input type="text" id="efVideoPathDisplay" class="form-control form-control-sm" placeholder="nebo nahraj soubor..." readonly>
+                <label class="btn btn-outline-secondary btn-sm mb-0" for="efVideoFileInput" style="cursor:pointer;">
+                  <i class="fas fa-upload me-1"></i>Nahrát
+                </label>
+              </div>
+              <input type="file" id="efVideoFileInput" accept="video/mp4,video/webm,video/ogg,video/quicktime" class="d-none">
+              <div id="efVideoProgress" class="d-none mt-1">
+                <div class="progress" style="height:5px;"><div id="efVideoBar" class="progress-bar bg-warning" style="width:0%"></div></div>
+                <div id="efVideoStatus" class="small text-muted"></div>
+              </div>
             </div>
             <div class="mb-2">
-              <label class="form-label small fw-semibold">Náhled (URL/cesta)</label>
-              <input type="text" name="thumbnail" id="efThumb" class="form-control form-control-sm">
+              <label class="form-label small fw-semibold">
+                Náhledový obrázek
+                <span class="text-muted fw-normal small">– URL, nebo nahraj soubor</span>
+              </label>
+              <input type="text" name="thumbnail" id="efThumb" class="form-control form-control-sm mb-1" placeholder="https://... nebo cesta">
+              <input type="hidden" name="thumbnail_upload" id="efThumbPath">
+              <div class="input-group input-group-sm">
+                <input type="text" id="efThumbDisplay" class="form-control form-control-sm" placeholder="nebo nahraj obrázek..." readonly>
+                <label class="btn btn-outline-secondary btn-sm mb-0" for="efThumbFileInput" style="cursor:pointer;">
+                  <i class="fas fa-image me-1"></i>Nahrát
+                </label>
+              </div>
+              <input type="file" id="efThumbFileInput" accept="image/*" class="d-none">
+              <div id="efThumbProgress" class="d-none mt-1">
+                <div class="progress" style="height:5px;"><div id="efThumbBar" class="progress-bar bg-warning" style="width:0%"></div></div>
+                <div id="efThumbStatus" class="small text-muted"></div>
+              </div>
             </div>
             <div class="mb-2">
-              <label class="form-label small fw-semibold">Popis</label>
-              <textarea name="description" id="efDesc" class="form-control form-control-sm" rows="2"></textarea>
+              <label class="form-label small fw-semibold">
+                Krátký popis
+                <span class="text-muted fw-normal small">– zobrazuje se v přehledu cviků</span>
+              </label>
+              <textarea name="description" id="efDesc" class="form-control form-control-sm" rows="2"
+                        placeholder="Např: Klasický silový cvik na rozvoj prsního svalstva."></textarea>
             </div>
             <div class="mb-2">
-              <label class="form-label small fw-semibold">Postup / instrukce</label>
-              <textarea name="instructions" id="efInstr" class="form-control form-control-sm" rows="3"></textarea>
+              <label class="form-label small fw-semibold">
+                Provedení / instrukce
+                <span class="text-muted fw-normal small">– krok za krokem jak cvik provést</span>
+              </label>
+              <textarea name="instructions" id="efInstr" class="form-control form-control-sm" rows="4"
+                        placeholder="1. Lehněte si na bench...&#10;2. Uchopte činku...&#10;3. Spusťte pomalu dolů..."></textarea>
             </div>
             <div class="row g-2 mb-2">
               <div class="col-6">
@@ -595,7 +1002,26 @@ if ($_flash): ?>
     </div>
     <div class="col-lg-8">
       <div class="card mcc-card">
-        <div class="card-header bg-dark text-white">Encyklopedie cviků (<?= count($exercises) ?>)</div>
+        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <span>Encyklopedie cviků (<?= count($exercises) ?>)</span>
+          <?php if (!empty($exercises)): ?>
+          <div class="d-flex flex-wrap gap-2 align-items-center">
+            <span class="small text-muted">Filtr:</span>
+            <div class="btn-group btn-group-sm" role="group" aria-label="Kategorie">
+              <button type="button" class="btn btn-light active exercise-filter-btn category" data-filter-type="category" data-filter-value="all">Vše</button>
+              <?php foreach ($exerciseCategories as $categoryName): ?>
+                <button type="button" class="btn btn-outline-light exercise-filter-btn category" data-filter-type="category" data-filter-value="<?= h(strtolower($categoryName)) ?>"><?= h($categoryName) ?></button>
+              <?php endforeach; ?>
+            </div>
+            <div class="btn-group btn-group-sm" role="group" aria-label="Svalové partie">
+              <button type="button" class="btn btn-light active exercise-filter-btn muscle" data-filter-type="muscle" data-filter-value="all">Vše</button>
+              <?php foreach ($exerciseMuscles as $muscleName): ?>
+                <button type="button" class="btn btn-outline-light exercise-filter-btn muscle" data-filter-type="muscle" data-filter-value="<?= h(strtolower($muscleName)) ?>"><?= h($muscleName) ?></button>
+              <?php endforeach; ?>
+            </div>
+          </div>
+          <?php endif; ?>
+        </div>
         <div class="card-body p-0">
           <?php if (empty($exercises)): ?>
             <p class="p-3 text-muted">Zatím žádné cviky.</p>
@@ -605,9 +1031,11 @@ if ($_flash): ?>
             <thead class="table-light"><tr>
               <th>Cvik</th><th>Kategorie</th><th>Obtížnost</th><th>Svalové partie</th><th class="text-center">Aktivní</th><th class="text-end">Akce</th>
             </tr></thead>
-            <tbody>
+            <tbody id="exerciseTableBody">
             <?php foreach ($exercises as $ex): ?>
-            <tr>
+            <tr data-exercise-row
+                data-category="<?= h(strtolower((string)($ex['category'] ?? ''))) ?>"
+                data-muscle="<?= h(strtolower((string)($ex['muscle_groups'] ?? ''))) ?>">
               <td class="fw-semibold"><?= h($ex['name']) ?></td>
               <td class="small text-muted"><?= h($ex['category'] ?? '–') ?></td>
               <td><span class="badge <?= ['beginner'=>'bg-success','intermediate'=>'bg-warning text-dark','advanced'=>'bg-danger'][$ex['difficulty']] ?? 'bg-secondary' ?> small">
@@ -617,7 +1045,7 @@ if ($_flash): ?>
               <td class="text-center"><span class="badge <?= $ex['is_active'] ? 'bg-success' : 'bg-secondary' ?>"><?= $ex['is_active'] ? 'Ano' : 'Ne' ?></span></td>
               <td class="text-end">
                 <button type="button" class="btn btn-xs btn-outline-primary btn-sm"
-                        onclick="exerciseFormFill(<?= json_encode($ex) ?>)">
+                        onclick='exerciseFormFill(<?= json_encode($ex, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>)'>
                   <i class="fas fa-pen"></i>
                 </button>
                 <form method="post" class="d-inline" onsubmit="return confirm('Smazat cvik?')">
@@ -778,7 +1206,7 @@ if ($_flash): ?>
                   <i class="fas fa-list-ol"></i>
                 </a>
                 <button type="button" class="btn btn-xs btn-outline-primary btn-sm"
-                        onclick="workoutFormFill(<?= json_encode($wo) ?>)">
+                        onclick='workoutFormFill(<?= json_encode($wo, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>)'>
                   <i class="fas fa-pen"></i>
                 </button>
                 <form method="post" class="d-inline" onsubmit="return confirm('Smazat trénink?')">
@@ -812,6 +1240,27 @@ function sectionFormReset() {
   document.getElementById('sfColor').value='orange';
   document.getElementById('sfAudience').value='all';
 }
+
+// Přepne na tab Videa a předvyplní sekci
+function jumpToAddVideo(sectionId) {
+  const tab = document.querySelector('[data-bs-target="#tabVideos"]');
+  if (tab) bootstrap.Tab.getOrCreateInstance(tab).show();
+  videoFormReset();
+  document.getElementById('vfSection').value = sectionId;
+  setTimeout(()=>{ document.getElementById('videoForm').scrollIntoView({behavior:'smooth',block:'start'}); }, 200);
+}
+
+// Přepne na tab Tréninky a předvyplní sekci
+function jumpToAddWorkout(sectionId) {
+  const tab = document.querySelector('[data-bs-target="#tabWorkouts"]');
+  if (tab) bootstrap.Tab.getOrCreateInstance(tab).show();
+  workoutFormReset();
+  setTimeout(()=>{
+    const sel = document.getElementById('wfSection');
+    if (sel) sel.value = sectionId;
+    document.getElementById('workoutForm').scrollIntoView({behavior:'smooth',block:'start'});
+  }, 200);
+}
 function sectionFormFill(sec) {
   document.getElementById('sfId').value=sec.id;
   document.getElementById('sfTitle').value=sec.title||'';
@@ -830,6 +1279,8 @@ function sectionFormFill(sec) {
 function videoFormReset() {
   document.getElementById('vfId').value='0';
   ['vfTitle','vfUrl','vfPath','vfThumb','vfTags','vfDesc'].forEach(id=>{document.getElementById(id).value='';});
+  document.getElementById('vfPathDisplay').value='';
+  document.getElementById('vfUploadProgress').classList.add('d-none');
   document.getElementById('vfDur').value='';
   document.getElementById('vfSort').value='0';
   document.getElementById('vfActive').checked=true;
@@ -851,13 +1302,67 @@ function videoFormFill(vid) {
   videoTypeChange(document.getElementById('vfType'));
   document.getElementById('vfUrl').value=vid.video_url||'';
   document.getElementById('vfPath').value=vid.video_path||'';
+  document.getElementById('vfPathDisplay').value=vid.video_path ? '✔ '+vid.video_path.split('/').pop() : '';
   document.getElementById('vfThumb').value=vid.thumbnail||'';
   document.getElementById('vfDur').value=vid.duration_seconds||'';
   document.getElementById('vfTags').value=vid.tags||'';
   document.getElementById('vfDesc').value=vid.description||'';
   document.getElementById('vfSort').value=vid.sort_order||0;
   document.getElementById('vfActive').checked=vid.is_active=='1'||vid.is_active===1;
+  document.getElementById('videoForm').scrollIntoView({behavior:'smooth',block:'start'});
 }
+
+// ── Video upload přes AJAX ──────────────────────────────────────
+document.getElementById('vfFileInput').addEventListener('change', function() {
+  const file = this.files[0];
+  if (!file) return;
+  const display   = document.getElementById('vfPathDisplay');
+  const progress  = document.getElementById('vfUploadProgress');
+  const bar       = document.getElementById('vfUploadBar');
+  const status    = document.getElementById('vfUploadStatus');
+  const pathField = document.getElementById('vfPath');
+
+  display.value = file.name;
+  progress.classList.remove('d-none');
+  bar.style.width = '0%';
+  status.textContent = 'Nahrávám...';
+
+  const fd = new FormData();
+  fd.append('video', file);
+  fd.append('csrf_token', <?= json_encode(csrfToken()) ?>);
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', <?= json_encode(BASE_URL . '/admin/api/mycoach_video_upload.php') ?>);
+
+  xhr.upload.addEventListener('progress', function(e) {
+    if (e.lengthComputable) {
+      const pct = Math.round(e.loaded / e.total * 100);
+      bar.style.width = pct + '%';
+      status.textContent = 'Nahrávám... ' + pct + '%';
+    }
+  });
+
+  xhr.addEventListener('load', function() {
+    let resp;
+    try { resp = JSON.parse(xhr.responseText); } catch(e) { resp = {success:false,error:'Neplatná odpověď serveru.'}; }
+    if (resp.success) {
+      pathField.value = resp.path;
+      bar.style.width = '100%';
+      bar.classList.replace('bg-warning','bg-success');
+      status.textContent = '✔ Nahráno: ' + resp.name;
+    } else {
+      bar.classList.replace('bg-warning','bg-danger');
+      status.textContent = '✘ Chyba: ' + (resp.error || 'Neznámá chyba');
+    }
+  });
+
+  xhr.addEventListener('error', function() {
+    bar.classList.replace('bg-warning','bg-danger');
+    status.textContent = '✘ Síťová chyba při nahrávání.';
+  });
+
+  xhr.send(fd);
+});
 
 // ── Cviky formulář ──────────────────────────────────────────────
 function exerciseFormReset() {
@@ -866,6 +1371,7 @@ function exerciseFormReset() {
   document.getElementById('efDiff').value='intermediate';
   document.getElementById('efSort').value='0';
   document.getElementById('efActive').checked=true;
+  document.getElementById('exerciseFormTitle').textContent='Přidat cvik';
 }
 function exerciseFormFill(ex) {
   document.getElementById('efId').value=ex.id;
@@ -875,12 +1381,79 @@ function exerciseFormFill(ex) {
   document.getElementById('efMuscles').value=ex.muscle_groups||'';
   document.getElementById('efEquip').value=ex.equipment||'';
   document.getElementById('efVideo').value=ex.video_url||'';
+  document.getElementById('efVideoPath').value='';
+  document.getElementById('efVideoPathDisplay').value=ex.video_url&&!ex.video_url.startsWith('http')?'✔ '+ex.video_url.split('/').pop():'';
   document.getElementById('efThumb').value=ex.thumbnail||'';
+  document.getElementById('efThumbPath').value='';
+  document.getElementById('efThumbDisplay').value=ex.thumbnail&&!ex.thumbnail.startsWith('http')?'✔ '+ex.thumbnail.split('/').pop():'';
   document.getElementById('efDesc').value=ex.description||'';
   document.getElementById('efInstr').value=ex.instructions||'';
   document.getElementById('efSort').value=ex.sort_order||0;
   document.getElementById('efActive').checked=ex.is_active=='1'||ex.is_active===1;
+  document.getElementById('exerciseFormTitle').textContent='Upravit cvik: '+ex.name;
+  document.getElementById('exerciseForm').scrollIntoView({behavior:'smooth',block:'start'});
 }
+
+function applyExerciseAdminFilter(filterType, value) {
+  const rows = document.querySelectorAll('[data-exercise-row]');
+  const activeCat = document.querySelector('.exercise-filter-btn.category.active')?.dataset.filterValue || 'all';
+  const activeMuscle = document.querySelector('.exercise-filter-btn.muscle.active')?.dataset.filterValue || 'all';
+
+  rows.forEach(function(row) {
+    const rowCat = (row.dataset.category || '').toLowerCase();
+    const rowMuscle = (row.dataset.muscle || '').toLowerCase();
+    const catMatch = activeCat === 'all' || rowCat === activeCat;
+    const muscleMatch = activeMuscle === 'all' || rowMuscle.includes(activeMuscle) || rowMuscle === activeMuscle;
+    row.style.display = catMatch && muscleMatch ? '' : 'none';
+  });
+}
+
+document.querySelectorAll('.exercise-filter-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    const type = btn.dataset.filterType;
+    document.querySelectorAll('.exercise-filter-btn.' + type).forEach(function(el) {
+      el.classList.toggle('active', el === btn);
+      el.classList.toggle('btn-light', el === btn);
+      el.classList.toggle('btn-outline-light', el !== btn);
+    });
+    applyExerciseAdminFilter(type, btn.dataset.filterValue);
+  });
+});
+
+// Upload videa cviku
+function efUpload(inputId, displayId, progressId, barId, statusId, pathFieldId, isImage) {
+  const inp = document.getElementById(inputId);
+  inp.addEventListener('change', function() {
+    const file = this.files[0]; if (!file) return;
+    const fd = new FormData();
+    const csrf = <?= json_encode(csrfToken()) ?>;
+    let endpoint;
+    if (isImage) {
+      fd.append('file', file); fd.append('media_type','image'); fd.append('csrf_token', csrf);
+      endpoint = <?= json_encode(BASE_URL . '/admin/api/events_media_upload.php') ?>;
+    } else {
+      fd.append('video', file); fd.append('csrf_token', csrf);
+      endpoint = <?= json_encode(BASE_URL . '/admin/api/mycoach_video_upload.php') ?>;
+    }
+    document.getElementById(displayId).value = file.name;
+    document.getElementById(progressId).classList.remove('d-none');
+    const bar = document.getElementById(barId);
+    const status = document.getElementById(statusId);
+    bar.style.width='0%';
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', endpoint);
+    xhr.upload.addEventListener('progress', e => { if(e.lengthComputable){const p=Math.round(e.loaded/e.total*100); bar.style.width=p+'%'; status.textContent='Nahrávám... '+p+'%';} });
+    xhr.addEventListener('load', () => {
+      let r; try{r=JSON.parse(xhr.responseText);}catch(e){r={success:false,error:'Chyba'}}
+      if(r.success){ document.getElementById(pathFieldId).value=r.path||r.url||''; bar.style.width='100%'; bar.classList.replace('bg-warning','bg-success'); status.textContent='✔ Nahráno';}
+      else{ bar.classList.replace('bg-warning','bg-danger'); status.textContent='✘ '+(r.error||'Chyba'); }
+    });
+    xhr.addEventListener('error', ()=>{ bar.classList.replace('bg-warning','bg-danger'); status.textContent='✘ Síťová chyba'; });
+    xhr.send(fd);
+  });
+}
+efUpload('efVideoFileInput','efVideoPathDisplay','efVideoProgress','efVideoBar','efVideoStatus','efVideoPath', false);
+efUpload('efThumbFileInput','efThumbDisplay','efThumbProgress','efThumbBar','efThumbStatus','efThumbPath', true);
 
 // ── Tréninky formulář ────────────────────────────────────────────
 function workoutFormReset() {
@@ -903,15 +1476,139 @@ function workoutFormFill(wo) {
   document.getElementById('wfActive').checked=wo.is_active=='1'||wo.is_active===1;
 }
 
-// Aktivace správného tabu dle URL hash
+// Aktivace správného tabu dle URL hash nebo ?sec=
 (function(){
-  const map={'#sections':'tabSections','#videos':'tabVideos','#exercises':'tabExercises','#workouts':'tabWorkouts'};
+  const sec = new URLSearchParams(location.search).get('sec');
+  if (sec) {
+    const el = document.querySelector('[data-bs-target="#tabSection'+sec+'"]');
+    if (el) { new bootstrap.Tab(el).show(); return; }
+  }
+  const map={'#sections':'tabSections','#exercises':'tabExercises'};
   const tab = map[location.hash];
   if (tab) {
-    const el = document.querySelector('[href="#' + tab + '"]');
+    const el = document.querySelector('[data-bs-target="#'+tab+'"]');
     if (el) new bootstrap.Tab(el).show();
   }
 })();
+
+// ── Section Items formulář ──────────────────────────────────────
+const sifVideoTypes = new Set(['video_youtube','video_vimeo','video_upload']);
+const sifFileTypes  = new Set(['video_upload','image']);
+const sifUrlTypes   = new Set(['video_youtube','video_vimeo','link']);
+const sifDurTypes   = new Set(['video_youtube','video_vimeo','video_upload']);
+const sifContentTypes = new Set(['article']);
+
+function sifTypeChange(secId) {
+  const type = document.getElementById('sifType_'+secId).value;
+  const show = (id, vis) => { const el=document.getElementById(id+'_'+secId); if(el) el.classList.toggle('d-none', !vis); };
+  show('sifUrlWrap',   sifUrlTypes.has(type));
+  show('sifFileWrap',  sifFileTypes.has(type));
+  show('sifContentWrap', sifContentTypes.has(type));
+  show('sifDurWrap',   sifDurTypes.has(type));
+  show('sifThumbWrap', type !== 'image'); // pro image je thumbnail = soubor
+  show('sifLinkHint',  type === 'link');
+  const urlLabel = document.getElementById('sifUrlLabel_'+secId);
+  if (urlLabel) {
+    const labels = {video_youtube:'YouTube URL nebo ID', video_vimeo:'Vimeo URL nebo ID', link:'URL odkazu'};
+    urlLabel.textContent = labels[type] || 'URL';
+  }
+  // Nastav accept na file inputu
+  const fi = document.getElementById('sifFileInput_'+secId);
+  if (fi) fi.accept = (type==='image') ? 'image/*' : 'video/mp4,video/webm,video/ogg,video/quicktime,video/x-msvideo';
+}
+
+function sifReset(secId) {
+  document.getElementById('sifId_'+secId).value='0';
+  ['sifItemTitle','sifUrl','sifFilePath','sifThumb','sifDesc','sifContent','sifDur'].forEach(id=>{
+    const el=document.getElementById(id+'_'+secId); if(el) el.value='';
+  });
+  const fd=document.getElementById('sifFileDisplay_'+secId); if(fd) fd.value='';
+  const fp=document.getElementById('sifFileProgress_'+secId); if(fp) fp.classList.add('d-none');
+  const ss=document.getElementById('sifSort_'+secId); if(ss) ss.value='0';
+  const sa=document.getElementById('sifActive_'+secId); if(sa) sa.checked=true;
+  const st=document.getElementById('sifType_'+secId); if(st) { st.value='video_youtube'; sifTypeChange(secId); }
+  const tl=document.getElementById('sifTitle_'+secId); if(tl) tl.textContent='Přidat položku';
+}
+
+function sifFill(secId, item) {
+  document.getElementById('sifId_'+secId).value = item.id;
+  document.getElementById('sifType_'+secId).value = item.item_type||'video_youtube';
+  sifTypeChange(secId);
+  const set = (id, val) => { const el=document.getElementById(id+'_'+secId); if(el) el.value=val||''; };
+  set('sifItemTitle', item.title);
+  set('sifUrl',       item.url);
+  set('sifFilePath',  item.file_path);
+  const fd=document.getElementById('sifFileDisplay_'+secId);
+  if(fd) fd.value = item.file_path ? '✔ '+item.file_path.split('/').pop() : '';
+  set('sifThumb',     item.thumbnail);
+  set('sifDesc',      item.description);
+  set('sifContent',   item.content);
+  set('sifDur',       item.duration_seconds);
+  set('sifSort',      item.sort_order);
+  const sa=document.getElementById('sifActive_'+secId); if(sa) sa.checked=item.is_active=='1'||item.is_active===1;
+  const tl=document.getElementById('sifTitle_'+secId); if(tl) tl.textContent='Upravit: '+item.title;
+  document.getElementById('sifForm_'+secId).scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+// ── Univerzální file upload pro section_items ──────────────────
+document.querySelectorAll('[id^="sifFileInput_"]').forEach(function(input) {
+  const secId = input.id.replace('sifFileInput_','');
+  input.addEventListener('change', function() {
+    const file = this.files[0];
+    if (!file) return;
+    const isImage = file.type.startsWith('image/');
+    const display  = document.getElementById('sifFileDisplay_'+secId);
+    const progress = document.getElementById('sifFileProgress_'+secId);
+    const bar      = document.getElementById('sifFileBar_'+secId);
+    const status   = document.getElementById('sifFileStatus_'+secId);
+    const pathFld  = document.getElementById('sifFilePath_'+secId);
+    if(display) display.value = file.name;
+    if(progress) progress.classList.remove('d-none');
+    if(bar) bar.style.width='0%';
+    if(status) status.textContent='Nahrávám...';
+
+    const fd2 = new FormData();
+    const csrf = <?= json_encode(csrfToken()) ?>;
+    if (isImage) {
+      fd2.append('file', file);
+      fd2.append('media_type', 'image');
+      fd2.append('csrf_token', csrf);
+    } else {
+      fd2.append('video', file);
+      fd2.append('csrf_token', csrf);
+    }
+    const endpoint = isImage
+      ? <?= json_encode(BASE_URL . '/admin/api/events_media_upload.php') ?>
+      : <?= json_encode(BASE_URL . '/admin/api/mycoach_video_upload.php') ?>;
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', endpoint);
+    xhr.upload.addEventListener('progress', function(e) {
+      if(e.lengthComputable && bar) { const p=Math.round(e.loaded/e.total*100); bar.style.width=p+'%'; if(status) status.textContent='Nahrávám... '+p+'%'; }
+    });
+    xhr.addEventListener('load', function() {
+      let resp; try { resp=JSON.parse(xhr.responseText); } catch(e) { resp={success:false,error:'Chyba odpovědi'}; }
+      if(resp.success) {
+        if(pathFld) pathFld.value = resp.path || resp.url || '';
+        if(bar) { bar.style.width='100%'; bar.classList.replace('bg-warning','bg-success'); }
+        if(status) status.textContent='✔ Nahráno: '+(resp.name||'');
+      } else {
+        if(bar) bar.classList.replace('bg-warning','bg-danger');
+        if(status) status.textContent='✘ '+(resp.error||'Chyba');
+      }
+    });
+    xhr.addEventListener('error', function() {
+      if(bar) bar.classList.replace('bg-warning','bg-danger');
+      if(status) status.textContent='✘ Síťová chyba.';
+    });
+    xhr.send(fd2);
+  });
+});
+
+// Inicializuj všechny section_items formuláře
+document.querySelectorAll('[id^="sifType_"]').forEach(function(sel) {
+  const secId = sel.id.replace('sifType_','');
+  sifTypeChange(secId);
+});
 </script>
 
 <?php renderAdminFooter(); ?>

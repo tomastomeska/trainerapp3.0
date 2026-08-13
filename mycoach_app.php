@@ -9,12 +9,16 @@ $coach  = getCurrentCoach();
 $coachId = (int)getCurrentCoachId();
 $displayName = trim((string)($coach['name'] ?? $coach['username'] ?? ''));
 
-// ── Kontrola: app musí být live ──────────────────────────────
-if (!mycoachAppIsLive()) {
+// ── Kontrola: app musí být live, nebo mít aktivní přístup ───────────────────
+if (!mycoachAppIsLive() && !mycoachAppCanAccess($pdo, 'coach', $coachId)) {
     flash('info', 'Aplikace MyCoach je aktuálně ve vývoji. Brzy spustíme!');
     redirect(BASE_URL . '/dashboard.php');
 }
-
+// ── Přístup zablokovaný adminem má přednost před předplatným ───────────────────
+if (!mycoachAccessEnabledForCoach($pdo, $coachId)) {
+    flash('warning', 'Váš přístup k MyCoach byl administrátorem pozastaven.');
+    redirect(BASE_URL . '/dashboard.php');
+}
 // ── Akce: spuštění trialu ─────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') === 'start_trial') {
     if (!verifyCsrf((string)($_POST['csrf_token'] ?? ''))) {
@@ -128,7 +132,10 @@ renderHeader('MyCoach');
             </span>
           <?php endif; ?>
           <a href="<?= BASE_URL ?>/dashboard.php" class="mca-btn-outline" style="padding:.3rem .9rem;font-size:.8rem;">
-            <i class="fas fa-arrow-left me-1"></i>Dashboard
+            <i class="fas fa-house me-1"></i>Domů
+          </a>
+          <a href="<?= BASE_URL ?>/logout.php" class="mca-btn-outline" style="padding:.3rem .9rem;font-size:.8rem; border-color:rgba(220,53,69,.45); color:#ff9aa2;">
+            <i class="fas fa-sign-out-alt me-1"></i>Odhlásit
           </a>
         </div>
       </div>
@@ -156,14 +163,15 @@ renderHeader('MyCoach');
           // Počet položek v sekci
           $itemCount = 0;
           try {
-            if ($sec['section_type'] === 'videos') {
+            $cntStmt = $pdo->prepare('SELECT COUNT(*) FROM mycoach_app_section_items WHERE section_id = ? AND is_active = 1');
+            $cntStmt->execute([(int)$sec['id']]);
+            $itemCount = (int)$cntStmt->fetchColumn();
+            if ($itemCount === 0 && $sec['section_type'] === 'videos') {
               $cntStmt = $pdo->prepare('SELECT COUNT(*) FROM mycoach_app_videos WHERE section_id = ? AND is_active = 1');
-              $cntStmt->execute([(int)$sec['id']]);
-              $itemCount = (int)$cntStmt->fetchColumn();
-            } elseif ($sec['section_type'] === 'workout') {
+              $cntStmt->execute([(int)$sec['id']]); $itemCount = (int)$cntStmt->fetchColumn();
+            } elseif ($itemCount === 0 && $sec['section_type'] === 'workout') {
               $cntStmt = $pdo->prepare('SELECT COUNT(*) FROM mycoach_app_workouts WHERE section_id = ? AND is_active = 1');
-              $cntStmt->execute([(int)$sec['id']]);
-              $itemCount = (int)$cntStmt->fetchColumn();
+              $cntStmt->execute([(int)$sec['id']]); $itemCount = (int)$cntStmt->fetchColumn();
             }
           } catch (Throwable $e) { $itemCount = 0; }
         ?>

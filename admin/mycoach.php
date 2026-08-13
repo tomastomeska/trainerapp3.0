@@ -43,7 +43,6 @@ if (!function_exists('adminEnsureMyCoachAccessColumns')) {
 
 adminEnsureMyCoachAccessColumns($pdo);
 
-$currentMode = adminMyCoachNormalizeMode((string)getAppSetting($mycoachAccessModeKey, 'selected'));
 $selectedCoachFilter = intParam($_GET, 'coach_id');
 $search = trim((string)($_GET['q'] ?? ''));
 
@@ -54,6 +53,196 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $action = trim((string)($_POST['action'] ?? ''));
+
+    if ($action === 'run_migration') {
+        $migTables = [
+            'mycoach_app_access' => "CREATE TABLE IF NOT EXISTS mycoach_app_access (
+              id               INT UNSIGNED NOT NULL AUTO_INCREMENT,
+              user_type        ENUM('coach','athlete') NOT NULL,
+              user_id          INT UNSIGNED NOT NULL,
+              trial_started_at DATETIME DEFAULT NULL,
+              trial_used       TINYINT(1) NOT NULL DEFAULT 0,
+              subscription_start DATE DEFAULT NULL,
+              subscription_end   DATE DEFAULT NULL,
+              notes            TEXT DEFAULT NULL,
+              created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              PRIMARY KEY (id),
+              UNIQUE KEY uq_user (user_type, user_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'mycoach_app_sections' => "CREATE TABLE IF NOT EXISTS mycoach_app_sections (
+              id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
+              title        VARCHAR(200) NOT NULL,
+              subtitle     VARCHAR(500) DEFAULT NULL,
+              icon_class   VARCHAR(100) NOT NULL DEFAULT 'fa-play-circle',
+              tile_color   VARCHAR(80) NOT NULL DEFAULT 'orange',
+              bg_image     VARCHAR(1000) DEFAULT NULL,
+              section_type ENUM('videos','workout','exercises','article','foods','mixed') NOT NULL DEFAULT 'videos',
+              description  TEXT DEFAULT NULL,
+              sort_order   SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+              is_active    TINYINT(1) NOT NULL DEFAULT 1,
+              audience     ENUM('all','coach','athlete') NOT NULL DEFAULT 'all',
+              created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'mycoach_app_videos' => "CREATE TABLE IF NOT EXISTS mycoach_app_videos (
+              id               INT UNSIGNED NOT NULL AUTO_INCREMENT,
+              section_id       INT UNSIGNED DEFAULT NULL,
+              title            VARCHAR(300) NOT NULL,
+              description      TEXT DEFAULT NULL,
+              video_type       ENUM('upload','youtube','vimeo','url') NOT NULL DEFAULT 'upload',
+              video_url        VARCHAR(1000) DEFAULT NULL,
+              video_path       VARCHAR(1000) DEFAULT NULL,
+              thumbnail        VARCHAR(1000) DEFAULT NULL,
+              duration_seconds INT UNSIGNED DEFAULT NULL,
+              tags             VARCHAR(500) DEFAULT NULL,
+              sort_order       SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+              is_active        TINYINT(1) NOT NULL DEFAULT 1,
+              created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (id),
+              KEY idx_section (section_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'mycoach_app_video_progress' => "CREATE TABLE IF NOT EXISTS mycoach_app_video_progress (
+              id               INT UNSIGNED NOT NULL AUTO_INCREMENT,
+              user_type        ENUM('coach','athlete') NOT NULL,
+              user_id          INT UNSIGNED NOT NULL,
+              video_id         INT UNSIGNED NOT NULL,
+              watched_seconds  INT UNSIGNED NOT NULL DEFAULT 0,
+              duration_seconds INT UNSIGNED DEFAULT NULL,
+              is_completed     TINYINT(1) NOT NULL DEFAULT 0,
+              last_watched_at  DATETIME DEFAULT NULL,
+              PRIMARY KEY (id),
+              UNIQUE KEY uq_progress (user_type, user_id, video_id),
+              KEY idx_video (video_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'mycoach_app_exercises' => "CREATE TABLE IF NOT EXISTS mycoach_app_exercises (
+              id             INT UNSIGNED NOT NULL AUTO_INCREMENT,
+              name           VARCHAR(300) NOT NULL,
+              slug           VARCHAR(300) NOT NULL,
+              category       VARCHAR(100) DEFAULT NULL,
+              description    TEXT DEFAULT NULL,
+              instructions   TEXT DEFAULT NULL,
+              muscle_groups  VARCHAR(500) DEFAULT NULL,
+              equipment      VARCHAR(300) DEFAULT NULL,
+              difficulty     ENUM('beginner','intermediate','advanced') NOT NULL DEFAULT 'intermediate',
+              video_url      VARCHAR(1000) DEFAULT NULL,
+              thumbnail      VARCHAR(1000) DEFAULT NULL,
+              sort_order     SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+              is_active      TINYINT(1) NOT NULL DEFAULT 1,
+              created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (id),
+              UNIQUE KEY uq_slug (slug),
+              KEY idx_category (category)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'mycoach_app_workouts' => "CREATE TABLE IF NOT EXISTS mycoach_app_workouts (
+              id               INT UNSIGNED NOT NULL AUTO_INCREMENT,
+              section_id       INT UNSIGNED DEFAULT NULL,
+              title            VARCHAR(300) NOT NULL,
+              description      TEXT DEFAULT NULL,
+              difficulty       ENUM('beginner','intermediate','advanced') NOT NULL DEFAULT 'intermediate',
+              duration_minutes SMALLINT UNSIGNED DEFAULT NULL,
+              thumbnail        VARCHAR(1000) DEFAULT NULL,
+              sort_order       SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+              is_active        TINYINT(1) NOT NULL DEFAULT 1,
+              created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (id),
+              KEY idx_section (section_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'mycoach_app_workout_exercises' => "CREATE TABLE IF NOT EXISTS mycoach_app_workout_exercises (
+              id               INT UNSIGNED NOT NULL AUTO_INCREMENT,
+              workout_id       INT UNSIGNED NOT NULL,
+              exercise_id      INT UNSIGNED NOT NULL,
+              sets             TINYINT UNSIGNED DEFAULT NULL,
+              reps             TINYINT UNSIGNED DEFAULT NULL,
+              duration_seconds SMALLINT UNSIGNED DEFAULT NULL,
+              rest_seconds     SMALLINT UNSIGNED DEFAULT NULL,
+              notes            VARCHAR(500) DEFAULT NULL,
+              sort_order       SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+              PRIMARY KEY (id),
+              KEY idx_workout (workout_id),
+              KEY idx_exercise (exercise_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'mycoach_app_foods' => "CREATE TABLE IF NOT EXISTS mycoach_app_foods (
+              id                INT UNSIGNED NOT NULL AUTO_INCREMENT,
+              name              VARCHAR(300) NOT NULL,
+              category          VARCHAR(100) DEFAULT NULL,
+              description       TEXT DEFAULT NULL,
+              calories_per_100g DECIMAL(8,2) DEFAULT NULL,
+              protein_g         DECIMAL(8,2) DEFAULT NULL,
+              carbs_g           DECIMAL(8,2) DEFAULT NULL,
+              fat_g             DECIMAL(8,2) DEFAULT NULL,
+              fiber_g           DECIMAL(8,2) DEFAULT NULL,
+              thumbnail         VARCHAR(1000) DEFAULT NULL,
+              is_active         TINYINT(1) NOT NULL DEFAULT 1,
+              sort_order        SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+              created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (id),
+              KEY idx_category (category)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'mycoach_app_section_items' => "CREATE TABLE IF NOT EXISTS mycoach_app_section_items (
+              id               INT UNSIGNED NOT NULL AUTO_INCREMENT,
+              section_id       INT UNSIGNED NOT NULL,
+              item_type        ENUM('video_youtube','video_vimeo','video_upload','link','article','image') NOT NULL DEFAULT 'video_youtube',
+              title            VARCHAR(300) NOT NULL,
+              description      TEXT DEFAULT NULL,
+              url              VARCHAR(2000) DEFAULT NULL,
+              file_path        VARCHAR(1000) DEFAULT NULL,
+              thumbnail        VARCHAR(1000) DEFAULT NULL,
+              duration_seconds INT UNSIGNED DEFAULT NULL,
+              content          MEDIUMTEXT DEFAULT NULL,
+              sort_order       SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+              is_active        TINYINT(1) NOT NULL DEFAULT 1,
+              created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (id),
+              KEY idx_section (section_id, sort_order)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+
+            'mycoach_app_subscription_plans' => "CREATE TABLE IF NOT EXISTS mycoach_app_subscription_plans (
+              id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+              name        VARCHAR(200) NOT NULL,
+              days        INT UNSIGNED NOT NULL,
+              price       DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+              currency    VARCHAR(10) NOT NULL DEFAULT 'CZK',
+              description TEXT DEFAULT NULL,
+              sort_order  SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+              is_active   TINYINT(1) NOT NULL DEFAULT 1,
+              created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+        ];
+
+        $migErrors = [];
+        foreach ($migTables as $tableName => $sql) {
+            try {
+                $pdo->exec($sql);
+            } catch (Throwable $e) {
+                $migErrors[] = $tableName . ': ' . $e->getMessage();
+            }
+        }
+
+        // app_settings defaults (nezahazovat existující hodnoty)
+        try {
+            $pdo->exec("INSERT INTO app_settings (`key`,`value`) VALUES ('mycoach_app_status','development') ON DUPLICATE KEY UPDATE `key`=`key`");
+            $pdo->exec("INSERT INTO app_settings (`key`,`value`) VALUES ('mycoach_app_trial_days','3') ON DUPLICATE KEY UPDATE `key`=`key`");
+        } catch (Throwable $e) {
+            $migErrors[] = 'app_settings: ' . $e->getMessage();
+        }
+
+        if (empty($migErrors)) {
+            flash('success', 'Migrace MyCoach App proběhla úspěšně – všechny tabulky byly vytvořeny.');
+        } else {
+            flash('danger', 'Migrace dokončena s chybami: ' . implode('; ', $migErrors));
+        }
+        redirect(BASE_URL . '/admin/mycoach.php');
+    }
 
     if ($action === 'save_mode') {
         $mode = adminMyCoachNormalizeMode((string)($_POST['mycoach_access_mode'] ?? 'selected'));
@@ -146,8 +335,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $subNotes = trim((string)($_POST['sub_notes'] ?? ''));
         if ($subType && $subId > 0 && $subEnd !== '') {
             if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $subStart) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $subEnd)) {
-                mycoachAppGrantSubscription($pdo, $subType, $subId, $subStart, $subEnd, $subNotes);
-                flash('success', 'Předplatné bylo uděleno.');
+                $granted = mycoachAppGrantSubscription($pdo, $subType, $subId, $subStart, $subEnd, $subNotes);
+                if ($granted) {
+                    flash('success', 'Předplatné bylo uděleno.');
+                } else {
+                    flash('danger', 'Předplatné se nepodařilo uložit – tabulka mycoach_app_access pravděpodobně neexistuje. Spusťte scripts/migrate_mycoach_app.php.');
+                }
             } else {
                 flash('danger', 'Neplatný formát data.');
             }
@@ -161,8 +354,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $subType = in_array(trim((string)($_POST['sub_user_type'] ?? '')), ['coach','athlete'], true) ? trim((string)$_POST['sub_user_type']) : '';
         $subId   = (int)($_POST['sub_user_id'] ?? 0);
         if ($subType && $subId > 0) {
-            mycoachAppResetTrial($pdo, $subType, $subId);
-            flash('success', 'Trial byl resetován – uživatel může spustit trial znovu.');
+            $ok = mycoachAppResetTrial($pdo, $subType, $subId);
+            $ok ? flash('success', 'Trial byl resetován – uživatel může spustit trial znovu.') : flash('danger', 'Reset trialu se nezdařil – spusťte scripts/migrate_mycoach_app.php.');
         }
         redirect(BASE_URL . '/admin/mycoach.php');
     }
@@ -171,18 +364,89 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $subType = in_array(trim((string)($_POST['sub_user_type'] ?? '')), ['coach','athlete'], true) ? trim((string)$_POST['sub_user_type']) : '';
         $subId   = (int)($_POST['sub_user_id'] ?? 0);
         if ($subType && $subId > 0) {
-            mycoachAppRevokeSubscription($pdo, $subType, $subId);
-            flash('success', 'Předplatné bylo odebráno.');
+            $ok = mycoachAppRevokeSubscription($pdo, $subType, $subId);
+            $ok ? flash('success', 'Předplatné bylo odebráno.') : flash('danger', 'Odebrání předplatného se nezdařilo – spusťte scripts/migrate_mycoach_app.php.');
+        }
+        redirect(BASE_URL . '/admin/mycoach.php');
+    }
+
+    // ── Plány předplatného ────────────────────────────────────
+    if ($action === 'save_plan') {
+        $planId  = (int)($_POST['plan_id'] ?? 0);
+        $pName   = trim((string)($_POST['plan_name'] ?? ''));
+        $pDays   = max(1, (int)($_POST['plan_days'] ?? 30));
+        $pPrice  = max(0, (float)str_replace(',', '.', (string)($_POST['plan_price'] ?? '0')));
+        $pCurr   = strtoupper(trim((string)($_POST['plan_currency'] ?? 'CZK')));
+        $pDesc   = trim((string)($_POST['plan_description'] ?? ''));
+        $pSort   = (int)($_POST['plan_sort'] ?? 0);
+        $pActive = isset($_POST['plan_active']) ? 1 : 0;
+        if ($pName === '') { flash('danger', 'Název plánu je povinný.'); redirect(BASE_URL . '/admin/mycoach.php'); }
+        try {
+            if ($planId > 0) {
+                $pdo->prepare('UPDATE mycoach_app_subscription_plans SET name=?,days=?,price=?,currency=?,description=?,sort_order=?,is_active=? WHERE id=?')
+                    ->execute([$pName,$pDays,$pPrice,$pCurr,$pDesc,$pSort,$pActive,$planId]);
+                flash('success', 'Plán upraven.');
+            } else {
+                $pdo->prepare('INSERT INTO mycoach_app_subscription_plans (name,days,price,currency,description,sort_order,is_active) VALUES (?,?,?,?,?,?,?)')
+                    ->execute([$pName,$pDays,$pPrice,$pCurr,$pDesc,$pSort,$pActive]);
+                flash('success', 'Plán přidán.');
+            }
+        } catch (Throwable $e) { flash('danger', 'Chyba: ' . $e->getMessage()); }
+        redirect(BASE_URL . '/admin/mycoach.php');
+    }
+
+    if ($action === 'delete_plan') {
+        $planId = (int)($_POST['plan_id'] ?? 0);
+        if ($planId > 0) { $pdo->prepare('DELETE FROM mycoach_app_subscription_plans WHERE id=?')->execute([$planId]); flash('success', 'Plán smazán.'); }
+        redirect(BASE_URL . '/admin/mycoach.php');
+    }
+
+    if ($action === 'save_bank_settings') {
+        $iban  = trim(str_replace(' ', '', strtoupper((string)($_POST['bank_iban'] ?? ''))));
+        $accNo = trim((string)($_POST['bank_account_no'] ?? ''));
+        $pdo->prepare("INSERT INTO app_settings (`key`,`value`) VALUES ('mycoach_bank_iban',?) ON DUPLICATE KEY UPDATE `value`=VALUES(`value`)")->execute([$iban]);
+        $pdo->prepare("INSERT INTO app_settings (`key`,`value`) VALUES ('mycoach_bank_account_no',?) ON DUPLICATE KEY UPDATE `value`=VALUES(`value`)")->execute([$accNo]);
+        flash('success', 'Bankovní údaje uloženy.');
+        redirect(BASE_URL . '/admin/mycoach.php');
+    }
+
+    // ── Aktivace předplatného s emailem ──────────────────────
+    if ($action === 'grant_subscription') {
+        $subType  = in_array(trim((string)($_POST['sub_user_type'] ?? '')), ['coach','athlete'], true) ? trim((string)$_POST['sub_user_type']) : '';
+        $subId    = (int)($_POST['sub_user_id'] ?? 0);
+        $subStart = trim((string)($_POST['sub_start'] ?? date('Y-m-d')));
+        $subEnd   = trim((string)($_POST['sub_end'] ?? ''));
+        $subNotes = trim((string)($_POST['sub_notes'] ?? ''));
+        if ($subType && $subId > 0 && $subEnd !== '') {
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $subStart) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $subEnd)) {
+                $granted = mycoachAppGrantSubscription($pdo, $subType, $subId, $subStart, $subEnd, $subNotes);
+                if ($granted) {
+                    // Odeslat email s potvrzením aktivace
+                    sendMyCoachSubscriptionActivatedEmail($pdo, $subType, $subId, $subStart, $subEnd);
+                    flash('success', 'Předplatné bylo uděleno a uživatel byl informován e-mailem.');
+                } else {
+                    flash('danger', 'Předplatné se nepodařilo uložit – tabulka mycoach_app_access pravděpodobně neexistuje. Spusťte migrace v admin/mycoach.php.');
+                }
+            } else {
+                flash('danger', 'Neplatný formát data.');
+            }
+        } else {
+            flash('danger', 'Vyplňte datum konce předplatného.');
         }
         redirect(BASE_URL . '/admin/mycoach.php');
     }
 }
 
+// Načti plány předplatného a bankovní nastavení
+$subscriptionPlans = [];
+try { $subscriptionPlans = $pdo->query('SELECT * FROM mycoach_app_subscription_plans ORDER BY sort_order ASC, id ASC')->fetchAll() ?: []; } catch(Throwable $e){}
+$bankIban      = getAppSetting('mycoach_bank_iban', '');
+$bankAccountNo = getAppSetting('mycoach_bank_account_no', '');
+
 $currentMode = adminMyCoachNormalizeMode((string)getAppSetting($mycoachAccessModeKey, 'selected'));
 $mycoachAppCurrentStatus = getAppSetting('mycoach_app_status', 'development');
 $mycoachAppIsLive = ($mycoachAppCurrentStatus === 'live');
 
-// Předem načteme access záznamy pro všechny uživatele
 $accessByKey = [];
 try {
     if (mycoachAppEnsureAccessTable($pdo)) {
@@ -272,7 +536,32 @@ try {
 }
 
 renderAdminHeader('MyCoach administrace');
+
+$accessTableExists = mycoachAppEnsureAccessTable($pdo);
+// Zkontroluj i ostatní klíčové tabulky
+$missingTables = [];
+foreach (['mycoach_app_access','mycoach_app_sections','mycoach_app_videos','mycoach_app_exercises','mycoach_app_workouts','mycoach_app_foods','mycoach_app_section_items','mycoach_app_subscription_plans'] as $tbl) {
+    try {
+        $r = $pdo->query("SHOW TABLES LIKE '$tbl'");
+        if (!$r || !$r->fetch()) $missingTables[] = $tbl;
+    } catch (Throwable $e) { $missingTables[] = $tbl; }
+}
 ?>
+
+<?php if (!empty($missingTables)): ?>
+<div class="alert alert-danger border-0 shadow-sm mb-4">
+    <i class="fas fa-triangle-exclamation me-2"></i>
+    <strong>Chybí DB tabulky MyCoach App:</strong> <?= h(implode(', ', $missingTables)) ?>
+    <form method="post" class="d-inline ms-3">
+        <?= csrfField() ?>
+        <input type="hidden" name="action" value="run_migration">
+        <button type="submit" class="btn btn-danger btn-sm fw-semibold"
+                onclick="return confirm('Spustit migraci a vytvořit všechny chybějící tabulky?')">
+            <i class="fas fa-database me-1"></i>Spustit migraci nyní
+        </button>
+    </form>
+</div>
+<?php endif; ?>
 
 <div class="alert alert-info border-0 shadow-sm mb-4">
     <i class="fas fa-info-circle me-2"></i>MyCoach App je
@@ -506,6 +795,123 @@ renderAdminHeader('MyCoach administrace');
     </div>
 </div>
 
+<!-- ═══ Plány předplatného ══════════════════════════════════════════════════ -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header fw-bold" style="background:#1e1e2e;color:#fff">
+        <i class="fas fa-tags me-2"></i>Plány předplatného
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-lg-5">
+                <form method="post" id="planForm">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="action" value="save_plan">
+                    <input type="hidden" name="plan_id" id="planId" value="0">
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold">Název plánu *</label>
+                        <input type="text" name="plan_name" id="planName" class="form-control form-control-sm" placeholder="např. Měsíční předplatné" required>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-5">
+                            <label class="form-label small fw-semibold">Délka (dní) *</label>
+                            <input type="number" name="plan_days" id="planDays" class="form-control form-control-sm" value="30" min="1" required>
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small fw-semibold">Cena *</label>
+                            <input type="text" name="plan_price" id="planPrice" class="form-control form-control-sm" value="0" required>
+                        </div>
+                        <div class="col-3">
+                            <label class="form-label small fw-semibold">Měna</label>
+                            <input type="text" name="plan_currency" id="planCurrency" class="form-control form-control-sm" value="CZK" maxlength="5">
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold">Popis (nepovinný)</label>
+                        <textarea name="plan_description" id="planDesc" class="form-control form-control-sm" rows="2" placeholder="Co plán zahrnuje..."></textarea>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Pořadí</label>
+                            <input type="number" name="plan_sort" id="planSort" class="form-control form-control-sm" value="0">
+                        </div>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" name="plan_active" id="planActive" class="form-check-input" value="1" checked>
+                        <label class="form-check-label small" for="planActive">Aktivní (viditelný uživatelům)</label>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-warning btn-sm fw-semibold flex-grow-1">Uložit plán</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="planFormReset()">Reset</button>
+                    </div>
+                </form>
+            </div>
+            <div class="col-lg-7">
+                <?php if (empty($subscriptionPlans)): ?>
+                    <div class="text-muted p-3">Žádné plány. Přidejte první vlevo.</div>
+                <?php else: ?>
+                <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light"><tr>
+                        <th>Název</th><th class="text-center">Dní</th><th class="text-center">Cena</th>
+                        <th class="text-center">Aktivní</th><th class="text-end">Akce</th>
+                    </tr></thead>
+                    <tbody>
+                    <?php foreach ($subscriptionPlans as $plan): ?>
+                    <tr>
+                        <td>
+                            <div class="fw-semibold"><?= h($plan['name']) ?></div>
+                            <?php if ($plan['description']): ?><div class="small text-muted"><?= h(mb_substr($plan['description'],0,60,'UTF-8')) ?></div><?php endif; ?>
+                        </td>
+                        <td class="text-center"><?= (int)$plan['days'] ?></td>
+                        <td class="text-center"><?= number_format((float)$plan['price'], 2, ',', ' ') ?> <?= h($plan['currency']) ?></td>
+                        <td class="text-center"><span class="badge <?= $plan['is_active'] ? 'bg-success' : 'bg-secondary' ?>"><?= $plan['is_active'] ? 'Ano' : 'Ne' ?></span></td>
+                        <td class="text-end">
+                            <button type="button" class="btn btn-xs btn-outline-primary btn-sm"
+                                    onclick='planFormFill(<?= json_encode($plan) ?>)'>
+                                <i class="fas fa-pen"></i>
+                            </button>
+                            <form method="post" class="d-inline" onsubmit="return confirm('Smazat plán?')">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="action" value="delete_plan">
+                                <input type="hidden" name="plan_id" value="<?= (int)$plan['id'] ?>">
+                                <button class="btn btn-xs btn-outline-danger btn-sm"><i class="fas fa-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ Bankovní údaje pro platby ═══════════════════════════════════════════ -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header fw-bold" style="background:#1e1e2e;color:#fff">
+        <i class="fas fa-building-columns me-2"></i>Bankovní údaje pro platby (QR kód)
+    </div>
+    <div class="card-body">
+        <form method="post" class="row g-3 align-items-end">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="save_bank_settings">
+            <div class="col-md-5">
+                <label class="form-label fw-semibold">IBAN <small class="text-muted">(pro QR kód platby, např. CZ6508000000192000145399)</small></label>
+                <input type="text" name="bank_iban" class="form-control" value="<?= h($bankIban) ?>" placeholder="CZ65...">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label fw-semibold">Číslo účtu <small class="text-muted">(zobrazí se uživateli, např. 123456789/0800)</small></label>
+                <input type="text" name="bank_account_no" class="form-control" value="<?= h($bankAccountNo) ?>" placeholder="123456789/0800">
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-outline-primary w-100">Uložit bankovní údaje</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-header fw-bold" style="background:#1e1e2e;color:#fff">
         <i class="fas fa-users me-2"></i>Sportovci
@@ -625,6 +1031,18 @@ renderAdminHeader('MyCoach administrace');
                                     title="Přidat/upravit předplatné">
                                 <i class="fas fa-calendar-plus"></i>
                             </button>
+                            <?php if ($accRow && (!empty($accRow['subscription_end']) || !empty($accRow['trial_started_at']))): ?>
+                            <form method="post" class="d-inline"
+                                  onsubmit="return confirm('Odebrat předplatné / přístup pro <?= h(addslashes($fullName)) ?>? Uživatel ztratí přístup do MyCoach App ihned.')">
+                                <?= csrfField() ?>
+                                <input type="hidden" name="action" value="revoke_subscription">
+                                <input type="hidden" name="sub_user_type" value="athlete">
+                                <input type="hidden" name="sub_user_id" value="<?= (int)$athleteRow['id'] ?>">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Odebrat předplatné">
+                                    <i class="fas fa-ban"></i>
+                                </button>
+                            </form>
+                            <?php endif; ?>
                             <?php if ($accRow && (int)($accRow['trial_used'] ?? 0) === 1): ?>
                             <form method="post" class="d-inline">
                                 <?= csrfField() ?>
@@ -702,4 +1120,26 @@ document.getElementById('modalGrantSub').addEventListener('show.bs.modal', funct
   document.getElementById('subUserId').value   = btn.dataset.userId   || '';
   document.getElementById('subUserName').textContent = btn.dataset.userName || '';
 });
+
+function planFormReset() {
+  document.getElementById('planId').value='0';
+  document.getElementById('planName').value='';
+  document.getElementById('planDays').value='30';
+  document.getElementById('planPrice').value='0';
+  document.getElementById('planCurrency').value='CZK';
+  document.getElementById('planDesc').value='';
+  document.getElementById('planSort').value='0';
+  document.getElementById('planActive').checked=true;
+}
+function planFormFill(p) {
+  document.getElementById('planId').value=p.id;
+  document.getElementById('planName').value=p.name||'';
+  document.getElementById('planDays').value=p.days||30;
+  document.getElementById('planPrice').value=p.price||0;
+  document.getElementById('planCurrency').value=p.currency||'CZK';
+  document.getElementById('planDesc').value=p.description||'';
+  document.getElementById('planSort').value=p.sort_order||0;
+  document.getElementById('planActive').checked=p.is_active=='1'||p.is_active===1;
+  document.getElementById('planForm').scrollIntoView({behavior:'smooth',block:'start'});
+}
 </script>

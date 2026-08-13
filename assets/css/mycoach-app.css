@@ -346,9 +346,95 @@ body.mycoach-app-theme h5 {
   color: var(--mca-text-muted);
   font-size: 1.5rem;
 }
-.mca-video-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
+.mca-video-thumb img { width: 100%; height: 100%; object-fit: contain; border-radius: 8px; background: rgba(0,0,0,.12); }
 .mca-video-title { font-weight: 600; font-size: .92rem; margin-bottom: .2rem; }
 .mca-video-meta  { font-size: .78rem; color: var(--mca-text-muted); }
+
+/* ── Galerie fotek v sekci ─────────────────────────────────── */
+.mca-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 1rem;
+}
+.mca-gallery-item {
+  background: var(--mca-dark-3);
+  border: 1px solid var(--mca-metal-2);
+  border-radius: var(--mca-radius-sm);
+  overflow: hidden;
+  text-align: left;
+  color: var(--mca-text);
+  padding: 0;
+  cursor: pointer;
+  transition: border-color .18s, box-shadow .18s, transform .18s;
+}
+.mca-gallery-item:hover,
+.mca-gallery-item:focus {
+  border-color: var(--mca-orange);
+  box-shadow: 0 0 14px rgba(247,148,29,.15);
+  transform: translateY(-2px);
+  outline: none;
+}
+.mca-gallery-thumb {
+  position: relative;
+  background: var(--mca-metal-1);
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+}
+.mca-gallery-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform .2s ease;
+}
+.mca-gallery-item:hover .mca-gallery-thumb img,
+.mca-gallery-item:focus .mca-gallery-thumb img {
+  transform: scale(1.04);
+}
+.mca-gallery-caption {
+  display: block;
+  padding: .8rem .8rem .9rem;
+}
+.mca-lightbox-modal .modal-content {
+  background: rgba(12,12,12,.96);
+  border: 1px solid rgba(247,148,29,.25);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 0 32px rgba(0,0,0,.45);
+}
+.mca-lightbox-close {
+  position: absolute;
+  top: .75rem;
+  right: .75rem;
+  z-index: 5;
+  background: rgba(0,0,0,.55);
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 50%;
+  padding: .5rem;
+  opacity: 1;
+}
+.mca-lightbox-image {
+  display: block;
+  width: 100%;
+  max-height: 75vh;
+  object-fit: contain;
+  background: #000;
+}
+.mca-lightbox-meta {
+  padding: 1rem 1.1rem 1.1rem;
+  background: rgba(20,20,20,.9);
+  color: var(--mca-text);
+}
+.mca-lightbox-title {
+  font-weight: 700;
+  font-size: 1rem;
+  margin-bottom: .25rem;
+}
+.mca-lightbox-desc {
+  color: var(--mca-text-muted);
+  font-size: .8rem;
+  line-height: 1.5;
+}
 
 /* ── Encyklopedie cviků ─────────────────────────────────────── */
 .mca-exercise-card {
@@ -361,17 +447,23 @@ body.mycoach-app-theme h5 {
   gap: .85rem;
   text-decoration: none;
   color: var(--mca-text);
-  transition: border-color .18s;
+  transition: border-color .18s, box-shadow .18s, transform .18s;
 }
-.mca-exercise-card:hover { border-color: var(--mca-orange); color: var(--mca-text); }
+.mca-exercise-card:hover {
+  border-color: var(--mca-orange);
+  box-shadow: 0 0 12px rgba(247,148,29,.15);
+  transform: translateY(-2px);
+  color: var(--mca-text);
+}
 .mca-exercise-thumb {
   width: 70px; height: 70px;
   border-radius: 8px;
   background: var(--mca-metal-1);
   display: flex; align-items: center; justify-content: center;
   font-size: 1.6rem; color: var(--mca-orange); flex-shrink: 0;
+  overflow: hidden;
 }
-.mca-exercise-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
+.mca-exercise-thumb img { width: 100%; height: 100%; object-fit: contain; border-radius: 8px; background: rgba(0,0,0,.08); }
 .mca-difficulty-beginner  { color: #3be07a; }
 .mca-difficulty-intermediate { color: var(--mca-orange); }
 .mca-difficulty-advanced  { color: #e03b3b; }

@@ -7,7 +7,7 @@ $exercisesUrl = ($userType === 'coach')
     : BASE_URL . '/athlete_mycoach_app_exercises.php';
 
 if ($exerciseId <= 0) { flash('danger','Neplatný cvik.'); redirect($exercisesUrl); }
-if (!mycoachAppIsLive() || !mycoachAppCanAccess($pdo, $userType, $userId)) {
+if (!mycoachAppIsLive() && !mycoachAppCanAccess($pdo, $userType, $userId)) {
     flash('warning','Přístup k MyCoach není aktivní.'); redirect($appUrl);
 }
 
@@ -33,16 +33,28 @@ $diffColors = ['beginner'=>'#3be07a','intermediate'=>'var(--mca-orange)','advanc
 
 <div class="mca-hero mb-3">
   <div class="container-fluid px-3">
-    <div class="mca-breadcrumb mb-2" style="color:rgba(240,240,240,.6);">
-      <a href="<?= h($appUrl) ?>" style="color:rgba(247,148,29,.8);"><i class="fas fa-brain me-1"></i>MyCoach</a>
-      <span class="mca-breadcrumb-sep">/</span>
-      <a href="<?= h($exercisesUrl) ?>" style="color:rgba(247,148,29,.8);">Cviky</a>
-      <span class="mca-breadcrumb-sep">/</span>
-      <span><?= h($ex['name']) ?></span>
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+      <div>
+        <div class="mca-breadcrumb mb-2" style="color:rgba(240,240,240,.6);">
+          <a href="<?= h($appUrl) ?>" style="color:rgba(247,148,29,.8);"><i class="fas fa-brain me-1"></i>MyCoach</a>
+          <span class="mca-breadcrumb-sep">/</span>
+          <a href="<?= h($exercisesUrl) ?>" style="color:rgba(247,148,29,.8);">Cviky</a>
+          <span class="mca-breadcrumb-sep">/</span>
+          <span><?= h($ex['name']) ?></span>
+        </div>
+        <h1 class="mca-hero-title" style="font-size:1.35rem;">
+          <i class="fas fa-person-running"></i> <?= h($ex['name']) ?>
+        </h1>
+      </div>
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <a href="<?= BASE_URL ?>/dashboard.php" class="mca-btn-outline" style="padding:.35rem .9rem;font-size:.8rem;">
+          <i class="fas fa-house me-1"></i>Domů
+        </a>
+        <a href="<?= BASE_URL ?>/logout.php" class="mca-btn-outline" style="padding:.35rem .9rem;font-size:.8rem; border-color:rgba(220,53,69,.45); color:#ff9aa2;">
+          <i class="fas fa-sign-out-alt me-1"></i>Odhlásit
+        </a>
+      </div>
     </div>
-    <h1 class="mca-hero-title" style="font-size:1.35rem;">
-      <i class="fas fa-person-running"></i> <?= h($ex['name']) ?>
-    </h1>
   </div>
 </div>
 

@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $videoId = (int)($_GET['id'] ?? 0);
 if ($videoId <= 0) { flash('danger', 'Neplatné video.'); redirect($appUrl); }
-if (!mycoachAppIsLive() || !mycoachAppCanAccess($pdo, $userType, $userId)) {
+if (!mycoachAppIsLive() && !mycoachAppCanAccess($pdo, $userType, $userId)) {
     flash('warning', 'Přístup není aktivní.');
     redirect($appUrl);
 }
