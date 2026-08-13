@@ -29,6 +29,24 @@ if (!$section) {
 $sectionTypes = mycoachAppSectionTypes();
 $sType = (string)($section['section_type'] ?? 'videos');
 
+$splitListValues = static function (?string $raw): array {
+  $value = trim((string)$raw);
+  if ($value === '') { return []; }
+  $parts = preg_split('/[,;|\/]+/', $value);
+  if (!is_array($parts)) { return []; }
+  $out = [];
+  $seen = [];
+  foreach ($parts as $part) {
+    $part = trim((string)$part);
+    if ($part === '') { continue; }
+    $key = mb_strtolower($part, 'UTF-8');
+    if (isset($seen[$key])) { continue; }
+    $seen[$key] = true;
+    $out[] = $part;
+  }
+  return $out;
+};
+
 // Nejdřív načti nová section_items (priorita)
 $sectionItems = [];
 try {
@@ -66,7 +84,7 @@ if (!empty($videos)) {
     $progressMap = mycoachAppLoadVideoProgress($pdo, $userType, $userId);
 }
 ?>
-<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-app.css">
+<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-app.css?v=20260813">
 
 <!-- Hero -->
 <div class="mca-hero mb-3">
@@ -332,11 +350,33 @@ if (!empty($videos)) {
 
   <?php elseif (!empty($workouts)): ?>
     <!-- TRÉNINKY -->
+    <?php
+      $workoutCategoryList = [];
+      foreach ($workouts as $woCatItem) {
+        foreach ($splitListValues((string)($woCatItem['category'] ?? '')) as $catPart) {
+          $workoutCategoryList[$catPart] = $catPart;
+        }
+      }
+      ksort($workoutCategoryList, SORT_NATURAL | SORT_FLAG_CASE);
+    ?>
+    <?php if (!empty($workoutCategoryList)): ?>
+      <div class="d-flex align-items-center gap-2 flex-wrap mb-3">
+        <span class="small" style="color:var(--mca-text-muted);">Kategorie:</span>
+        <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="Filtr kategorií tréninků">
+          <button type="button" class="btn btn-warning mca-workout-filter active" data-workout-filter="all">Vše</button>
+          <?php foreach ($workoutCategoryList as $woCategory): ?>
+            <button type="button" class="btn btn-outline-light mca-workout-filter" data-workout-filter="<?= h(mb_strtolower($woCategory, 'UTF-8')) ?>"><?= h($woCategory) ?></button>
+          <?php endforeach; ?>
+        </div>
+      </div>
+    <?php endif; ?>
     <div class="d-flex flex-column gap-3">
       <?php foreach ($workouts as $wo):
         $diffIcons = ['beginner'=>'fa-seedling','intermediate'=>'fa-dumbbell','advanced'=>'fa-fire'];
         $diffColors = ['beginner'=>'#3be07a','intermediate'=>'var(--mca-orange)','advanced'=>'#e03b3b'];
         $diff = (string)($wo['difficulty'] ?? 'intermediate');
+        $woCategories = $splitListValues((string)($wo['category'] ?? ''));
+        $woCategoryTokens = array_map(static fn($v) => mb_strtolower($v, 'UTF-8'), $woCategories);
         $workoutUrl = BASE_URL . '/mycoach_app_workout.php?id=' . (int)$wo['id'];
         if ($userType === 'athlete') {
             $workoutUrl = BASE_URL . '/athlete_mycoach_app_workout.php?id=' . (int)$wo['id'];
@@ -349,7 +389,7 @@ if (!empty($videos)) {
           $exCount = (int)$exCntStmt->fetchColumn();
         } catch (Throwable $e) {}
       ?>
-      <div class="mca-workout-card">
+      <div class="mca-workout-card" data-workout-card data-workout-categories="<?= h(implode('|', $woCategoryTokens)) ?>">
         <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
           <div class="flex-grow-1">
             <div class="mca-workout-title"><?= h($wo['title']) ?></div>
@@ -357,6 +397,11 @@ if (!empty($videos)) {
               <p style="color:var(--mca-text-muted);font-size:.85rem;margin:.25rem 0 .5rem;"><?= h(mb_substr($wo['description'],0,160,'UTF-8')) ?></p>
             <?php endif; ?>
             <div class="d-flex gap-2 flex-wrap align-items-center">
+              <?php if (!empty($woCategories)): ?>
+                <?php foreach ($woCategories as $woCategory): ?>
+                  <span class="mca-tile-badge"><i class="fas fa-tag me-1"></i><?= h($woCategory) ?></span>
+                <?php endforeach; ?>
+              <?php endif; ?>
               <?php if ($wo['duration_minutes']): ?>
                 <span class="mca-tile-badge"><i class="fas fa-clock me-1"></i><?= (int)$wo['duration_minutes'] ?> min</span>
               <?php endif; ?>
@@ -375,6 +420,34 @@ if (!empty($videos)) {
       </div>
       <?php endforeach; ?>
     </div>
+
+    <script>
+      (function() {
+        const filterButtons = document.querySelectorAll('.mca-workout-filter');
+        if (!filterButtons.length) return;
+        const workoutCards = document.querySelectorAll('[data-workout-card]');
+
+        function applyWorkoutFilter(value) {
+          workoutCards.forEach(function(card) {
+            const categories = (card.dataset.workoutCategories || '').split('|').filter(Boolean);
+            const match = value === 'all' || categories.includes(value);
+            card.style.display = match ? '' : 'none';
+          });
+        }
+
+        filterButtons.forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            const value = btn.dataset.workoutFilter || 'all';
+            filterButtons.forEach(function(el) {
+              el.classList.toggle('active', el === btn);
+              el.classList.toggle('btn-warning', el === btn);
+              el.classList.toggle('btn-outline-light', el !== btn);
+            });
+            applyWorkoutFilter(value);
+          });
+        });
+      })();
+    </script>
 
   <?php else: ?>
     <div class="text-center py-4" style="color:var(--mca-text-muted);">

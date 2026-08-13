@@ -1,0 +1,6 @@
+﻿id;nazev;sekce;sekce_id;kategorie;obtiznost;delka_min;thumbnail;popis;poradi;aktivni
+;Ranni mobilita;;;Protazeni, Trenink doma;zacatecnik;15;/uploads/mycoach/workouts/mobilita.jpg;Kratka ranni mobilita na rozhybani tela.;10;1
+;Kardio HIIT domu;;;Kardio, Trenink doma;stredni;25;/uploads/mycoach/workouts/hiit-doma.jpg;Intervalovy kardio trenink bez vybaveni.;20;1
+;Bezecky zaklad;;;Trenink behu, Kardio;zacatecnik;35;/uploads/mycoach/workouts/beh-zaklad.jpg;Lehky bezecky trenink pro budovani vytrvalosti.;30;1
+14;Gym full body;;;Trenink v posilovne, Sila;pokrocily;60;/uploads/mycoach/workouts/fullbody-gym.jpg;Komplexni silovy trenink celeho tela.;40;1
+

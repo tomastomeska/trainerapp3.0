@@ -57,7 +57,7 @@ if ($isVideo) {
     // Načti progress (sdílíme mycoach_app_video_progress přes legacy video, nebo skip)
 }
 ?>
-<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-app.css">
+<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-app.css?v=20260813">
 
 <!-- Hero -->
 <div class="mca-hero mb-3">

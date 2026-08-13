@@ -10,6 +10,24 @@ $search   = trim((string)($_GET['q'] ?? ''));
 $category = trim((string)($_GET['cat'] ?? ''));
 $difficulty = trim((string)($_GET['diff'] ?? ''));
 
+$splitValues = static function (?string $raw): array {
+  $value = trim((string)$raw);
+  if ($value === '') { return []; }
+  $parts = preg_split('/[,;|\/]+/', $value);
+  if (!is_array($parts)) { return []; }
+  $out = [];
+  $seen = [];
+  foreach ($parts as $part) {
+    $part = trim((string)$part);
+    if ($part === '') { continue; }
+    $key = mb_strtolower($part, 'UTF-8');
+    if (isset($seen[$key])) { continue; }
+    $seen[$key] = true;
+    $out[] = $part;
+  }
+  return $out;
+};
+
 // Načtení cviků
 $exercises  = [];
 $categories = [];
@@ -21,10 +39,6 @@ try {
         $where[]  = '(e.name LIKE ? OR e.muscle_groups LIKE ? OR e.category LIKE ? OR e.equipment LIKE ?)';
         $like     = '%' . $search . '%';
         $params   = array_merge($params, [$like, $like, $like, $like]);
-    }
-    if ($category !== '') {
-        $where[]  = 'e.category = ?';
-        $params[] = $category;
     }
     if (in_array($difficulty, ['beginner','intermediate','advanced'], true)) {
         $where[]  = 'e.difficulty = ?';
@@ -41,13 +55,35 @@ try {
     $stmt->execute($params);
     $exercises = $stmt->fetchAll();
 
-    $catStmt = $pdo->query('SELECT DISTINCT category FROM mycoach_app_exercises WHERE is_active=1 AND category IS NOT NULL AND category != "" ORDER BY category ASC');
-    $categories = $catStmt ? array_column($catStmt->fetchAll(), 'category') : [];
+    $catStmt = $pdo->query('SELECT category FROM mycoach_app_exercises WHERE is_active=1 AND category IS NOT NULL AND category != "" ORDER BY category ASC');
+    $catSet = [];
+    if ($catStmt) {
+      foreach ($catStmt->fetchAll() ?: [] as $row) {
+        foreach ($splitValues((string)($row['category'] ?? '')) as $catPart) {
+          $catSet[$catPart] = $catPart;
+        }
+      }
+    }
+    $categories = array_values($catSet);
+    natcasesort($categories);
+    $categories = array_values($categories);
+
+    if ($category !== '') {
+      $categoryKey = mb_strtolower($category, 'UTF-8');
+      $exercises = array_values(array_filter($exercises, static function(array $ex) use ($splitValues, $categoryKey): bool {
+        foreach ($splitValues((string)($ex['category'] ?? '')) as $catPart) {
+          if (mb_strtolower($catPart, 'UTF-8') === $categoryKey) {
+            return true;
+          }
+        }
+        return false;
+      }));
+    }
 } catch (Throwable $e) { $exercises = []; $categories = []; }
 
 $diffOpts = [''=>'Vše','beginner'=>'Začátečník','intermediate'=>'Střední','advanced'=>'Pokročilý'];
 ?>
-<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-app.css">
+<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-app.css?v=20260813">
 
 <div class="mca-hero mb-3">
   <div class="container-fluid px-3">

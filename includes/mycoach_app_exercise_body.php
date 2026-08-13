@@ -29,7 +29,7 @@ if (!empty($ex['video_url'])) {
 $diffLabels = ['beginner'=>'Začátečník','intermediate'=>'Středně pokročilý','advanced'=>'Pokročilý'];
 $diffColors = ['beginner'=>'#3be07a','intermediate'=>'var(--mca-orange)','advanced'=>'#e03b3b'];
 ?>
-<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-app.css">
+<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-app.css?v=20260813">
 
 <div class="mca-hero mb-3">
   <div class="container-fluid px-3">

@@ -33,7 +33,7 @@ $targetUrl = (string)($item['url'] ?? '');
 $safeUrl = (filter_var($targetUrl, FILTER_VALIDATE_URL) && preg_match('/^https?:\/\//', $targetUrl))
     ? $targetUrl : '';
 ?>
-<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-app.css">
+<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-app.css?v=20260813">
 <style>
   .mca-webview-frame { width:100%; border:0; display:block; background:#fff; border-radius:10px; }
 </style>

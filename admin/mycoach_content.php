@@ -18,9 +18,51 @@ foreach ([
     }
 }
 
+try {
+  $col = $pdo->query("SHOW COLUMNS FROM mycoach_app_workouts LIKE 'category'");
+  if ($col && !$col->fetch()) {
+    $pdo->exec("ALTER TABLE mycoach_app_workouts ADD COLUMN category VARCHAR(255) NULL AFTER title");
+  }
+} catch (Throwable $e) {
+  // Pokud migrace sloupce selže, pokračujeme bez pádu stránky.
+}
+
 $sectionTypes   = mycoachAppSectionTypes();
 $tileColors     = ['orange','yellow','red','blue','green','teal','purple'];
 $difficultyOpts = ['beginner'=>'Začátečník','intermediate'=>'Středně pokročilý','advanced'=>'Pokročilý'];
+
+function mcSplitListValues(?string $raw): array {
+  $value = trim((string)$raw);
+  if ($value === '') { return []; }
+  $parts = preg_split('/[,;|\/]+/', $value);
+  if (!is_array($parts)) { return []; }
+  $out = [];
+  $seen = [];
+  foreach ($parts as $part) {
+    $part = trim((string)$part);
+    if ($part === '') { continue; }
+    $k = mb_strtolower($part, 'UTF-8');
+    if (isset($seen[$k])) { continue; }
+    $seen[$k] = true;
+    $out[] = $part;
+  }
+  return $out;
+}
+
+function mcNormalizeListString(?string $raw): string {
+  return implode(', ', mcSplitListValues($raw));
+}
+
+function mcNormalizeCsvHeader(string $header): string {
+  $header = trim(mb_strtolower($header, 'UTF-8'));
+  $header = strtr($header, [
+    'á'=>'a','ä'=>'a','č'=>'c','ď'=>'d','é'=>'e','ě'=>'e','ë'=>'e','í'=>'i','ĺ'=>'l','ľ'=>'l','ň'=>'n',
+    'ó'=>'o','ô'=>'o','ö'=>'o','ř'=>'r','š'=>'s','ť'=>'t','ú'=>'u','ů'=>'u','ü'=>'u','ý'=>'y','ž'=>'z',
+  ]);
+  $header = preg_replace('/\s+/', '_', $header) ?? '';
+  $header = preg_replace('/[^a-z0-9_]/', '', $header) ?? '';
+  return $header;
+}
 
 // ── POST akce ─────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -112,10 +154,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id     = (int)($_POST['exercise_id'] ?? 0);
         $name   = trim((string)($_POST['name'] ?? ''));
         $slug   = mycoachAppExerciseSlugify($name);
-        $cat    = trim((string)($_POST['category'] ?? ''));
+      $cat    = mcNormalizeListString((string)($_POST['category'] ?? ''));
         $desc   = trim((string)($_POST['description'] ?? ''));
         $instr  = trim((string)($_POST['instructions'] ?? ''));
-        $muscles= trim((string)($_POST['muscle_groups'] ?? ''));
+      $muscles= mcNormalizeListString((string)($_POST['muscle_groups'] ?? ''));
         $equip  = trim((string)($_POST['equipment'] ?? ''));
         $diff   = in_array(trim((string)($_POST['difficulty'] ?? '')), ['beginner','intermediate','advanced'], true) ? trim((string)$_POST['difficulty']) : 'intermediate';
         $vurl   = trim((string)($_POST['video_url'] ?? ''));
@@ -164,11 +206,170 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . '/admin/mycoach_content.php#exercises');
     }
 
+    if ($action === 'import_exercises_csv') {
+      if (empty($_FILES['exercises_csv']['tmp_name']) || (int)($_FILES['exercises_csv']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        flash('danger', 'Vyberte prosím platný CSV soubor pro import cviků.');
+        redirect(BASE_URL . '/admin/mycoach_content.php#exercises');
+      }
+
+      $handle = fopen((string)$_FILES['exercises_csv']['tmp_name'], 'r');
+      if (!$handle) {
+        flash('danger', 'CSV soubor se nepodařilo otevřít.');
+        redirect(BASE_URL . '/admin/mycoach_content.php#exercises');
+      }
+
+      $bom = fread($handle, 3);
+      if ($bom !== "\xEF\xBB\xBF") {
+        rewind($handle);
+      }
+
+      $headerRow = fgetcsv($handle, 0, ';');
+      if (!is_array($headerRow) || empty($headerRow)) {
+        fclose($handle);
+        flash('danger', 'CSV soubor neobsahuje hlavičku.');
+        redirect(BASE_URL . '/admin/mycoach_content.php#exercises');
+      }
+
+      $headerMap = [];
+      foreach ($headerRow as $idx => $header) {
+        $key = mcNormalizeCsvHeader((string)$header);
+        if ($key !== '' && !isset($headerMap[$key])) {
+          $headerMap[$key] = (int)$idx;
+        }
+      }
+
+      $findIdx = static function(array $map, array $aliases): ?int {
+        foreach ($aliases as $alias) {
+          if (isset($map[$alias])) { return (int)$map[$alias]; }
+        }
+        return null;
+      };
+
+      $idxId          = $findIdx($headerMap, ['id']);
+      $idxName        = $findIdx($headerMap, ['nazev','name']);
+      $idxCategory    = $findIdx($headerMap, ['kategorie','category']);
+      $idxDifficulty  = $findIdx($headerMap, ['obtiznost','difficulty']);
+      $idxMuscles     = $findIdx($headerMap, ['svalove_partie','muscle_groups']);
+      $idxEquipment   = $findIdx($headerMap, ['vybaveni','equipment']);
+      $idxVideo       = $findIdx($headerMap, ['video_url','video']);
+      $idxThumbnail   = $findIdx($headerMap, ['thumbnail','nahled']);
+      $idxDescription = $findIdx($headerMap, ['popis','description']);
+      $idxInstr       = $findIdx($headerMap, ['instrukce','instructions']);
+      $idxSort        = $findIdx($headerMap, ['poradi','sort_order']);
+      $idxActive      = $findIdx($headerMap, ['aktivni','is_active']);
+
+      if ($idxName === null) {
+        fclose($handle);
+        flash('danger', 'CSV musí obsahovat sloupec "nazev" (nebo "name").');
+        redirect(BASE_URL . '/admin/mycoach_content.php#exercises');
+      }
+
+      $difficultyMap = [
+        'beginner' => 'beginner',
+        'zacatecnik' => 'beginner',
+        'začátečník' => 'beginner',
+        'intermediate' => 'intermediate',
+        'stredni' => 'intermediate',
+        'středni' => 'intermediate',
+        'střední' => 'intermediate',
+        'pokrocily' => 'advanced',
+        'pokročily' => 'advanced',
+        'pokročilý' => 'advanced',
+        'advanced' => 'advanced',
+      ];
+
+      $activeMap = [
+        '1' => 1, 'ano' => 1, 'true' => 1, 'aktivni' => 1, 'aktivní' => 1, 'yes' => 1,
+        '0' => 0, 'ne' => 0, 'false' => 0, 'no' => 0,
+      ];
+
+      $stmtById = $pdo->prepare('SELECT id FROM mycoach_app_exercises WHERE id=? LIMIT 1');
+      $stmtByName = $pdo->prepare('SELECT id FROM mycoach_app_exercises WHERE name=? LIMIT 1');
+      $stmtChkSlugIns = $pdo->prepare('SELECT id FROM mycoach_app_exercises WHERE slug=? LIMIT 1');
+      $stmtChkSlugUpd = $pdo->prepare('SELECT id FROM mycoach_app_exercises WHERE slug=? AND id != ? LIMIT 1');
+      $stmtInsert = $pdo->prepare('INSERT INTO mycoach_app_exercises (name,slug,category,description,instructions,muscle_groups,equipment,difficulty,video_url,thumbnail,sort_order,is_active) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
+      $stmtUpdate = $pdo->prepare('UPDATE mycoach_app_exercises SET name=?,slug=?,category=?,description=?,instructions=?,muscle_groups=?,equipment=?,difficulty=?,video_url=?,thumbnail=?,sort_order=?,is_active=? WHERE id=?');
+
+      $inserted = 0;
+      $updated  = 0;
+      $skipped  = 0;
+
+      while (($row = fgetcsv($handle, 0, ';')) !== false) {
+        if (!is_array($row) || count($row) === 0) { continue; }
+
+        $name = trim((string)($row[$idxName] ?? ''));
+        if ($name === '') {
+          $skipped++;
+          continue;
+        }
+
+        $cat = mcNormalizeListString((string)($idxCategory !== null ? ($row[$idxCategory] ?? '') : ''));
+        $desc = trim((string)($idxDescription !== null ? ($row[$idxDescription] ?? '') : ''));
+        $instr = trim((string)($idxInstr !== null ? ($row[$idxInstr] ?? '') : ''));
+        $muscles = mcNormalizeListString((string)($idxMuscles !== null ? ($row[$idxMuscles] ?? '') : ''));
+        $equip = trim((string)($idxEquipment !== null ? ($row[$idxEquipment] ?? '') : ''));
+        $video = trim((string)($idxVideo !== null ? ($row[$idxVideo] ?? '') : ''));
+        $thumb = trim((string)($idxThumbnail !== null ? ($row[$idxThumbnail] ?? '') : ''));
+        $sort = ($idxSort !== null && is_numeric($row[$idxSort] ?? null)) ? (int)$row[$idxSort] : 0;
+
+        $rawDiff = trim((string)($idxDifficulty !== null ? ($row[$idxDifficulty] ?? '') : ''));
+        $diffKey = mb_strtolower($rawDiff, 'UTF-8');
+        $difficulty = $difficultyMap[$diffKey] ?? 'intermediate';
+
+        $rawActive = trim((string)($idxActive !== null ? ($row[$idxActive] ?? '') : '1'));
+        $activeKey = mb_strtolower($rawActive, 'UTF-8');
+        $active = $activeMap[$activeKey] ?? (is_numeric($rawActive) ? ((int)$rawActive > 0 ? 1 : 0) : 1);
+
+        $targetId = 0;
+        if ($idxId !== null && is_numeric($row[$idxId] ?? null) && (int)$row[$idxId] > 0) {
+          $targetId = (int)$row[$idxId];
+          $stmtById->execute([$targetId]);
+          if (!$stmtById->fetch()) {
+            $targetId = 0;
+          }
+        }
+
+        if ($targetId <= 0) {
+          $stmtByName->execute([$name]);
+          $existingByName = $stmtByName->fetchColumn();
+          if ($existingByName) { $targetId = (int)$existingByName; }
+        }
+
+        $slugBase = mycoachAppExerciseSlugify($name);
+        if ($slugBase === '') { $slugBase = 'cvik'; }
+        $slug = $slugBase;
+        $i = 1;
+
+        if ($targetId > 0) {
+          while (true) {
+            $stmtChkSlugUpd->execute([$slug, $targetId]);
+            if (!$stmtChkSlugUpd->fetch()) { break; }
+            $slug = $slugBase . '-' . $i++;
+          }
+          $stmtUpdate->execute([$name,$slug,$cat,$desc,$instr,$muscles,$equip,$difficulty,$video,$thumb,$sort,$active,$targetId]);
+          $updated++;
+        } else {
+          while (true) {
+            $stmtChkSlugIns->execute([$slug]);
+            if (!$stmtChkSlugIns->fetch()) { break; }
+            $slug = $slugBase . '-' . $i++;
+          }
+          $stmtInsert->execute([$name,$slug,$cat,$desc,$instr,$muscles,$equip,$difficulty,$video,$thumb,$sort,$active]);
+          $inserted++;
+        }
+      }
+
+      fclose($handle);
+      flash('success', 'Import cviků dokončen. Přidáno: ' . $inserted . ', aktualizováno: ' . $updated . ', přeskočeno: ' . $skipped . '.');
+      redirect(BASE_URL . '/admin/mycoach_content.php#exercises');
+    }
+
     // ── Tréninky ───────────────────────────────────────────
     if ($action === 'save_workout') {
         $id    = (int)($_POST['workout_id'] ?? 0);
         $secId = (int)($_POST['section_id'] ?? 0) ?: null;
         $title = trim((string)($_POST['title'] ?? ''));
+      $category = mcNormalizeListString((string)($_POST['category'] ?? ''));
         $desc  = trim((string)($_POST['description'] ?? ''));
         $diff  = in_array(trim((string)($_POST['difficulty'] ?? '')), ['beginner','intermediate','advanced'], true) ? trim((string)$_POST['difficulty']) : 'intermediate';
         $dur   = is_numeric($_POST['duration_minutes'] ?? '') ? (int)$_POST['duration_minutes'] : null;
@@ -183,11 +384,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($id > 0) {
-            $pdo->prepare('UPDATE mycoach_app_workouts SET section_id=?,title=?,description=?,difficulty=?,duration_minutes=?,thumbnail=?,sort_order=?,is_active=? WHERE id=?')
-                ->execute([$secId,$title,$desc,$diff,$dur,$thumb,$sort,$active,$id]);
+          $pdo->prepare('UPDATE mycoach_app_workouts SET section_id=?,title=?,category=?,description=?,difficulty=?,duration_minutes=?,thumbnail=?,sort_order=?,is_active=? WHERE id=?')
+            ->execute([$secId,$title,$category,$desc,$diff,$dur,$thumb,$sort,$active,$id]);
         } else {
-            $pdo->prepare('INSERT INTO mycoach_app_workouts (section_id,title,description,difficulty,duration_minutes,thumbnail,sort_order,is_active) VALUES (?,?,?,?,?,?,?,?)')
-                ->execute([$secId,$title,$desc,$diff,$dur,$thumb,$sort,$active]);
+          $pdo->prepare('INSERT INTO mycoach_app_workouts (section_id,title,category,description,difficulty,duration_minutes,thumbnail,sort_order,is_active) VALUES (?,?,?,?,?,?,?,?,?)')
+            ->execute([$secId,$title,$category,$desc,$diff,$dur,$thumb,$sort,$active]);
         }
         flash('success', 'Trénink byl uložen.');
         $redirectTarget = $secId > 0 ? (BASE_URL . '/admin/mycoach_content.php?sec=' . $secId) : (BASE_URL . '/admin/mycoach_content.php#workouts');
@@ -200,6 +401,158 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($id > 0) { $pdo->prepare('DELETE FROM mycoach_app_workouts WHERE id=?')->execute([$id]); flash('success','Trénink smazán.'); }
         $redirectTarget = $secId > 0 ? (BASE_URL . '/admin/mycoach_content.php?sec=' . $secId) : (BASE_URL . '/admin/mycoach_content.php#workouts');
         redirect($redirectTarget);
+    }
+
+    if ($action === 'import_workouts_csv') {
+      if (empty($_FILES['workouts_csv']['tmp_name']) || (int)($_FILES['workouts_csv']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        flash('danger', 'Vyberte prosím platný CSV soubor pro import tréninků.');
+        redirect(BASE_URL . '/admin/mycoach_content.php#workouts');
+      }
+
+      $handle = fopen((string)$_FILES['workouts_csv']['tmp_name'], 'r');
+      if (!$handle) {
+        flash('danger', 'CSV soubor tréninků se nepodařilo otevřít.');
+        redirect(BASE_URL . '/admin/mycoach_content.php#workouts');
+      }
+
+      $bom = fread($handle, 3);
+      if ($bom !== "\xEF\xBB\xBF") {
+        rewind($handle);
+      }
+
+      $headerRow = fgetcsv($handle, 0, ';');
+      if (!is_array($headerRow) || empty($headerRow)) {
+        fclose($handle);
+        flash('danger', 'CSV soubor tréninků neobsahuje hlavičku.');
+        redirect(BASE_URL . '/admin/mycoach_content.php#workouts');
+      }
+
+      $headerMap = [];
+      foreach ($headerRow as $idx => $header) {
+        $key = mcNormalizeCsvHeader((string)$header);
+        if ($key !== '' && !isset($headerMap[$key])) {
+          $headerMap[$key] = (int)$idx;
+        }
+      }
+
+      $findIdx = static function(array $map, array $aliases): ?int {
+        foreach ($aliases as $alias) {
+          if (isset($map[$alias])) { return (int)$map[$alias]; }
+        }
+        return null;
+      };
+
+      $idxId          = $findIdx($headerMap, ['id']);
+      $idxTitle       = $findIdx($headerMap, ['nazev','title']);
+      $idxSectionId   = $findIdx($headerMap, ['sekce_id','section_id']);
+      $idxSectionName = $findIdx($headerMap, ['sekce','section']);
+      $idxCategory    = $findIdx($headerMap, ['kategorie','category']);
+      $idxDifficulty  = $findIdx($headerMap, ['obtiznost','difficulty']);
+      $idxDuration    = $findIdx($headerMap, ['delka_min','duration_minutes']);
+      $idxThumb       = $findIdx($headerMap, ['thumbnail','nahled']);
+      $idxDesc        = $findIdx($headerMap, ['popis','description']);
+      $idxSort        = $findIdx($headerMap, ['poradi','sort_order']);
+      $idxActive      = $findIdx($headerMap, ['aktivni','is_active']);
+
+      if ($idxTitle === null) {
+        fclose($handle);
+        flash('danger', 'CSV tréninků musí obsahovat sloupec "nazev" (nebo "title").');
+        redirect(BASE_URL . '/admin/mycoach_content.php#workouts');
+      }
+
+      $difficultyMap = [
+        'beginner' => 'beginner',
+        'zacatecnik' => 'beginner',
+        'začátečník' => 'beginner',
+        'intermediate' => 'intermediate',
+        'stredni' => 'intermediate',
+        'středni' => 'intermediate',
+        'střední' => 'intermediate',
+        'pokrocily' => 'advanced',
+        'pokročily' => 'advanced',
+        'pokročilý' => 'advanced',
+        'advanced' => 'advanced',
+      ];
+
+      $activeMap = [
+        '1' => 1, 'ano' => 1, 'true' => 1, 'aktivni' => 1, 'aktivní' => 1, 'yes' => 1,
+        '0' => 0, 'ne' => 0, 'false' => 0, 'no' => 0,
+      ];
+
+      $sectionByNameStmt = $pdo->prepare('SELECT id FROM mycoach_app_sections WHERE title=? LIMIT 1');
+      $workoutByIdStmt = $pdo->prepare('SELECT id FROM mycoach_app_workouts WHERE id=? LIMIT 1');
+      $workoutByTitleStmt = $pdo->prepare('SELECT id FROM mycoach_app_workouts WHERE title=? LIMIT 1');
+      $insertStmt = $pdo->prepare('INSERT INTO mycoach_app_workouts (section_id,title,category,description,difficulty,duration_minutes,thumbnail,sort_order,is_active) VALUES (?,?,?,?,?,?,?,?,?)');
+      $updateStmt = $pdo->prepare('UPDATE mycoach_app_workouts SET section_id=?,title=?,category=?,description=?,difficulty=?,duration_minutes=?,thumbnail=?,sort_order=?,is_active=? WHERE id=?');
+
+      $inserted = 0;
+      $updated = 0;
+      $skipped = 0;
+
+      while (($row = fgetcsv($handle, 0, ';')) !== false) {
+        if (!is_array($row) || count($row) === 0) { continue; }
+
+        $title = trim((string)($row[$idxTitle] ?? ''));
+        if ($title === '') {
+          $skipped++;
+          continue;
+        }
+
+        $sectionId = null;
+        if ($idxSectionId !== null && is_numeric($row[$idxSectionId] ?? null) && (int)$row[$idxSectionId] > 0) {
+          $sectionId = (int)$row[$idxSectionId];
+        } elseif ($idxSectionName !== null) {
+          $sectionName = trim((string)($row[$idxSectionName] ?? ''));
+          if ($sectionName !== '') {
+            $sectionByNameStmt->execute([$sectionName]);
+            $resolvedSectionId = $sectionByNameStmt->fetchColumn();
+            if ($resolvedSectionId) {
+              $sectionId = (int)$resolvedSectionId;
+            }
+          }
+        }
+
+        $category = mcNormalizeListString((string)($idxCategory !== null ? ($row[$idxCategory] ?? '') : ''));
+        $desc = trim((string)($idxDesc !== null ? ($row[$idxDesc] ?? '') : ''));
+        $thumb = trim((string)($idxThumb !== null ? ($row[$idxThumb] ?? '') : ''));
+        $sort = ($idxSort !== null && is_numeric($row[$idxSort] ?? null)) ? (int)$row[$idxSort] : 0;
+        $duration = ($idxDuration !== null && is_numeric($row[$idxDuration] ?? null)) ? max(0, (int)$row[$idxDuration]) : null;
+
+        $rawDiff = trim((string)($idxDifficulty !== null ? ($row[$idxDifficulty] ?? '') : ''));
+        $diffKey = mb_strtolower($rawDiff, 'UTF-8');
+        $difficulty = $difficultyMap[$diffKey] ?? 'intermediate';
+
+        $rawActive = trim((string)($idxActive !== null ? ($row[$idxActive] ?? '') : '1'));
+        $activeKey = mb_strtolower($rawActive, 'UTF-8');
+        $active = $activeMap[$activeKey] ?? (is_numeric($rawActive) ? ((int)$rawActive > 0 ? 1 : 0) : 1);
+
+        $targetId = 0;
+        if ($idxId !== null && is_numeric($row[$idxId] ?? null) && (int)$row[$idxId] > 0) {
+          $targetId = (int)$row[$idxId];
+          $workoutByIdStmt->execute([$targetId]);
+          if (!$workoutByIdStmt->fetch()) {
+            $targetId = 0;
+          }
+        }
+
+        if ($targetId <= 0) {
+          $workoutByTitleStmt->execute([$title]);
+          $existingByTitle = $workoutByTitleStmt->fetchColumn();
+          if ($existingByTitle) { $targetId = (int)$existingByTitle; }
+        }
+
+        if ($targetId > 0) {
+          $updateStmt->execute([$sectionId,$title,$category,$desc,$difficulty,$duration,$thumb,$sort,$active,$targetId]);
+          $updated++;
+        } else {
+          $insertStmt->execute([$sectionId,$title,$category,$desc,$difficulty,$duration,$thumb,$sort,$active]);
+          $inserted++;
+        }
+      }
+
+      fclose($handle);
+      flash('success', 'Import tréninků dokončen. Přidáno: ' . $inserted . ', aktualizováno: ' . $updated . ', přeskočeno: ' . $skipped . '.');
+      redirect(BASE_URL . '/admin/mycoach_content.php#workouts');
     }
 
     // ── Cviky v tréninku ───────────────────────────────────
@@ -328,19 +681,23 @@ $activeSectionId = (int)($_GET['sec'] ?? 0);
 
 $exerciseCategories = [];
 $exerciseMuscles = [];
+$workoutCategories = [];
 foreach ($exercises as $exItem) {
-    $cat = trim((string)($exItem['category'] ?? ''));
-    if ($cat !== '') { $exerciseCategories[$cat] = $cat; }
-    $musclesRaw = trim((string)($exItem['muscle_groups'] ?? ''));
-    if ($musclesRaw !== '') {
-        foreach (preg_split('/[,;|\/]+/', $musclesRaw) as $part) {
-            $part = trim((string)$part);
-            if ($part !== '') { $exerciseMuscles[$part] = $part; }
-        }
-    }
+  foreach (mcSplitListValues((string)($exItem['category'] ?? '')) as $catPart) {
+    $exerciseCategories[$catPart] = $catPart;
+  }
+  foreach (mcSplitListValues((string)($exItem['muscle_groups'] ?? '')) as $musclePart) {
+    $exerciseMuscles[$musclePart] = $musclePart;
+  }
 }
 ksort($exerciseCategories, SORT_NATURAL | SORT_FLAG_CASE);
 ksort($exerciseMuscles, SORT_NATURAL | SORT_FLAG_CASE);
+foreach ($workouts as $woItem) {
+  foreach (mcSplitListValues((string)($woItem['category'] ?? '')) as $catPart) {
+    $workoutCategories[$catPart] = $catPart;
+  }
+}
+ksort($workoutCategories, SORT_NATURAL | SORT_FLAG_CASE);
 
 // Detail tréninku pro edit
 $editWorkoutId = (int)($_GET['edit_workout'] ?? 0);
@@ -410,6 +767,16 @@ if ($_flash): ?>
   <li class="nav-item">
     <a class="nav-link <?= $activeSectionId === 0 ? 'active' : '' ?>" data-bs-toggle="tab" data-bs-target="#tabSections">
       <i class="fas fa-grid-2 me-1"></i>Sekce
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" data-bs-target="#tabVideos">
+      <i class="fas fa-film me-1"></i>Videa
+    </a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" data-bs-toggle="tab" data-bs-target="#tabWorkouts">
+      <i class="fas fa-dumbbell me-1"></i>Tréninky
     </a>
   </li>
   <?php foreach ($sections as $sec): ?>
@@ -911,7 +1278,8 @@ foreach ($sections as $sec):
             <div class="row g-2 mb-2">
               <div class="col-6">
                 <label class="form-label small fw-semibold">Kategorie</label>
-                <input type="text" name="category" id="efCat" class="form-control form-control-sm" placeholder="např. Síla, Kardio">
+                <input type="text" name="category" id="efCat" class="form-control form-control-sm" placeholder="např. Síla, Horní část těla">
+                <div class="form-text small">Můžete zadat více kategorií oddělených čárkou.</div>
               </div>
               <div class="col-6">
                 <label class="form-label small fw-semibold">Obtížnost</label>
@@ -999,6 +1367,36 @@ foreach ($sections as $sec):
           </form>
         </div>
       </div>
+
+      <div class="card mcc-card">
+        <div class="card-header bg-dark text-white">
+          <i class="fas fa-file-csv me-1"></i>Import cviků z CSV
+        </div>
+        <div class="card-body">
+          <p class="small text-muted mb-2">
+            Nahrajte více cviků najednou podle české šablony. Pokud CSV obsahuje <strong>ID</strong> nebo stejný <strong>Název</strong>, cvik se aktualizuje.
+          </p>
+          <div class="d-flex flex-wrap gap-2 mb-3">
+            <a class="btn btn-outline-secondary btn-sm" href="<?= BASE_URL ?>/scripts/csv/mycoach_cviky_import_sablona.csv" download>
+              <i class="fas fa-download me-1"></i>Stáhnout šablonu CSV
+            </a>
+            <a class="btn btn-outline-secondary btn-sm" href="<?= BASE_URL ?>/scripts/csv/mycoach_cviky_import_navod.md" target="_blank" rel="noopener">
+              <i class="fas fa-book me-1"></i>Návod k importu
+            </a>
+          </div>
+          <form method="post" enctype="multipart/form-data">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="import_exercises_csv">
+            <div class="mb-2">
+              <label class="form-label small fw-semibold">CSV soubor (oddělovač středník ;)</label>
+              <input type="file" name="exercises_csv" class="form-control form-control-sm" accept=".csv,text/csv" required>
+            </div>
+            <button type="submit" class="btn btn-warning btn-sm fw-semibold w-100">
+              <i class="fas fa-file-import me-1"></i>Importovat cviky
+            </button>
+          </form>
+        </div>
+      </div>
     </div>
     <div class="col-lg-8">
       <div class="card mcc-card">
@@ -1010,13 +1408,13 @@ foreach ($sections as $sec):
             <div class="btn-group btn-group-sm" role="group" aria-label="Kategorie">
               <button type="button" class="btn btn-light active exercise-filter-btn category" data-filter-type="category" data-filter-value="all">Vše</button>
               <?php foreach ($exerciseCategories as $categoryName): ?>
-                <button type="button" class="btn btn-outline-light exercise-filter-btn category" data-filter-type="category" data-filter-value="<?= h(strtolower($categoryName)) ?>"><?= h($categoryName) ?></button>
+                <button type="button" class="btn btn-outline-light exercise-filter-btn category" data-filter-type="category" data-filter-value="<?= h(mb_strtolower($categoryName, 'UTF-8')) ?>"><?= h($categoryName) ?></button>
               <?php endforeach; ?>
             </div>
             <div class="btn-group btn-group-sm" role="group" aria-label="Svalové partie">
               <button type="button" class="btn btn-light active exercise-filter-btn muscle" data-filter-type="muscle" data-filter-value="all">Vše</button>
               <?php foreach ($exerciseMuscles as $muscleName): ?>
-                <button type="button" class="btn btn-outline-light exercise-filter-btn muscle" data-filter-type="muscle" data-filter-value="<?= h(strtolower($muscleName)) ?>"><?= h($muscleName) ?></button>
+                <button type="button" class="btn btn-outline-light exercise-filter-btn muscle" data-filter-type="muscle" data-filter-value="<?= h(mb_strtolower($muscleName, 'UTF-8')) ?>"><?= h($muscleName) ?></button>
               <?php endforeach; ?>
             </div>
           </div>
@@ -1033,9 +1431,13 @@ foreach ($sections as $sec):
             </tr></thead>
             <tbody id="exerciseTableBody">
             <?php foreach ($exercises as $ex): ?>
+            <?php
+              $rowCategoryValues = array_map(static fn($v) => mb_strtolower($v, 'UTF-8'), mcSplitListValues((string)($ex['category'] ?? '')));
+              $rowMuscleValues = array_map(static fn($v) => mb_strtolower($v, 'UTF-8'), mcSplitListValues((string)($ex['muscle_groups'] ?? '')));
+            ?>
             <tr data-exercise-row
-                data-category="<?= h(strtolower((string)($ex['category'] ?? ''))) ?>"
-                data-muscle="<?= h(strtolower((string)($ex['muscle_groups'] ?? ''))) ?>">
+                data-category="<?= h(implode('|', $rowCategoryValues)) ?>"
+                data-muscle="<?= h(implode('|', $rowMuscleValues)) ?>">
               <td class="fw-semibold"><?= h($ex['name']) ?></td>
               <td class="small text-muted"><?= h($ex['category'] ?? '–') ?></td>
               <td><span class="badge <?= ['beginner'=>'bg-success','intermediate'=>'bg-warning text-dark','advanced'=>'bg-danger'][$ex['difficulty']] ?? 'bg-secondary' ?> small">
@@ -1149,6 +1551,11 @@ foreach ($sections as $sec):
               <label class="form-label small fw-semibold">Sekce</label>
               <select name="section_id" id="wfSection" class="form-select form-select-sm"><?= mcAdminSectionOptions($sections) ?></select>
             </div>
+            <div class="mb-2">
+              <label class="form-label small fw-semibold">Kategorie tréninku</label>
+              <input type="text" name="category" id="wfCategory" class="form-control form-control-sm" placeholder="např. Protažení, Kardio, Trénink doma">
+              <div class="form-text small">Můžete zadat více kategorií oddělených čárkou.</div>
+            </div>
             <div class="row g-2 mb-2">
               <div class="col-6">
                 <label class="form-label small fw-semibold">Obtížnost</label>
@@ -1182,21 +1589,66 @@ foreach ($sections as $sec):
           </form>
         </div>
       </div>
+
+      <div class="card mcc-card">
+        <div class="card-header bg-dark text-white">
+          <i class="fas fa-file-csv me-1"></i>Import tréninků z CSV
+        </div>
+        <div class="card-body">
+          <p class="small text-muted mb-2">
+            Nahrajte více tréninků najednou podle české šablony. Pokud CSV obsahuje <strong>ID</strong> nebo stejný <strong>Název</strong>, trénink se aktualizuje.
+          </p>
+          <div class="d-flex flex-wrap gap-2 mb-3">
+            <a class="btn btn-outline-secondary btn-sm" href="<?= BASE_URL ?>/scripts/csv/mycoach_treninky_import_sablona.csv" download>
+              <i class="fas fa-download me-1"></i>Stáhnout šablonu CSV
+            </a>
+            <a class="btn btn-outline-secondary btn-sm" href="<?= BASE_URL ?>/scripts/csv/mycoach_treninky_import_navod.md" target="_blank" rel="noopener">
+              <i class="fas fa-book me-1"></i>Návod k importu
+            </a>
+          </div>
+          <form method="post" enctype="multipart/form-data">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="import_workouts_csv">
+            <div class="mb-2">
+              <label class="form-label small fw-semibold">CSV soubor (oddělovač středník ;)</label>
+              <input type="file" name="workouts_csv" class="form-control form-control-sm" accept=".csv,text/csv" required>
+            </div>
+            <button type="submit" class="btn btn-warning btn-sm fw-semibold w-100">
+              <i class="fas fa-file-import me-1"></i>Importovat tréninky
+            </button>
+          </form>
+        </div>
+      </div>
     </div>
     <div class="col-lg-8">
       <div class="card mcc-card">
-        <div class="card-header bg-dark text-white">Tréninky (<?= count($workouts) ?>)</div>
+        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <span>Tréninky (<?= count($workouts) ?>)</span>
+          <?php if (!empty($workoutCategories)): ?>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <span class="small text-muted">Filtr kategorie:</span>
+              <div class="btn-group btn-group-sm" role="group" aria-label="Kategorie tréninků">
+                <button type="button" class="btn btn-light active workout-filter-btn" data-filter-value="all">Vše</button>
+                <?php foreach ($workoutCategories as $woCategory): ?>
+                  <button type="button" class="btn btn-outline-light workout-filter-btn" data-filter-value="<?= h(mb_strtolower($woCategory, 'UTF-8')) ?>"><?= h($woCategory) ?></button>
+                <?php endforeach; ?>
+              </div>
+            </div>
+          <?php endif; ?>
+        </div>
         <div class="card-body p-0">
           <?php if (empty($workouts)): ?>
             <p class="p-3 text-muted">Zatím žádné tréninky.</p>
           <?php else: ?>
           <div class="table-responsive">
           <table class="table table-sm align-middle mb-0">
-            <thead class="table-light"><tr><th>Název</th><th>Sekce</th><th>Obtížnost</th><th class="text-center">Délka</th><th class="text-end">Akce</th></tr></thead>
+            <thead class="table-light"><tr><th>Název</th><th>Kategorie</th><th>Sekce</th><th>Obtížnost</th><th class="text-center">Délka</th><th class="text-end">Akce</th></tr></thead>
             <tbody>
             <?php foreach ($workouts as $wo): ?>
-            <tr>
+            <?php $woCategoryTokens = array_map(static fn($v) => mb_strtolower($v, 'UTF-8'), mcSplitListValues((string)($wo['category'] ?? ''))); ?>
+            <tr data-workout-row data-category="<?= h(implode('|', $woCategoryTokens)) ?>">
               <td class="fw-semibold"><?= h($wo['title']) ?></td>
+              <td class="small text-muted"><?= h($wo['category'] ?? '–') ?></td>
               <td class="small text-muted"><?= h($wo['section_title'] ?? '–') ?></td>
               <td><span class="badge <?= ['beginner'=>'bg-success','intermediate'=>'bg-warning text-dark','advanced'=>'bg-danger'][$wo['difficulty']] ?? 'bg-secondary' ?> small"><?= $difficultyOpts[$wo['difficulty']] ?? $wo['difficulty'] ?></span></td>
               <td class="text-center small"><?= $wo['duration_minutes'] ? $wo['duration_minutes'] . ' min' : '–' ?></td>
@@ -1212,6 +1664,7 @@ foreach ($sections as $sec):
                 <form method="post" class="d-inline" onsubmit="return confirm('Smazat trénink?')">
                   <?= csrfField() ?><input type="hidden" name="action" value="delete_workout">
                   <input type="hidden" name="workout_id" value="<?= (int)$wo['id'] ?>">
+                  <input type="hidden" name="section_id" value="<?= (int)($wo['section_id'] ?? 0) ?>">
                   <button class="btn btn-xs btn-outline-danger btn-sm"><i class="fas fa-trash"></i></button>
                 </form>
               </td>
@@ -1400,10 +1853,10 @@ function applyExerciseAdminFilter(filterType, value) {
   const activeMuscle = document.querySelector('.exercise-filter-btn.muscle.active')?.dataset.filterValue || 'all';
 
   rows.forEach(function(row) {
-    const rowCat = (row.dataset.category || '').toLowerCase();
-    const rowMuscle = (row.dataset.muscle || '').toLowerCase();
-    const catMatch = activeCat === 'all' || rowCat === activeCat;
-    const muscleMatch = activeMuscle === 'all' || rowMuscle.includes(activeMuscle) || rowMuscle === activeMuscle;
+    const rowCats = (row.dataset.category || '').split('|').filter(Boolean);
+    const rowMuscles = (row.dataset.muscle || '').split('|').filter(Boolean);
+    const catMatch = activeCat === 'all' || rowCats.includes(activeCat);
+    const muscleMatch = activeMuscle === 'all' || rowMuscles.includes(activeMuscle);
     row.style.display = catMatch && muscleMatch ? '' : 'none';
   });
 }
@@ -1458,7 +1911,7 @@ efUpload('efThumbFileInput','efThumbDisplay','efThumbProgress','efThumbBar','efT
 // ── Tréninky formulář ────────────────────────────────────────────
 function workoutFormReset() {
   document.getElementById('wfId').value='0';
-  ['wfTitle','wfDesc'].forEach(id=>{document.getElementById(id).value='';});
+  ['wfTitle','wfCategory','wfDesc'].forEach(id=>{document.getElementById(id).value='';});
   document.getElementById('wfDur').value='';
   document.getElementById('wfSort').value='0';
   document.getElementById('wfActive').checked=true;
@@ -1469,12 +1922,34 @@ function workoutFormFill(wo) {
   document.getElementById('wfId').value=wo.id;
   document.getElementById('wfTitle').value=wo.title||'';
   document.getElementById('wfSection').value=wo.section_id||'';
+  document.getElementById('wfCategory').value=wo.category||'';
   document.getElementById('wfDiff').value=wo.difficulty||'intermediate';
   document.getElementById('wfDur').value=wo.duration_minutes||'';
   document.getElementById('wfDesc').value=wo.description||'';
   document.getElementById('wfSort').value=wo.sort_order||0;
   document.getElementById('wfActive').checked=wo.is_active=='1'||wo.is_active===1;
 }
+
+function applyWorkoutAdminFilter(value) {
+  const rows = document.querySelectorAll('[data-workout-row]');
+  rows.forEach(function(row) {
+    const categories = (row.dataset.category || '').split('|').filter(Boolean);
+    const match = value === 'all' || categories.includes(value);
+    row.style.display = match ? '' : 'none';
+  });
+}
+
+document.querySelectorAll('.workout-filter-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    const value = btn.dataset.filterValue || 'all';
+    document.querySelectorAll('.workout-filter-btn').forEach(function(el) {
+      el.classList.toggle('active', el === btn);
+      el.classList.toggle('btn-light', el === btn);
+      el.classList.toggle('btn-outline-light', el !== btn);
+    });
+    applyWorkoutAdminFilter(value);
+  });
+});
 
 // Aktivace správného tabu dle URL hash nebo ?sec=
 (function(){
@@ -1483,7 +1958,7 @@ function workoutFormFill(wo) {
     const el = document.querySelector('[data-bs-target="#tabSection'+sec+'"]');
     if (el) { new bootstrap.Tab(el).show(); return; }
   }
-  const map={'#sections':'tabSections','#exercises':'tabExercises'};
+  const map={'#sections':'tabSections','#exercises':'tabExercises','#workouts':'tabWorkouts'};
   const tab = map[location.hash];
   if (tab) {
     const el = document.querySelector('[data-bs-target="#'+tab+'"]');

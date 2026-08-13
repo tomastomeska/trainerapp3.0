@@ -143,6 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               id               INT UNSIGNED NOT NULL AUTO_INCREMENT,
               section_id       INT UNSIGNED DEFAULT NULL,
               title            VARCHAR(300) NOT NULL,
+                            category         VARCHAR(255) DEFAULT NULL,
               description      TEXT DEFAULT NULL,
               difficulty       ENUM('beginner','intermediate','advanced') NOT NULL DEFAULT 'intermediate',
               duration_minutes SMALLINT UNSIGNED DEFAULT NULL,

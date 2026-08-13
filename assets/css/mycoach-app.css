@@ -6,29 +6,49 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
 
 :root {
-  --mca-dark:        #0d0d0d;
-  --mca-dark-2:      #161616;
-  --mca-dark-3:      #222222;
-  --mca-metal-1:     #2e2e2e;
-  --mca-metal-2:     #3e3e3e;
-  --mca-metal-3:     #555555;
+  --mca-dark:        #17191d;
+  --mca-dark-2:      #23262b;
+  --mca-dark-3:      #2f3339;
+  --mca-metal-1:     #3b4048;
+  --mca-metal-2:     #4a515b;
+  --mca-metal-3:     #6a7481;
   --mca-orange:      #f7941d;
   --mca-orange-2:    #e07d0a;
   --mca-yellow:      #ffd000;
-  --mca-text:        #f0f0f0;
-  --mca-text-muted:  #a0a0a0;
-  --mca-border:      rgba(247,148,29,0.18);
-  --mca-glow:        0 0 22px rgba(247,148,29,0.22);
+  --mca-text:        #f8fafc;
+  --mca-text-muted:  #c4ccd6;
+  --mca-border:      rgba(247,148,29,0.24);
+  --mca-glow:        0 0 22px rgba(247,148,29,0.2);
   --mca-radius:      16px;
   --mca-radius-sm:   10px;
 }
 
+body.mycoach-app-theme.mca-theme-light {
+  --mca-dark:        #eef2f5;
+  --mca-dark-2:      #f6f8fa;
+  --mca-dark-3:      #ffffff;
+  --mca-metal-1:     #d8dee6;
+  --mca-metal-2:     #c5ced9;
+  --mca-metal-3:     #8c99aa;
+  --mca-orange:      #cc7a12;
+  --mca-orange-2:    #b3670c;
+  --mca-yellow:      #c9a01a;
+  --mca-text:        #1f2937;
+  --mca-text-muted:  #536174;
+  --mca-border:      rgba(127,140,157,0.4);
+  --mca-glow:        0 10px 28px rgba(69,85,106,0.18);
+}
+
 /* ── Tmavé pozadí aplikace ─────────────────────────────────── */
 body.mycoach-app-theme {
-  background: var(--mca-dark);
+  background: radial-gradient(circle at 10% -20%, rgba(247,148,29,.12) 0%, transparent 42%), var(--mca-dark);
   color: var(--mca-text);
   font-family: 'Outfit', 'Segoe UI', Tahoma, sans-serif;
   min-height: 100vh;
+}
+
+body.mycoach-app-theme.mca-theme-light {
+  background: radial-gradient(circle at 0% 0%, rgba(247,148,29,.12) 0%, transparent 38%), var(--mca-dark);
 }
 
 body.mycoach-app-theme h1,
@@ -55,6 +75,10 @@ body.mycoach-app-theme h5 {
   inset: 0;
   background: radial-gradient(ellipse at 0% 0%, rgba(247,148,29,.12) 0%, transparent 70%);
   pointer-events: none;
+}
+
+body.mycoach-app-theme.mca-theme-light .mca-hero::before {
+  background: radial-gradient(ellipse at 0% 0%, rgba(204,122,18,.16) 0%, transparent 70%);
 }
 .mca-hero-title {
   font-size: 1.6rem;
@@ -260,6 +284,57 @@ body.mycoach-app-theme h5 {
 .mca-btn-outline:hover {
   border-color: var(--mca-orange);
   color: var(--mca-orange);
+}
+
+.mca-theme-toggle {
+  border: 1px solid var(--mca-metal-3);
+  background: var(--mca-dark-3);
+  color: var(--mca-text);
+  border-radius: 50px;
+  padding: .35rem .85rem;
+  font-size: .8rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  transition: border-color .2s, color .2s, box-shadow .2s, transform .2s;
+}
+
+.mca-theme-toggle:hover {
+  color: var(--mca-orange);
+  border-color: var(--mca-orange);
+  box-shadow: 0 0 0 2px rgba(247,148,29,.15);
+  transform: translateY(-1px);
+}
+
+.mca-theme-toggle-fab {
+  position: fixed;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 1050;
+  box-shadow: var(--mca-glow);
+}
+
+body.mycoach-app-theme.mca-theme-light .mca-btn-primary {
+  color: #fff;
+}
+
+body.mycoach-app-theme.mca-theme-light .mca-lightbox-modal .modal-content {
+  background: #f4f7fb;
+  border-color: rgba(127,140,157,.5);
+}
+
+body.mycoach-app-theme.mca-theme-light .mca-lightbox-image {
+  background: #dbe2eb;
+}
+
+body.mycoach-app-theme.mca-theme-light .mca-lightbox-meta {
+  background: #eef2f7;
+}
+
+body.mycoach-app-theme.mca-theme-light .mca-lightbox-close {
+  background: rgba(255,255,255,.85);
+  border-color: rgba(31,41,55,.2);
 }
 .mca-trial-box {
   background: rgba(247,148,29,.08);
@@ -484,6 +559,25 @@ body.mycoach-app-theme .navbar-dark,
 body.mycoach-app-theme .navbar {
   background: var(--mca-dark-2) !important;
   border-bottom: 1px solid var(--mca-metal-1);
+}
+
+body.mycoach-app-theme.mca-theme-light .navbar-dark,
+body.mycoach-app-theme.mca-theme-light .navbar {
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2f6 100%) !important;
+}
+
+body.mycoach-app-theme.mca-theme-light .navbar-dark .nav-link,
+body.mycoach-app-theme.mca-theme-light .navbar .nav-link {
+  color: #3f4b5d !important;
+}
+
+body.mycoach-app-theme.mca-theme-light .navbar-dark .nav-link:hover,
+body.mycoach-app-theme.mca-theme-light .navbar .nav-link:hover {
+  color: #1f2937 !important;
+}
+
+body.mycoach-app-theme.mca-theme-light .navbar-brand {
+  color: #cc7a12 !important;
 }
 
 /* ── Breadcrumb ─────────────────────────────────────────────── */

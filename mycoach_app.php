@@ -41,7 +41,7 @@ $accessRow    = mycoachAppGetAccess($pdo, 'coach', $coachId);
 require_once __DIR__ . '/includes/header.php';
 renderHeader('MyCoach');
 ?>
-<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-app.css">
+<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-app.css?v=20260813">
 <body class="mycoach-app-theme">
 
 <?php if (!$canAccess): ?>
@@ -131,6 +131,9 @@ renderHeader('MyCoach');
               Předplatné do <?= h(formatDate((string)$accessRow['subscription_end'])) ?>
             </span>
           <?php endif; ?>
+          <button type="button" id="mcaThemeToggle" class="mca-theme-toggle">
+            <i class="fas fa-sun"></i> Světlý režim
+          </button>
           <a href="<?= BASE_URL ?>/dashboard.php" class="mca-btn-outline" style="padding:.3rem .9rem;font-size:.8rem;">
             <i class="fas fa-house me-1"></i>Domů
           </a>
@@ -201,13 +204,6 @@ renderHeader('MyCoach');
           </div>
         </a>
         <?php endforeach; ?>
-      </div>
-
-      <!-- Přímý odkaz na encyklopedii cviků -->
-      <div class="mt-4 d-flex gap-2 flex-wrap">
-        <a href="<?= BASE_URL ?>/mycoach_app_exercises.php" class="mca-btn-outline">
-          <i class="fas fa-person-running me-1"></i>Encyklopedie cviků
-        </a>
       </div>
 
     <?php endif; ?>

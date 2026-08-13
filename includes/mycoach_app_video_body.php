@@ -56,7 +56,7 @@ if ($section) {
         : BASE_URL . '/athlete_mycoach_app_section.php?id=' . (int)$section['id'];
 }
 ?>
-<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-app.css">
+<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-app.css?v=20260813">
 
 <!-- Breadcrumb & Hero -->
 <div class="mca-hero mb-3">
