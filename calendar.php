@@ -707,13 +707,7 @@ renderHeader('Kalendář', false, true);
         <button class="btn btn-outline-secondary btn-sm" id="nextWeekBtn">
             Další týden<i class="fas fa-chevron-right ms-1"></i>
         </button>
-        <button class="btn btn-outline-secondary btn-sm" id="prevMonthJumpBtn" title="Předchozí měsíc">
-            <i class="fas fa-angles-left me-1"></i>Předchozí měsíc
-        </button>
         <input type="month" class="form-control form-control-sm" id="weekMonthJumpInput" style="max-width: 170px;">
-        <button class="btn btn-outline-secondary btn-sm" id="nextMonthJumpBtn" title="Další měsíc">
-            Další měsíc<i class="fas fa-angles-right ms-1"></i>
-        </button>
         <select class="form-select form-select-sm" id="weekRangeJumpSelect" style="max-width: 120px;" title="Skok na týden v měsíci">
             <option value="">Týden</option>
         </select>
@@ -790,9 +784,7 @@ renderHeader('Kalendář', false, true);
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                 <h5 class="mb-0"><i class="fas fa-list me-2 text-warning"></i>Události v měsíci</h5>
                 <div class="d-flex align-items-center gap-2">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" id="monthListPrevBtn"><i class="fas fa-chevron-left"></i></button>
                     <input type="month" class="form-control form-control-sm" id="monthListMonth" style="max-width: 180px;">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" id="monthListNextBtn"><i class="fas fa-chevron-right"></i></button>
                 </div>
             </div>
 
@@ -1389,13 +1381,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const daypilotCalendarEl = document.getElementById('daypilotCalendar');
     const daypilotCard = document.getElementById('daypilotCard');
     const monthListMonthInput = document.getElementById('monthListMonth');
-    const monthListPrevBtn = document.getElementById('monthListPrevBtn');
-    const monthListNextBtn = document.getElementById('monthListNextBtn');
     const monthListBody = document.getElementById('monthListBody');
     const monthListEmpty = document.getElementById('monthListEmpty');
     const weekMonthJumpInput = document.getElementById('weekMonthJumpInput');
-    const prevMonthJumpBtn = document.getElementById('prevMonthJumpBtn');
-    const nextMonthJumpBtn = document.getElementById('nextMonthJumpBtn');
     const weekRangeJumpSelect = document.getElementById('weekRangeJumpSelect');
     const eventAddToIosBtn = document.getElementById('eventAddToIosBtn');
     const coachAppleCaldavActive = <?= !empty($coachAppleCaldavActive) ? 'true' : 'false' ?>;
@@ -1414,31 +1402,14 @@ document.addEventListener('DOMContentLoaded', () => {
             prevWeekBtn,
             nextWeekBtn,
             todayWeekBtn,
-            prevMonthJumpBtn,
-            nextMonthJumpBtn,
             weekMonthJumpInput,
             weekRangeJumpSelect,
-            monthListPrevBtn,
-            monthListNextBtn,
             monthListMonthInput,
         ].forEach((control) => {
             if (!control) {
                 return;
             }
             control.disabled = isBusy;
-        });
-
-        [prevMonthJumpBtn, nextMonthJumpBtn, monthListPrevBtn, monthListNextBtn].forEach((button) => {
-            if (!button) {
-                return;
-            }
-            button.classList.toggle('loading', isBusy);
-            button.setAttribute('aria-busy', isBusy ? 'true' : 'false');
-
-            const icon = button.querySelector('i');
-            if (icon) {
-                icon.classList.toggle('fa-spin', isBusy);
-            }
         });
     }
 
@@ -2499,6 +2470,25 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
     }
 
+    function bindImmediateMonthPicker(input, onSelect) {
+        if (!input) {
+            return;
+        }
+
+        let lastHandledValue = input.value || '';
+        const handleSelection = async () => {
+            const nextValue = input.value || '';
+            if (!nextValue || nextValue === lastHandledValue) {
+                return;
+            }
+            lastHandledValue = nextValue;
+            await onSelect(nextValue);
+        };
+
+        input.addEventListener('input', handleSelection);
+        input.addEventListener('change', handleSelection);
+    }
+
     async function jumpToMonthWeek(monthValue) {
         const parsed = new Date(`${monthValue}-01T00:00:00`);
         if (Number.isNaN(parsed.getTime())) {
@@ -3224,33 +3214,10 @@ document.addEventListener('DOMContentLoaded', () => {
         await loadWeekData();
     });
 
-    if (weekMonthJumpInput) {
-        weekMonthJumpInput.addEventListener('change', async () => {
-            if (!weekMonthJumpInput.value) {
-                return;
-            }
-            navigationMonthValue = weekMonthJumpInput.value;
-            await jumpToMonthWeek(weekMonthJumpInput.value);
-        });
-    }
-
-    if (prevMonthJumpBtn) {
-        prevMonthJumpBtn.addEventListener('click', async () => {
-            const baseMonth = navigationMonthValue
-                ? navigationMonthValue
-                : `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
-            await jumpToMonthWeek(shiftMonthValue(baseMonth, -1));
-        });
-    }
-
-    if (nextMonthJumpBtn) {
-        nextMonthJumpBtn.addEventListener('click', async () => {
-            const baseMonth = navigationMonthValue
-                ? navigationMonthValue
-                : `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
-            await jumpToMonthWeek(shiftMonthValue(baseMonth, 1));
-        });
-    }
+    bindImmediateMonthPicker(weekMonthJumpInput, async (monthValue) => {
+        navigationMonthValue = monthValue;
+        await jumpToMonthWeek(monthValue);
+    });
 
     if (weekRangeJumpSelect) {
         weekRangeJumpSelect.addEventListener('change', async () => {
@@ -3277,21 +3244,8 @@ document.addEventListener('DOMContentLoaded', () => {
         buildWeekRangeOptionsForMonth(monthListMonthInput.value);
         syncWeekRangeSelectWithCurrentWeek();
     }
-    monthListMonthInput.addEventListener('change', async () => {
-        if (!monthListMonthInput.value) {
-            return;
-        }
-        await jumpToMonthWeek(monthListMonthInput.value);
-    });
-
-    monthListPrevBtn.addEventListener('click', async () => {
-        monthListMonthInput.value = shiftMonthValue(monthListMonthInput.value, -1);
-        await jumpToMonthWeek(monthListMonthInput.value);
-    });
-
-    monthListNextBtn.addEventListener('click', async () => {
-        monthListMonthInput.value = shiftMonthValue(monthListMonthInput.value, 1);
-        await jumpToMonthWeek(monthListMonthInput.value);
+    bindImmediateMonthPicker(monthListMonthInput, async (monthValue) => {
+        await jumpToMonthWeek(monthValue);
     });
 
     populateEventHourOptions();

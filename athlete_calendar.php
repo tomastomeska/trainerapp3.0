@@ -588,13 +588,7 @@ renderAthleteHeader('Můj kalendář', false, true);
         <button class="btn btn-outline-secondary btn-sm" id="nextWeekBtn">
             Další týden<i class="fas fa-chevron-right ms-1"></i>
         </button>
-        <button class="btn btn-outline-secondary btn-sm" id="athletePrevMonthJumpBtn" title="Předchozí měsíc">
-            <i class="fas fa-angles-left me-1"></i>Předchozí měsíc
-        </button>
         <input type="month" class="form-control form-control-sm" id="athleteWeekMonthJumpInput" style="max-width: 170px;">
-        <button class="btn btn-outline-secondary btn-sm" id="athleteNextMonthJumpBtn" title="Další měsíc">
-            Další měsíc<i class="fas fa-angles-right ms-1"></i>
-        </button>
         <select class="form-select form-select-sm" id="athleteWeekRangeJumpSelect" style="max-width: 120px;" title="Skok na týden v měsíci">
             <option value="">Týden</option>
         </select>
@@ -661,9 +655,7 @@ renderAthleteHeader('Můj kalendář', false, true);
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                 <h5 class="mb-0"><i class="fas fa-list me-2 text-warning"></i>Moje události v měsíci</h5>
                 <div class="d-flex align-items-center gap-2">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" id="athleteMonthPrevBtn"><i class="fas fa-chevron-left"></i></button>
                     <input type="month" class="form-control form-control-sm" id="athleteMonthInput" style="max-width: 180px;">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" id="athleteMonthNextBtn"><i class="fas fa-chevron-right"></i></button>
                 </div>
             </div>
 
@@ -1109,13 +1101,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const eventDetailPrimaryActionLabel = document.getElementById('eventDetailPrimaryActionLabel');
     const eventDetailCancelBtn = document.getElementById('eventDetailCancelBtn');
     const athleteMonthInput = document.getElementById('athleteMonthInput');
-    const athleteMonthPrevBtn = document.getElementById('athleteMonthPrevBtn');
-    const athleteMonthNextBtn = document.getElementById('athleteMonthNextBtn');
     const athleteMonthListBody = document.getElementById('athleteMonthListBody');
     const athleteMonthListEmpty = document.getElementById('athleteMonthListEmpty');
     const athleteWeekMonthJumpInput = document.getElementById('athleteWeekMonthJumpInput');
-    const athletePrevMonthJumpBtn = document.getElementById('athletePrevMonthJumpBtn');
-    const athleteNextMonthJumpBtn = document.getElementById('athleteNextMonthJumpBtn');
     const athleteWeekRangeJumpSelect = document.getElementById('athleteWeekRangeJumpSelect');
     const athleteAppleCaldavForm = document.getElementById('athleteAppleCaldavForm');
     const reserveForm = document.getElementById('reserveForm');
@@ -1937,6 +1925,25 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
     }
 
+    function bindImmediateMonthPicker(input, onSelect) {
+        if (!input) {
+            return;
+        }
+
+        let lastHandledValue = input.value || '';
+        const handleSelection = () => {
+            const nextValue = input.value || '';
+            if (!nextValue || nextValue === lastHandledValue) {
+                return;
+            }
+            lastHandledValue = nextValue;
+            onSelect(nextValue);
+        };
+
+        input.addEventListener('input', handleSelection);
+        input.addEventListener('change', handleSelection);
+    }
+
     function buildAthleteWeekRangeOptionsForMonth(monthValue) {
         if (!athleteWeekRangeJumpSelect) {
             return;
@@ -2214,32 +2221,9 @@ document.addEventListener('DOMContentLoaded', () => {
         loadWeekData();
     });
 
-    if (athleteWeekMonthJumpInput) {
-        athleteWeekMonthJumpInput.addEventListener('change', () => {
-            if (!athleteWeekMonthJumpInput.value) {
-                return;
-            }
-            jumpToAthleteMonthWeek(athleteWeekMonthJumpInput.value);
-        });
-    }
-
-    if (athletePrevMonthJumpBtn) {
-        athletePrevMonthJumpBtn.addEventListener('click', () => {
-            const baseMonth = (athleteWeekMonthJumpInput && athleteWeekMonthJumpInput.value)
-                ? athleteWeekMonthJumpInput.value
-                : `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
-            jumpToAthleteMonthWeek(shiftMonthValue(baseMonth, -1));
-        });
-    }
-
-    if (athleteNextMonthJumpBtn) {
-        athleteNextMonthJumpBtn.addEventListener('click', () => {
-            const baseMonth = (athleteWeekMonthJumpInput && athleteWeekMonthJumpInput.value)
-                ? athleteWeekMonthJumpInput.value
-                : `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
-            jumpToAthleteMonthWeek(shiftMonthValue(baseMonth, 1));
-        });
-    }
+    bindImmediateMonthPicker(athleteWeekMonthJumpInput, (monthValue) => {
+        jumpToAthleteMonthWeek(monthValue);
+    });
 
     if (athleteWeekRangeJumpSelect) {
         athleteWeekRangeJumpSelect.addEventListener('change', () => {
@@ -2261,17 +2245,7 @@ document.addEventListener('DOMContentLoaded', () => {
         buildAthleteWeekRangeOptionsForMonth(athleteMonthInput.value);
         syncAthleteWeekRangeSelectWithCurrentWeek();
     }
-    athleteMonthInput.addEventListener('change', () => {
-        loadAthleteMonthList();
-    });
-
-    athleteMonthPrevBtn.addEventListener('click', () => {
-        athleteMonthInput.value = shiftMonthValue(athleteMonthInput.value, -1);
-        loadAthleteMonthList();
-    });
-
-    athleteMonthNextBtn.addEventListener('click', () => {
-        athleteMonthInput.value = shiftMonthValue(athleteMonthInput.value, 1);
+    bindImmediateMonthPicker(athleteMonthInput, () => {
         loadAthleteMonthList();
     });
 
