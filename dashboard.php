@@ -1032,6 +1032,10 @@ renderHeader('Dashboard', false, true);
                        class="btn btn-dark btn-sm flex-fill">
                         <i class="fas fa-user me-1"></i>Detail
                     </a>
+                    <a href="<?= BASE_URL ?>/food_diary.php?athlete_id=<?= $a['id'] ?>"
+                       class="btn btn-outline-warning btn-sm flex-fill">
+                        <i class="fas fa-bowl-food me-1"></i>Strava
+                    </a>
                     <?php if ($a['active_session_id']): ?>
                     <a href="<?= $a['active_paired_session_id'] ? BASE_URL . '/training_paired_session.php?id=' . (int)$a['active_paired_session_id'] : BASE_URL . '/training_session.php?id=' . (int)$a['active_session_id'] ?>"
                        class="btn <?= $a['active_paired_session_id'] ? 'btn-info text-dark' : 'btn-warning' ?> btn-sm flex-fill fw-bold">

@@ -68,6 +68,7 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_calendar.php"><i class="fas fa-calendar-alt me-1"></i>Kalendář</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_payments.php"><i class="fas fa-wallet me-1"></i>Platby</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_mealplans.php"><i class="fas fa-utensils me-1"></i>Jídelníčky</a></li>
+                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_food_diary.php"><i class="fas fa-bowl-food me-1"></i>Strava</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_graphs.php"><i class="fas fa-chart-line me-1"></i>Grafy</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_gallery.php"><i class="fas fa-images me-1"></i>Galerie</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_videos.php"><i class="fas fa-video me-1"></i>Videa</a></li>

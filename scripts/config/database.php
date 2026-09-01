@@ -739,6 +739,101 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
 
+    // STRAVA - denik skutecneho jidla
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `food_diary_days` (
+            `id`         INT AUTO_INCREMENT PRIMARY KEY,
+            `athlete_id` INT NOT NULL,
+            `date`       DATE NOT NULL,
+            `athlete_note` TEXT NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uq_food_diary_day_athlete_date` (`athlete_id`, `date`),
+            KEY `idx_food_diary_days_date` (`date`),
+            CONSTRAINT `fk_food_diary_days_athlete`
+                FOREIGN KEY (`athlete_id`) REFERENCES `athletes`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `food_diary_meals` (
+            `id`         INT AUTO_INCREMENT PRIMARY KEY,
+            `day_id`     INT NOT NULL,
+            `meal_type`  ENUM('breakfast','morning_snack','lunch','afternoon_snack','dinner','second_dinner') NOT NULL,
+            `meal_time`  TIME NULL,
+            `skipped`    TINYINT(1) NOT NULL DEFAULT 0,
+            `athlete_note` TEXT NULL,
+            `photo`      VARCHAR(255) NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uq_food_diary_meal_day_type` (`day_id`, `meal_type`),
+            KEY `idx_food_diary_meals_day` (`day_id`),
+            CONSTRAINT `fk_food_diary_meals_day`
+                FOREIGN KEY (`day_id`) REFERENCES `food_diary_days`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `food_diary_items` (
+            `id`         INT AUTO_INCREMENT PRIMARY KEY,
+            `meal_id`    INT NOT NULL,
+            `food_name`  VARCHAR(255) NOT NULL,
+            `quantity`   DECIMAL(10,2) NULL,
+            `unit`       VARCHAR(50) NULL,
+            `calories`   DECIMAL(10,2) NULL,
+            `protein`    DECIMAL(10,2) NULL,
+            `carbohydrates` DECIMAL(10,2) NULL,
+            `fat`        DECIMAL(10,2) NULL,
+            `fiber`      DECIMAL(10,2) NULL,
+            `sugar`      DECIMAL(10,2) NULL,
+            `salt`       DECIMAL(10,2) NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_food_diary_items_meal` (`meal_id`),
+            CONSTRAINT `fk_food_diary_items_meal`
+                FOREIGN KEY (`meal_id`) REFERENCES `food_diary_meals`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `food_diary_coach_notes` (
+            `id`         INT AUTO_INCREMENT PRIMARY KEY,
+            `meal_id`    INT NULL,
+            `day_id`     INT NULL,
+            `coach_id`   INT NOT NULL,
+            `note`       TEXT NOT NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_food_diary_coach_notes_meal` (`meal_id`),
+            KEY `idx_food_diary_coach_notes_day` (`day_id`),
+            KEY `idx_food_diary_coach_notes_coach` (`coach_id`),
+            CONSTRAINT `fk_food_diary_coach_notes_meal`
+                FOREIGN KEY (`meal_id`) REFERENCES `food_diary_meals`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_food_diary_coach_notes_day`
+                FOREIGN KEY (`day_id`) REFERENCES `food_diary_days`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_food_diary_coach_notes_coach`
+                FOREIGN KEY (`coach_id`) REFERENCES `coaches`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `food_diary_custom_activities` (
+            `id`         INT AUTO_INCREMENT PRIMARY KEY,
+            `day_id`     INT NOT NULL,
+            `activity_type` ENUM('run','walk','bike','strength','swim','other') NOT NULL DEFAULT 'other',
+            `activity_name` VARCHAR(255) NULL,
+            `activity_time` TIME NULL,
+            `duration_minutes` INT NULL,
+            `distance_km` DECIMAL(10,2) NULL,
+            `note`       TEXT NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_food_diary_custom_activities_day` (`day_id`),
+            CONSTRAINT `fk_food_diary_custom_activities_day`
+                FOREIGN KEY (`day_id`) REFERENCES `food_diary_days`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
     // Dohoda s trenérem: text dohody + reakce sportovce (schváleno/zamítnuto)
     $pdo->exec(" 
         CREATE TABLE IF NOT EXISTS `coach_athlete_agreements` (

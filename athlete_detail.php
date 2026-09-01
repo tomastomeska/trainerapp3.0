@@ -325,6 +325,10 @@ renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']), true, true
            class="btn btn-outline-success btn-sm">
             <i class="fas fa-file-alt me-1"></i>Zpráva o pokroku
         </a>
+        <a href="<?= BASE_URL ?>/food_diary.php?athlete_id=<?= $athleteId ?>"
+           class="btn btn-outline-warning btn-sm">
+            <i class="fas fa-bowl-food me-1"></i>Strava
+        </a>
         <a href="<?= BASE_URL ?>/athlete_edit.php?id=<?= $athleteId ?>"
            class="btn btn-outline-secondary btn-sm">
             <i class="fas fa-edit me-1"></i>Upravit

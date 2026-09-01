@@ -752,50 +752,54 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         $pdo->exec('ALTER TABLE coaches ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1');
     }
 
-    $stmtDailyWorkoutType = $pdo->query("SHOW COLUMNS FROM mycoach_daily_questionnaires LIKE 'workout_type'");
-    if (!$stmtDailyWorkoutType->fetch()) {
-        $pdo->exec('ALTER TABLE mycoach_daily_questionnaires ADD COLUMN workout_type VARCHAR(40) NULL AFTER workout_id');
-    }
-
-    $stmtDailyWorkoutMeta = $pdo->query("SHOW COLUMNS FROM mycoach_daily_questionnaires LIKE 'workout_meta_json'");
-    if (!$stmtDailyWorkoutMeta->fetch()) {
-        $pdo->exec('ALTER TABLE mycoach_daily_questionnaires ADD COLUMN workout_meta_json JSON NULL AFTER workout_type');
-    }
-
-    $stmtDailyCalories = $pdo->query("SHOW COLUMNS FROM mycoach_daily_questionnaires LIKE 'calories_burned'");
-    if (!$stmtDailyCalories->fetch()) {
-        $pdo->exec('ALTER TABLE mycoach_daily_questionnaires ADD COLUMN calories_burned INT NULL AFTER training_duration_minutes');
-    }
-
-    $stmtDailyAthleteNote = $pdo->query("SHOW COLUMNS FROM mycoach_daily_questionnaires LIKE 'athlete_note'");
-    if (!$stmtDailyAthleteNote->fetch()) {
-        $pdo->exec('ALTER TABLE mycoach_daily_questionnaires ADD COLUMN athlete_note TEXT NULL AFTER max_heart_rate');
-    }
-
-    $stmtDailyUserIndex = $pdo->query("SHOW INDEX FROM mycoach_daily_questionnaires WHERE Key_name = 'idx_mycoach_daily_questionnaires_user'");
-    if (!$stmtDailyUserIndex->fetch()) {
-        $pdo->exec('CREATE INDEX idx_mycoach_daily_questionnaires_user ON mycoach_daily_questionnaires (user_id)');
-    }
-
-    $stmtDailyDateIndex = $pdo->query("SHOW INDEX FROM mycoach_daily_questionnaires WHERE Key_name = 'idx_mycoach_daily_questionnaires_user_date_created'");
-    if (!$stmtDailyDateIndex->fetch()) {
-        $pdo->exec('CREATE INDEX idx_mycoach_daily_questionnaires_user_date_created ON mycoach_daily_questionnaires (user_id, entry_date, created_at, id)');
-    }
-
-    $stmtDailyUnique = $pdo->query("SHOW INDEX FROM mycoach_daily_questionnaires WHERE Key_name = 'uq_mycoach_daily_questionnaires_user_date'");
-    if ($stmtDailyUnique->fetch()) {
-        $pdo->exec('ALTER TABLE mycoach_daily_questionnaires DROP INDEX uq_mycoach_daily_questionnaires_user_date');
-    }
-
-    try {
-        $stmtDailyWorkoutFk = $pdo->query("SELECT REFERENCED_TABLE_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'mycoach_daily_questionnaires' AND CONSTRAINT_NAME = 'fk_mycoach_daily_questionnaires_workout' LIMIT 1");
-        $dailyWorkoutFkTarget = $stmtDailyWorkoutFk ? $stmtDailyWorkoutFk->fetchColumn() : false;
-        if ($dailyWorkoutFkTarget && mb_strtolower((string)$dailyWorkoutFkTarget, 'UTF-8') !== 'training_sessions') {
-            $pdo->exec('ALTER TABLE mycoach_daily_questionnaires DROP FOREIGN KEY fk_mycoach_daily_questionnaires_workout');
-            $pdo->exec('ALTER TABLE mycoach_daily_questionnaires ADD CONSTRAINT fk_mycoach_daily_questionnaires_workout FOREIGN KEY (workout_id) REFERENCES training_sessions(id) ON DELETE SET NULL');
+    $stmtMyCoachDailyExists = $pdo->query("SHOW TABLES LIKE 'mycoach_daily_questionnaires'");
+    $myCoachDailyExists = $stmtMyCoachDailyExists !== false && (bool)$stmtMyCoachDailyExists->fetchColumn();
+    if ($myCoachDailyExists) {
+        $stmtDailyWorkoutType = $pdo->query("SHOW COLUMNS FROM mycoach_daily_questionnaires LIKE 'workout_type'");
+        if (!$stmtDailyWorkoutType->fetch()) {
+            $pdo->exec('ALTER TABLE mycoach_daily_questionnaires ADD COLUMN workout_type VARCHAR(40) NULL AFTER workout_id');
         }
-    } catch (Throwable $e) {
-        error_log('MyCoach daily questionnaire FK upgrade failed: ' . $e->getMessage());
+
+        $stmtDailyWorkoutMeta = $pdo->query("SHOW COLUMNS FROM mycoach_daily_questionnaires LIKE 'workout_meta_json'");
+        if (!$stmtDailyWorkoutMeta->fetch()) {
+            $pdo->exec('ALTER TABLE mycoach_daily_questionnaires ADD COLUMN workout_meta_json JSON NULL AFTER workout_type');
+        }
+
+        $stmtDailyCalories = $pdo->query("SHOW COLUMNS FROM mycoach_daily_questionnaires LIKE 'calories_burned'");
+        if (!$stmtDailyCalories->fetch()) {
+            $pdo->exec('ALTER TABLE mycoach_daily_questionnaires ADD COLUMN calories_burned INT NULL AFTER training_duration_minutes');
+        }
+
+        $stmtDailyAthleteNote = $pdo->query("SHOW COLUMNS FROM mycoach_daily_questionnaires LIKE 'athlete_note'");
+        if (!$stmtDailyAthleteNote->fetch()) {
+            $pdo->exec('ALTER TABLE mycoach_daily_questionnaires ADD COLUMN athlete_note TEXT NULL AFTER max_heart_rate');
+        }
+
+        $stmtDailyUserIndex = $pdo->query("SHOW INDEX FROM mycoach_daily_questionnaires WHERE Key_name = 'idx_mycoach_daily_questionnaires_user'");
+        if (!$stmtDailyUserIndex->fetch()) {
+            $pdo->exec('CREATE INDEX idx_mycoach_daily_questionnaires_user ON mycoach_daily_questionnaires (user_id)');
+        }
+
+        $stmtDailyDateIndex = $pdo->query("SHOW INDEX FROM mycoach_daily_questionnaires WHERE Key_name = 'idx_mycoach_daily_questionnaires_user_date_created'");
+        if (!$stmtDailyDateIndex->fetch()) {
+            $pdo->exec('CREATE INDEX idx_mycoach_daily_questionnaires_user_date_created ON mycoach_daily_questionnaires (user_id, entry_date, created_at, id)');
+        }
+
+        $stmtDailyUnique = $pdo->query("SHOW INDEX FROM mycoach_daily_questionnaires WHERE Key_name = 'uq_mycoach_daily_questionnaires_user_date'");
+        if ($stmtDailyUnique->fetch()) {
+            $pdo->exec('ALTER TABLE mycoach_daily_questionnaires DROP INDEX uq_mycoach_daily_questionnaires_user_date');
+        }
+
+        try {
+            $stmtDailyWorkoutFk = $pdo->query("SELECT REFERENCED_TABLE_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'mycoach_daily_questionnaires' AND CONSTRAINT_NAME = 'fk_mycoach_daily_questionnaires_workout' LIMIT 1");
+            $dailyWorkoutFkTarget = $stmtDailyWorkoutFk ? $stmtDailyWorkoutFk->fetchColumn() : false;
+            if ($dailyWorkoutFkTarget && mb_strtolower((string)$dailyWorkoutFkTarget, 'UTF-8') !== 'training_sessions') {
+                $pdo->exec('ALTER TABLE mycoach_daily_questionnaires DROP FOREIGN KEY fk_mycoach_daily_questionnaires_workout');
+                $pdo->exec('ALTER TABLE mycoach_daily_questionnaires ADD CONSTRAINT fk_mycoach_daily_questionnaires_workout FOREIGN KEY (workout_id) REFERENCES training_sessions(id) ON DELETE SET NULL');
+            }
+        } catch (Throwable $e) {
+            error_log('MyCoach daily questionnaire FK upgrade failed: ' . $e->getMessage());
+        }
     }
 
     // Globalni cviky
@@ -2596,6 +2600,123 @@ function ensureSchemaUpgrades(PDO $pdo): void {
     $stmtAthleteMealRemovedBy = $pdo->query("SHOW COLUMNS FROM athlete_meal_plans LIKE 'removed_by_coach_id'");
     if (!$stmtAthleteMealRemovedBy->fetch()) {
         $pdo->exec('ALTER TABLE athlete_meal_plans ADD COLUMN removed_by_coach_id INT NULL AFTER removed_at');
+    }
+
+    // ============================================================
+    // STRAVA – deník skutečně snědeného jídla
+    // ============================================================
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `food_diary_days` (
+            `id`         INT AUTO_INCREMENT PRIMARY KEY,
+            `athlete_id` INT NOT NULL,
+            `date`       DATE NOT NULL,
+            `athlete_note` TEXT NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uq_food_diary_day_athlete_date` (`athlete_id`, `date`),
+            KEY `idx_food_diary_days_date` (`date`),
+            CONSTRAINT `fk_food_diary_days_athlete`
+                FOREIGN KEY (`athlete_id`) REFERENCES `athletes`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `food_diary_meals` (
+            `id`         INT AUTO_INCREMENT PRIMARY KEY,
+            `day_id`     INT NOT NULL,
+            `meal_type`  ENUM('breakfast','morning_snack','lunch','afternoon_snack','dinner','second_dinner') NOT NULL,
+            `meal_time`  TIME NULL,
+            `skipped`    TINYINT(1) NOT NULL DEFAULT 0,
+            `athlete_note` TEXT NULL,
+            `photo`      VARCHAR(255) NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uq_food_diary_meal_day_type` (`day_id`, `meal_type`),
+            KEY `idx_food_diary_meals_day` (`day_id`),
+            CONSTRAINT `fk_food_diary_meals_day`
+                FOREIGN KEY (`day_id`) REFERENCES `food_diary_days`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `food_diary_items` (
+            `id`         INT AUTO_INCREMENT PRIMARY KEY,
+            `meal_id`    INT NOT NULL,
+            `food_name`  VARCHAR(255) NOT NULL,
+            `quantity`   DECIMAL(10,2) NULL,
+            `unit`       VARCHAR(50) NULL,
+            `calories`   DECIMAL(10,2) NULL,
+            `protein`    DECIMAL(10,2) NULL,
+            `carbohydrates` DECIMAL(10,2) NULL,
+            `fat`        DECIMAL(10,2) NULL,
+            `fiber`      DECIMAL(10,2) NULL,
+            `sugar`      DECIMAL(10,2) NULL,
+            `salt`       DECIMAL(10,2) NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_food_diary_items_meal` (`meal_id`),
+            CONSTRAINT `fk_food_diary_items_meal`
+                FOREIGN KEY (`meal_id`) REFERENCES `food_diary_meals`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `food_diary_coach_notes` (
+            `id`         INT AUTO_INCREMENT PRIMARY KEY,
+            `meal_id`    INT NULL,
+            `day_id`     INT NULL,
+            `coach_id`   INT NOT NULL,
+            `note`       TEXT NOT NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_food_diary_coach_notes_meal` (`meal_id`),
+            KEY `idx_food_diary_coach_notes_day` (`day_id`),
+            KEY `idx_food_diary_coach_notes_coach` (`coach_id`),
+            CONSTRAINT `fk_food_diary_coach_notes_meal`
+                FOREIGN KEY (`meal_id`) REFERENCES `food_diary_meals`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_food_diary_coach_notes_day`
+                FOREIGN KEY (`day_id`) REFERENCES `food_diary_days`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_food_diary_coach_notes_coach`
+                FOREIGN KEY (`coach_id`) REFERENCES `coaches`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `food_diary_custom_activities` (
+            `id`         INT AUTO_INCREMENT PRIMARY KEY,
+            `day_id`     INT NOT NULL,
+            `activity_type` ENUM('run','walk','bike','strength','swim','other') NOT NULL DEFAULT 'other',
+            `activity_name` VARCHAR(255) NULL,
+            `activity_time` TIME NULL,
+            `duration_minutes` INT NULL,
+            `distance_km` DECIMAL(10,2) NULL,
+            `note`       TEXT NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_food_diary_custom_activities_day` (`day_id`),
+            CONSTRAINT `fk_food_diary_custom_activities_day`
+                FOREIGN KEY (`day_id`) REFERENCES `food_diary_days`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    try {
+        $stmtFoodDiaryDayAthleteNote = $pdo->query("SHOW COLUMNS FROM food_diary_days LIKE 'athlete_note'");
+        if ($stmtFoodDiaryDayAthleteNote !== false && !$stmtFoodDiaryDayAthleteNote->fetch()) {
+            $pdo->exec('ALTER TABLE food_diary_days ADD COLUMN athlete_note TEXT NULL AFTER date');
+        }
+
+        $stmtFoodDiaryActivitiesDuration = $pdo->query("SHOW COLUMNS FROM food_diary_custom_activities LIKE 'duration_minutes'");
+        if ($stmtFoodDiaryActivitiesDuration !== false && !$stmtFoodDiaryActivitiesDuration->fetch()) {
+            $pdo->exec('ALTER TABLE food_diary_custom_activities ADD COLUMN duration_minutes INT NULL AFTER activity_time');
+        }
+
+        $stmtFoodDiaryActivitiesDistance = $pdo->query("SHOW COLUMNS FROM food_diary_custom_activities LIKE 'distance_km'");
+        if ($stmtFoodDiaryActivitiesDistance !== false && !$stmtFoodDiaryActivitiesDistance->fetch()) {
+            $pdo->exec('ALTER TABLE food_diary_custom_activities ADD COLUMN distance_km DECIMAL(10,2) NULL AFTER duration_minutes');
+        }
+    } catch (Throwable $e) {
+        error_log('food diary schema compatibility error: ' . $e->getMessage());
     }
 
     // ============================================================

@@ -1017,6 +1017,10 @@ renderAthleteHeader('Profil sportovce', false, true);
         <span class="quick-tile__label"><i class="fas fa-utensils me-1"></i>Jídelníčky</span>
         <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
     </a>
+    <a href="<?= BASE_URL ?>/athlete_food_diary.php" class="quick-tile quick-tile-warning">
+        <span class="quick-tile__label"><i class="fas fa-bowl-food me-1"></i>Strava</span>
+        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+    </a>
     <a href="<?= BASE_URL ?>/athlete_graphs.php" class="quick-tile quick-tile-info">
         <span class="quick-tile__label"><i class="fas fa-chart-line me-1"></i>Grafy</span>
         <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
