@@ -75,6 +75,8 @@ renderAthleteHeader('Návod pro sportovce', false, true);
 <div class="alert alert-success shadow-sm border-0">
     <strong>Novinky v této verzi:</strong>
     <ul class="mb-0 mt-2">
+        <li>modul <strong>Strava</strong> pro reálný denní záznam jídel a aktivit včetně fotek,</li>
+        <li>ve Stravě nový <strong>pitný režim</strong> průběžně po dávkách (voda, sladký nápoj, káva, čaj, protein, pivo, tvrdý alkohol, vlastní nápoj),</li>
         <li>nová dlaždice <strong>Z. dotazník</strong> na dashboardu a samostatná stránka zdravotního dotazníku,</li>
         <li>dlaždice <strong>Events</strong> a <strong>MyCoach</strong> na dashboardu (podle odemčení účtu),</li>
         <li><strong>Apple Kalendář (CalDAV push)</strong> s možností stáhnout <strong>.mobileconfig</strong> profil,</li>
@@ -91,6 +93,7 @@ renderAthleteHeader('Návod pro sportovce', false, true);
             <a href="#athlete-health" class="btn btn-outline-dark btn-sm">Z. dotazník</a>
             <a href="#athlete-calendar" class="btn btn-outline-dark btn-sm">Kalendář</a>
             <a href="#athlete-food" class="btn btn-outline-dark btn-sm">Jídelníčky</a>
+            <a href="#athlete-food-diary" class="btn btn-outline-dark btn-sm">Strava</a>
             <a href="#athlete-payments" class="btn btn-outline-dark btn-sm">Platby</a>
             <a href="#athlete-events" class="btn btn-outline-dark btn-sm">Events</a>
             <a href="#athlete-mycoach" class="btn btn-outline-dark btn-sm">MyCoach</a>
@@ -107,6 +110,7 @@ renderAthleteHeader('Návod pro sportovce', false, true);
             <div class="col-12 col-md-6"><i class="fas fa-heart-pulse me-2 text-muted"></i><strong>Z. dotazník:</strong> vstupní zdravotní informace a průběžné hlášení změn</div>
             <div class="col-12 col-md-6"><i class="fas fa-wallet me-2 text-muted"></i><strong>Platby:</strong> přehled období, stavy plateb, QR platby</div>
             <div class="col-12 col-md-6"><i class="fas fa-utensils me-2 text-muted"></i><strong>Jídelníčky:</strong> aktuální plán od trenéra</div>
+            <div class="col-12 col-md-6"><i class="fas fa-bowl-food me-2 text-muted"></i><strong>Strava:</strong> reálně snědené jídlo, pitný režim, poznámky a fotky</div>
             <div class="col-12 col-md-6"><i class="fas fa-chart-line me-2 text-muted"></i><strong>Grafy:</strong> trend progresu a hmotnosti</div>
             <div class="col-12 col-md-6"><i class="fas fa-video me-2 text-muted"></i><strong>Videa:</strong> sdílená videa od trenéra</div>
             <div class="col-12 col-md-6"><i class="fas fa-flag-checkered me-2 text-muted"></i><strong>Events:</strong> event karty, záložky, formuláře</div>
@@ -278,6 +282,30 @@ renderAthleteHeader('Návod pro sportovce', false, true);
     </div>
 </div>
 
+<div class="card border-0 shadow-sm mb-4" id="athlete-food-diary">
+    <div class="card-header fw-semibold"><i class="fas fa-bowl-food me-2 text-warning"></i>5b) Strava: reálný denní záznam jídla a pitného režimu</div>
+    <div class="card-body">
+        <h6 class="fw-bold">Jak zapisovat jídlo během dne</h6>
+        <ol>
+            <li>Otevřete sekci Strava.</li>
+            <li>Vyberte den v kalendáři.</li>
+            <li>U každého jídla vyplňte položky, množství, poznámku a volitelně fotku.</li>
+            <li>Pokud jste jídlo neměli, použijte volbu Jídlo jsem vynechal.</li>
+            <li>Záznam průběžně ukládejte; nemusíte čekat na konec dne.</li>
+        </ol>
+
+        <h6 class="fw-bold mt-3">Jak používat pitný režim (průběžně po dávkách)</h6>
+        <ol>
+            <li>V denním detailu Stravy použijte blok Pitný režim.</li>
+            <li>Zaškrtněte druh pití (můžete i více současně).</li>
+            <li>Zadejte množství dávky v ml nebo l a klikněte na Přidat dávku.</li>
+            <li>Pro volbu Vlastní doplňte název nápoje.</li>
+            <li>Historii dávek otevřete přes rozbalovací sekci Historie dávek.</li>
+            <li>Součet vypitého množství vidíte hned v Dnešním přehledu.</li>
+        </ol>
+    </div>
+</div>
+
 <div class="card border-0 shadow-sm mb-4" id="athlete-payments">
     <div class="card-header fw-semibold"><i class="fas fa-wallet me-2 text-warning"></i>6) Platby: jak číst přehled <span class="manual-priority manual-priority-mid">Měsíčně</span></div>
     <div class="card-body">
@@ -385,6 +413,7 @@ renderAthleteHeader('Návod pro sportovce', false, true);
             <li>Ráno: ověřte dnešní termín v Kalendáři.</li>
             <li>Při změně zdravotního stavu ihned odešlete aktualizaci v Z. dotazníku.</li>
             <li>Během dne: dodržujte jídelníček podle aktuálního plánu.</li>
+            <li>Během dne: průběžně přidávejte dávky pitného režimu do Stravy.</li>
             <li>Po kontrole progresu: doplňte aktuální hmotnost do profilu.</li>
             <li>Po tréninku: otevřete detail tréninku a zhodnoťte výkon.</li>
             <li>Pokud používáte MyCoach: zapište denní vstupy a zkontrolujte doporučení.</li>

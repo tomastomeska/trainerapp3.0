@@ -2611,6 +2611,7 @@ function ensureSchemaUpgrades(PDO $pdo): void {
             `id`         INT AUTO_INCREMENT PRIMARY KEY,
             `athlete_id` INT NOT NULL,
             `date`       DATE NOT NULL,
+            `hydration_ml` INT NULL,
             `athlete_note` TEXT NULL,
             `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -2700,7 +2701,33 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
 
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `food_diary_hydration_entries` (
+            `id`         INT AUTO_INCREMENT PRIMARY KEY,
+            `day_id`     INT NOT NULL,
+            `drink_type` ENUM('water','sweet_drink','coffee','tea','protein','beer','spirits','custom') NOT NULL,
+            `custom_name` VARCHAR(120) NULL,
+            `amount_ml`  INT NOT NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY `idx_food_diary_hydration_entries_day` (`day_id`),
+            CONSTRAINT `fk_food_diary_hydration_entries_day`
+                FOREIGN KEY (`day_id`) REFERENCES `food_diary_days`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
     try {
+        $stmtFoodDiaryHydration = $pdo->query("SHOW COLUMNS FROM food_diary_days LIKE 'hydration_ml'");
+        if ($stmtFoodDiaryHydration !== false && !$stmtFoodDiaryHydration->fetch()) {
+            $pdo->exec('ALTER TABLE food_diary_days ADD COLUMN hydration_ml INT NULL AFTER date');
+        }
+
+        $stmtFoodDiaryHydrationCustomName = $pdo->query("SHOW COLUMNS FROM food_diary_hydration_entries LIKE 'custom_name'");
+        if ($stmtFoodDiaryHydrationCustomName !== false && !$stmtFoodDiaryHydrationCustomName->fetch()) {
+            $pdo->exec('ALTER TABLE food_diary_hydration_entries ADD COLUMN custom_name VARCHAR(120) NULL AFTER drink_type');
+        }
+
+        $pdo->exec("ALTER TABLE food_diary_hydration_entries MODIFY COLUMN drink_type ENUM('water','sweet_drink','coffee','tea','protein','beer','spirits','custom') NOT NULL");
+
         $stmtFoodDiaryDayAthleteNote = $pdo->query("SHOW COLUMNS FROM food_diary_days LIKE 'athlete_note'");
         if ($stmtFoodDiaryDayAthleteNote !== false && !$stmtFoodDiaryDayAthleteNote->fetch()) {
             $pdo->exec('ALTER TABLE food_diary_days ADD COLUMN athlete_note TEXT NULL AFTER date');

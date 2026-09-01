@@ -16,11 +16,12 @@ if (!function_exists('foodDiaryMealTypes')) {
 if (!function_exists('foodDiarySchemaHealth')) {
     function foodDiarySchemaHealth(PDO $pdo): array {
         $required = [
-            'food_diary_days' => ['id', 'athlete_id', 'date'],
+            'food_diary_days' => ['id', 'athlete_id', 'date', 'hydration_ml'],
             'food_diary_meals' => ['id', 'day_id', 'meal_type', 'meal_time', 'skipped', 'athlete_note', 'photo'],
             'food_diary_items' => ['id', 'meal_id', 'food_name', 'quantity', 'unit'],
             'food_diary_coach_notes' => ['id', 'meal_id', 'day_id', 'coach_id', 'note'],
             'food_diary_custom_activities' => ['id', 'day_id', 'activity_type', 'activity_name', 'activity_time', 'duration_minutes', 'distance_km', 'note'],
+            'food_diary_hydration_entries' => ['id', 'day_id', 'drink_type', 'custom_name', 'amount_ml', 'created_at'],
         ];
 
         $missing = [];
@@ -78,6 +79,21 @@ if (!function_exists('foodDiaryActivityTypeLabel')) {
     function foodDiaryActivityTypeLabel(string $activityType): string {
         $types = foodDiaryActivityTypes();
         return (string)($types[$activityType] ?? 'Aktivita');
+    }
+}
+
+if (!function_exists('foodDiaryHydrationTypes')) {
+    function foodDiaryHydrationTypes(): array {
+        return [
+            'water' => 'Voda',
+            'sweet_drink' => 'Sladký nápoj',
+            'coffee' => 'Káva',
+            'tea' => 'Čaj',
+            'protein' => 'Protein',
+            'beer' => 'Pivo',
+            'spirits' => 'Tvrdý alkohol',
+            'custom' => 'Vlastní',
+        ];
     }
 }
 
@@ -379,6 +395,33 @@ if (!function_exists('foodDiaryLoadCustomActivities')) {
         );
         $stmt->execute([$dayId]);
         return $stmt->fetchAll();
+    }
+}
+
+if (!function_exists('foodDiaryLoadHydrationEntries')) {
+    function foodDiaryLoadHydrationEntries(PDO $pdo, int $dayId): array {
+        $stmt = $pdo->prepare(
+            'SELECT id, day_id, drink_type, custom_name, amount_ml, created_at
+             FROM food_diary_hydration_entries
+             WHERE day_id = ?
+             ORDER BY id DESC'
+        );
+        $stmt->execute([$dayId]);
+
+        $labels = foodDiaryHydrationTypes();
+        $rows = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $drinkType = (string)($row['drink_type'] ?? 'water');
+            $customName = trim((string)($row['custom_name'] ?? ''));
+            if ($drinkType === 'custom' && $customName !== '') {
+                $row['drink_label'] = $customName;
+            } else {
+                $row['drink_label'] = (string)($labels[$drinkType] ?? 'Pití');
+            }
+            $rows[] = $row;
+        }
+
+        return $rows;
     }
 }
 

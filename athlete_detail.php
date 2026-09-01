@@ -326,7 +326,7 @@ renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']), true, true
             <i class="fas fa-file-alt me-1"></i>Zpráva o pokroku
         </a>
         <a href="<?= BASE_URL ?>/food_diary.php?athlete_id=<?= $athleteId ?>"
-           class="btn btn-outline-warning btn-sm">
+              class="btn btn-outline-primary btn-sm">
             <i class="fas fa-bowl-food me-1"></i>Strava
         </a>
         <a href="<?= BASE_URL ?>/athlete_edit.php?id=<?= $athleteId ?>"

@@ -212,6 +212,118 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . '/athlete_food_diary.php?date=' . urlencode($postedDate) . '&month=' . urlencode($postedMonth));
     }
 
+    if ($action === 'save_hydration_entry') {
+        $hydrationAmountRaw = trim((string)($_POST['hydration_amount'] ?? ''));
+        $hydrationUnit = (string)($_POST['hydration_unit'] ?? 'ml');
+        $customDrinkNameRaw = trim((string)($_POST['custom_drink_name'] ?? ''));
+        $customDrinkName = '';
+        $drinkTypesRaw = $_POST['drink_types'] ?? [];
+        $drinkTypesRaw = is_array($drinkTypesRaw) ? $drinkTypesRaw : [];
+        $allowedDrinkTypes = foodDiaryHydrationTypes();
+        $drinkTypes = [];
+        foreach ($drinkTypesRaw as $drinkType) {
+            $type = (string)$drinkType;
+            if (isset($allowedDrinkTypes[$type]) && !in_array($type, $drinkTypes, true)) {
+                $drinkTypes[] = $type;
+            }
+        }
+
+        if (empty($drinkTypes)) {
+            flash('danger', 'Vyberte alespoň jeden druh pití.');
+            redirect(BASE_URL . '/athlete_food_diary.php?date=' . urlencode($postedDate) . '&month=' . urlencode($postedMonth));
+        }
+
+        if (!in_array($hydrationUnit, ['ml', 'l'], true)) {
+            $hydrationUnit = 'ml';
+        }
+
+        $hydrationAmount = foodDiaryNormalizeQuantityOrNull($hydrationAmountRaw);
+        if ($hydrationAmount === null || $hydrationAmount <= 0) {
+            flash('danger', 'Množství tekutin musí být kladné číslo (např. 250 nebo 0,3).');
+            redirect(BASE_URL . '/athlete_food_diary.php?date=' . urlencode($postedDate) . '&month=' . urlencode($postedMonth));
+        }
+
+        $hydrationMl = $hydrationUnit === 'l'
+            ? (int)round($hydrationAmount * 1000)
+            : (int)round($hydrationAmount);
+        if ($hydrationMl < 10 || $hydrationMl > 5000) {
+            flash('danger', 'Jedna dávka pití musí být v rozmezí 10 až 5000 ml.');
+            redirect(BASE_URL . '/athlete_food_diary.php?date=' . urlencode($postedDate) . '&month=' . urlencode($postedMonth));
+        }
+
+        if (in_array('custom', $drinkTypes, true)) {
+            $customDrinkName = mb_substr($customDrinkNameRaw, 0, 120, 'UTF-8');
+            if ($customDrinkName === '') {
+                flash('danger', 'Pro volbu Vlastní zadejte název nápoje.');
+                redirect(BASE_URL . '/athlete_food_diary.php?date=' . urlencode($postedDate) . '&month=' . urlencode($postedMonth));
+            }
+        }
+
+        try {
+            $dayId = foodDiaryGetOrCreateDayId($pdo, $athleteId, $postedDate);
+            $insert = $pdo->prepare(
+                'INSERT INTO food_diary_hydration_entries (day_id, drink_type, custom_name, amount_ml, created_at)
+                 VALUES (?, ?, ?, ?, NOW())'
+            );
+            foreach ($drinkTypes as $drinkType) {
+                $insert->execute([$dayId, $drinkType, $drinkType === 'custom' ? $customDrinkName : null, $hydrationMl]);
+            }
+
+            $sumStmt = $pdo->prepare('SELECT COALESCE(SUM(amount_ml), 0) FROM food_diary_hydration_entries WHERE day_id = ?');
+            $sumStmt->execute([$dayId]);
+            $totalMl = (int)$sumStmt->fetchColumn();
+            $pdo->prepare('UPDATE food_diary_days SET hydration_ml = ?, updated_at = NOW() WHERE id = ?')->execute([$totalMl, $dayId]);
+
+            flash('success', 'Dávka pití byla přidána.');
+        } catch (Throwable $e) {
+            error_log('Food diary save_hydration_entry error: ' . $e->getMessage());
+            $msg = 'Dávku pití se nepodařilo uložit.';
+            $errorText = mb_strtolower((string)$e->getMessage(), 'UTF-8');
+            if (strpos($errorText, 'food_diary_') !== false
+                || strpos($errorText, 'base table or view not found') !== false
+                || strpos($errorText, 'unknown column') !== false
+            ) {
+                $msg = 'Uložení pitného režimu selhalo kvůli nekompletnímu DB schématu modulu Strava. Spusťte prosím migraci Strava znovu.';
+            }
+            flash('danger', $msg);
+        }
+
+        redirect(BASE_URL . '/athlete_food_diary.php?date=' . urlencode($postedDate) . '&month=' . urlencode($postedMonth));
+    }
+
+    if ($action === 'delete_hydration_entry') {
+        $entryId = (int)($_POST['entry_id'] ?? 0);
+        if ($entryId <= 0) {
+            flash('danger', 'Záznam pití nebyl nalezen.');
+            redirect(BASE_URL . '/athlete_food_diary.php?date=' . urlencode($postedDate) . '&month=' . urlencode($postedMonth));
+        }
+
+        try {
+            $dayId = foodDiaryGetOrCreateDayId($pdo, $athleteId, $postedDate);
+            $delete = $pdo->prepare(
+                'DELETE e
+                 FROM food_diary_hydration_entries e
+                 JOIN food_diary_days d ON d.id = e.day_id
+                 WHERE e.id = ?
+                   AND e.day_id = ?
+                   AND d.athlete_id = ?'
+            );
+            $delete->execute([$entryId, $dayId, $athleteId]);
+
+            $sumStmt = $pdo->prepare('SELECT COALESCE(SUM(amount_ml), 0) FROM food_diary_hydration_entries WHERE day_id = ?');
+            $sumStmt->execute([$dayId]);
+            $totalMl = (int)$sumStmt->fetchColumn();
+            $pdo->prepare('UPDATE food_diary_days SET hydration_ml = ?, updated_at = NOW() WHERE id = ?')->execute([$totalMl, $dayId]);
+
+            flash('success', 'Dávka pití byla smazána.');
+        } catch (Throwable $e) {
+            error_log('Food diary delete_hydration_entry error: ' . $e->getMessage());
+            flash('danger', 'Dávku pití se nepodařilo smazat.');
+        }
+
+        redirect(BASE_URL . '/athlete_food_diary.php?date=' . urlencode($postedDate) . '&month=' . urlencode($postedMonth));
+    }
+
     if ($action === 'delete_meal') {
         $mealId = (int)($_POST['meal_id'] ?? 0);
 
@@ -380,6 +492,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $day = foodDiaryFindDay($pdo, $athleteId, $selectedDate);
 $dayId = (int)($day['id'] ?? 0);
+$hydrationEntries = [];
+$hydrationMl = isset($day['hydration_ml']) && $day['hydration_ml'] !== null ? (int)$day['hydration_ml'] : 0;
 $mealBlocks = [];
 $dayCoachNote = null;
 $customActivities = [];
@@ -387,6 +501,11 @@ if ($dayId > 0) {
     $mealBlocks = foodDiaryLoadMeals($pdo, $dayId, $coachId);
     $dayCoachNote = foodDiaryLoadDayNote($pdo, $dayId, $coachId);
     $customActivities = foodDiaryLoadCustomActivities($pdo, $dayId);
+    $hydrationEntries = foodDiaryLoadHydrationEntries($pdo, $dayId);
+    $hydrationMl = 0;
+    foreach ($hydrationEntries as $entry) {
+        $hydrationMl += (int)($entry['amount_ml'] ?? 0);
+    }
 } else {
     foreach (array_keys(foodDiaryMealTypes()) as $mealType) {
         $mealBlocks[$mealType] = ['meal' => null, 'items' => [], 'coach_note' => null];
@@ -421,8 +540,178 @@ $monthTitleMonths = [
 $monthName = $monthTitleMonths[(int)$monthStart->format('n')] ?? $monthStart->format('m');
 $monthTitle = $monthName . ' ' . $monthStart->format('Y');
 
+$dailyMealSummary = [];
+$loggedMealCount = 0;
+foreach (foodDiaryMealTypes() as $mealType => $meta) {
+    $mealBlock = $mealBlocks[$mealType] ?? ['meal' => null, 'items' => [], 'coach_note' => null];
+    $meal = $mealBlock['meal'];
+    $items = $mealBlock['items'];
+    $isSkipped = ((int)($meal['skipped'] ?? 0) === 1);
+    $hasItems = !empty($items);
+    $hasAnyContent = $meal && ($isSkipped || $hasItems || !empty($meal['athlete_note']) || !empty($meal['photo']));
+    if ($hasAnyContent) {
+        $loggedMealCount++;
+    }
+
+    $preview = [];
+    foreach (array_slice($items, 0, 3) as $item) {
+        $line = (string)($item['food_name'] ?? '');
+        if ($item['quantity'] !== null) {
+            $line .= ' - ' . rtrim(rtrim(number_format((float)$item['quantity'], 2, ',', ''), '0'), ',');
+            if (!empty($item['unit'])) {
+                $line .= ' ' . (string)$item['unit'];
+            }
+        }
+        $preview[] = $line;
+    }
+
+    $dailyMealSummary[$mealType] = [
+        'label' => (string)$meta['label'],
+        'icon' => (string)$meta['icon'],
+        'status' => !$meal ? 'empty' : ($isSkipped ? 'skipped' : ($hasItems ? 'filled' : 'partial')),
+        'preview' => $preview,
+        'items_count' => count($items),
+    ];
+}
+
+$dayFillPercent = (int)round(($loggedMealCount / 6) * 100);
+
 renderAthleteHeader('Strava', false, true);
 ?>
+
+<style>
+    .food-diary-layout {
+        align-items: flex-start;
+    }
+
+    .food-diary-side {
+        position: sticky;
+        top: 88px;
+    }
+
+    .food-diary-progress {
+        height: 10px;
+        background: #eef2f7;
+        border-radius: 999px;
+        overflow: hidden;
+    }
+
+    .food-diary-progress > span {
+        display: block;
+        height: 100%;
+        background: linear-gradient(90deg, #f59e0b 0%, #22c55e 100%);
+    }
+
+    .food-diary-side-list {
+        display: grid;
+        gap: .6rem;
+    }
+
+    .food-diary-side-item {
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: .65rem .7rem;
+        text-decoration: none;
+        color: inherit;
+        background: #fff;
+        display: block;
+    }
+
+    .food-diary-side-item:hover {
+        border-color: #cbd5e1;
+        background: #f8fafc;
+    }
+
+    .food-diary-side-item--filled {
+        border-left: 4px solid #16a34a;
+    }
+
+    .food-diary-side-item--skipped {
+        border-left: 4px solid #64748b;
+    }
+
+    .food-diary-side-item--empty {
+        border-left: 4px solid #e5e7eb;
+    }
+
+    .food-diary-side-item__title {
+        font-size: .92rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .5rem;
+    }
+
+    .food-diary-side-item__meta {
+        font-size: .78rem;
+        color: #64748b;
+        margin-top: .2rem;
+    }
+
+    .food-diary-meal-card--saved {
+        border-left: 4px solid #16a34a;
+    }
+
+    .food-diary-meal-card--skipped {
+        border-left: 4px solid #64748b;
+    }
+
+    .food-diary-field--saved {
+        font-weight: 700;
+        color: #111827;
+    }
+
+    .food-diary-hydration-history {
+        max-height: 220px;
+        overflow: auto;
+    }
+
+    @media (max-width: 991.98px) {
+        .food-diary-side {
+            position: static;
+            top: auto;
+        }
+    }
+
+    @media (max-width: 575.98px) {
+        .food-diary-calendar-wrap {
+            overflow-x: auto;
+        }
+
+        .food-diary-calendar-table {
+            table-layout: fixed;
+            width: 100%;
+            min-width: 100%;
+            margin-bottom: 0;
+        }
+
+        .food-diary-calendar-table thead th {
+            font-size: .66rem;
+            padding: .32rem .1rem;
+            white-space: nowrap;
+        }
+
+        .food-diary-calendar-table tbody td {
+            padding: .3rem .12rem;
+            min-height: 46px;
+            vertical-align: top;
+        }
+
+        .food-diary-calendar-table tbody td .small {
+            font-size: .68rem;
+            line-height: 1.15;
+        }
+
+        .food-diary-calendar-table tbody td a {
+            padding: .1rem 0;
+        }
+
+        .food-diary-hydration-history {
+            max-height: 180px;
+        }
+    }
+</style>
 
 <?php if (!$schemaHealth['ok']): ?>
 <div class="alert alert-danger">
@@ -438,9 +727,6 @@ renderAthleteHeader('Strava', false, true);
         <small class="text-muted">Skutečně snědená strava - historie i dnešek</small>
     </div>
     <div class="d-flex gap-2 flex-wrap align-items-end">
-        <a href="<?= BASE_URL ?>/athlete_dashboard.php" class="btn btn-outline-secondary btn-sm">
-            <i class="fas fa-house me-1"></i>Domů
-        </a>
         <form method="get" action="<?= BASE_URL ?>/athlete_food_diary_export_pdf.php" target="_blank" class="d-flex gap-2 flex-wrap align-items-end" id="foodDiaryExportFormPdf">
             <input type="hidden" name="date" value="<?= h($selectedDate) ?>">
             <div>
@@ -471,7 +757,7 @@ renderAthleteHeader('Strava', false, true);
 </div>
 
 <div class="row g-3 mb-4">
-    <div class="col-lg-8">
+    <div class="col-lg-8 order-2 order-lg-1">
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
@@ -489,8 +775,8 @@ renderAthleteHeader('Strava', false, true);
                     </div>
                 </div>
 
-                <div class="table-responsive">
-                    <table class="table table-bordered align-middle text-center mb-0">
+                <div class="table-responsive food-diary-calendar-wrap">
+                    <table class="table table-bordered align-middle text-center mb-0 food-diary-calendar-table no-mobile-stack">
                         <thead class="table-light">
                             <tr>
                                 <th>Po</th>
@@ -564,7 +850,7 @@ renderAthleteHeader('Strava', false, true);
         </div>
     </div>
 
-    <div class="col-lg-4">
+    <div class="col-lg-4 order-1 order-lg-2">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
                 <h5 class="mb-3"><i class="fas fa-chart-pie me-2 text-success"></i>Týdenní přehled</h5>
@@ -589,10 +875,122 @@ renderAthleteHeader('Strava', false, true);
     </div>
 </div>
 
+<div class="d-lg-none mb-3">
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="mb-0"><i class="fas fa-list-check me-2 text-success"></i>Dnešní přehled</h6>
+                <span class="badge bg-dark"><?= (int)$loggedMealCount ?>/6</span>
+            </div>
+            <div class="food-diary-progress mb-3" aria-label="Denní vyplněnost">
+                <span style="width: <?= (int)$dayFillPercent ?>%"></span>
+            </div>
+            <div class="small text-muted mb-3"><?= (int)$dayFillPercent ?> % vyplněno</div>
+            <div class="small mb-3">
+                <i class="fas fa-glass-water me-1 text-primary"></i>
+                Vypito: <strong><?= $hydrationMl > 0 ? h(number_format($hydrationMl / 1000, 2, ',', '')) . ' l' : 'nezadáno' ?></strong>
+            </div>
+
+            <div class="food-diary-side-list">
+                <?php foreach ($dailyMealSummary as $mealType => $summary): ?>
+                    <?php
+                    $status = (string)$summary['status'];
+                    $statusLabel = $status === 'filled'
+                        ? 'Vyplněno'
+                        : ($status === 'skipped' ? 'Vynecháno' : ($status === 'partial' ? 'Rozpracováno' : 'Bez záznamu'));
+                    $statusIcon = $status === 'filled'
+                        ? '🟢'
+                        : ($status === 'skipped' ? '⚪' : ($status === 'partial' ? '🟡' : '⚪'));
+                    ?>
+                    <a href="#meal-card-<?= h($mealType) ?>" class="food-diary-side-item food-diary-side-item--<?= h($status) ?>">
+                        <div class="food-diary-side-item__title">
+                            <span><i class="fas <?= h((string)$summary['icon']) ?> me-1 text-warning"></i><?= h((string)$summary['label']) ?></span>
+                            <span><?= $statusIcon ?></span>
+                        </div>
+                        <div class="food-diary-side-item__meta"><?= h($statusLabel) ?><?php if ((int)$summary['items_count'] > 0): ?> · <?= (int)$summary['items_count'] ?> položek<?php endif; ?></div>
+                        <?php if (!empty($summary['preview'])): ?>
+                            <div class="food-diary-side-item__meta mt-1"><?= h(implode(' | ', $summary['preview'])) ?></div>
+                        <?php endif; ?>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body">
         <h4 class="mb-2"><?= h(foodDiaryFormatCzDateTitle($selectedDate)) ?></h4>
         <div class="small text-muted mb-3">Datum deníku: <?= h(formatDate($selectedDate)) ?></div>
+
+        <div class="card border mb-3">
+            <div class="card-body py-2">
+                <form method="post" class="row g-1 align-items-end">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="action" value="save_hydration_entry">
+                    <input type="hidden" name="selected_date" value="<?= h($selectedDate) ?>">
+                    <input type="hidden" name="month" value="<?= h($monthParam) ?>">
+                    <div class="col-12">
+                        <label class="form-label small mb-1"><i class="fas fa-glass-water me-1 text-primary"></i>Druh pití (můžete vybrat více)</label>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <?php foreach (foodDiaryHydrationTypes() as $drinkType => $drinkLabel): ?>
+                            <div class="form-check form-check-inline me-2 mb-1">
+                                <input class="form-check-input" type="checkbox" name="drink_types[]" value="<?= h($drinkType) ?>" id="drink-type-<?= h($drinkType) ?>">
+                                <label class="form-check-label small" for="drink-type-<?= h($drinkType) ?>"><?= h($drinkLabel) ?></label>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <div class="col-12 d-none" id="customDrinkNameWrap">
+                        <label class="form-label small mb-1">Vlastní název nápoje</label>
+                        <input type="text" name="custom_drink_name" id="customDrinkNameInput" class="form-control form-control-sm" placeholder="např. Ionťák citron">
+                    </div>
+                    <div class="col-sm-5">
+                        <label class="form-label small mb-1">Množství dávky</label>
+                        <input type="text" name="hydration_amount" class="form-control form-control-sm" value="250" placeholder="např. 250 nebo 0,3">
+                    </div>
+                    <div class="col-sm-3">
+                        <label class="form-label small mb-1">Jednotka dávky</label>
+                        <select name="hydration_unit" class="form-select form-select-sm">
+                            <option value="ml" selected>ml</option>
+                            <option value="l">l</option>
+                        </select>
+                    </div>
+                    <div class="col-sm-4 d-grid">
+                        <button type="submit" class="btn btn-primary btn-sm">Přidat dávku</button>
+                    </div>
+                </form>
+                <?php if (!empty($hydrationEntries)): ?>
+                <div class="small text-muted mt-2">
+                    Uloženo průběžně: <strong><?= h(number_format($hydrationMl / 1000, 2, ',', '')) ?> l</strong> (<?= (int)$hydrationMl ?> ml)
+                    · Dávek: <strong><?= count($hydrationEntries) ?></strong>
+                </div>
+                <details class="mt-2">
+                    <summary class="small fw-semibold" style="cursor:pointer;">Historie dávek (<?= count($hydrationEntries) ?>)</summary>
+                    <div class="mt-2 d-grid gap-2 food-diary-hydration-history pe-1">
+                        <?php foreach ($hydrationEntries as $entry): ?>
+                        <form method="post" class="d-flex align-items-center justify-content-between border rounded px-2 py-1 bg-light">
+                            <?= csrfField() ?>
+                            <input type="hidden" name="action" value="delete_hydration_entry">
+                            <input type="hidden" name="selected_date" value="<?= h($selectedDate) ?>">
+                            <input type="hidden" name="month" value="<?= h($monthParam) ?>">
+                            <input type="hidden" name="entry_id" value="<?= (int)$entry['id'] ?>">
+                            <div class="small fw-bold">
+                                <?= h((string)$entry['drink_label']) ?> - <?= (int)$entry['amount_ml'] ?> ml
+                                <span class="text-muted fw-normal">(<?= h(date('H:i', strtotime((string)$entry['created_at']))) ?>)</span>
+                            </div>
+                            <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Smazat tuto dávku pití?')" title="Smazat dávku">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </form>
+                        <?php endforeach; ?>
+                    </div>
+                </details>
+                <?php else: ?>
+                <div class="small text-muted mt-2">Zatím bez záznamu pitného režimu.</div>
+                <?php endif; ?>
+            </div>
+        </div>
 
         <?php if (!empty($autoActivities) || !empty($customActivities)): ?>
         <div class="mb-3">
@@ -703,7 +1101,9 @@ renderAthleteHeader('Strava', false, true);
     </div>
 </div>
 
-<div class="row g-3">
+<div class="row g-3 food-diary-layout">
+    <div class="col-lg-8">
+        <div class="row g-3">
     <?php foreach (foodDiaryMealTypes() as $mealType => $meta): ?>
         <?php
         $mealBlock = $mealBlocks[$mealType] ?? ['meal' => null, 'items' => [], 'coach_note' => null];
@@ -713,9 +1113,10 @@ renderAthleteHeader('Strava', false, true);
         $mealTimeValue = !empty($meal['meal_time']) ? substr((string)$meal['meal_time'], 0, 5) : '';
         $isSkipped = ((int)($meal['skipped'] ?? 0) === 1);
         $mealPhoto = (string)($meal['photo'] ?? '');
+        $isSavedMeal = $meal && ($isSkipped || !empty($items) || !empty($meal['athlete_note']) || $mealPhoto !== '');
         ?>
         <div class="col-12">
-            <div class="card border-0 shadow-sm">
+            <div id="meal-card-<?= h($mealType) ?>" class="card border-0 shadow-sm <?= $isSavedMeal ? ($isSkipped ? 'food-diary-meal-card--skipped' : 'food-diary-meal-card--saved') : '' ?>">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start mb-2 flex-wrap gap-2">
                         <h5 class="mb-0"><i class="fas <?= h((string)$meta['icon']) ?> text-warning me-2"></i><?= h((string)$meta['label']) ?></h5>
@@ -848,6 +1249,51 @@ renderAthleteHeader('Strava', false, true);
             </div>
         </div>
     <?php endforeach; ?>
+        </div>
+    </div>
+
+    <div class="col-lg-4 d-none d-lg-block">
+        <div class="card border-0 shadow-sm food-diary-side">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0"><i class="fas fa-list-check me-2 text-success"></i>Dnešní přehled</h6>
+                    <span class="badge bg-dark"><?= (int)$loggedMealCount ?>/6</span>
+                </div>
+                <div class="food-diary-progress mb-3" aria-label="Denní vyplněnost">
+                    <span style="width: <?= (int)$dayFillPercent ?>%"></span>
+                </div>
+                <div class="small text-muted mb-3"><?= (int)$dayFillPercent ?> % vyplněno</div>
+                <div class="small mb-3">
+                    <i class="fas fa-glass-water me-1 text-primary"></i>
+                    Vypito: <strong><?= $hydrationMl > 0 ? h(number_format($hydrationMl / 1000, 2, ',', '')) . ' l' : 'nezadáno' ?></strong>
+                </div>
+
+                <div class="food-diary-side-list">
+                    <?php foreach ($dailyMealSummary as $mealType => $summary): ?>
+                        <?php
+                        $status = (string)$summary['status'];
+                        $statusLabel = $status === 'filled'
+                            ? 'Vyplněno'
+                            : ($status === 'skipped' ? 'Vynecháno' : ($status === 'partial' ? 'Rozpracováno' : 'Bez záznamu'));
+                        $statusIcon = $status === 'filled'
+                            ? '🟢'
+                            : ($status === 'skipped' ? '⚪' : ($status === 'partial' ? '🟡' : '⚪'));
+                        ?>
+                        <a href="#meal-card-<?= h($mealType) ?>" class="food-diary-side-item food-diary-side-item--<?= h($status) ?>">
+                            <div class="food-diary-side-item__title">
+                                <span><i class="fas <?= h((string)$summary['icon']) ?> me-1 text-warning"></i><?= h((string)$summary['label']) ?></span>
+                                <span><?= $statusIcon ?></span>
+                            </div>
+                            <div class="food-diary-side-item__meta"><?= h($statusLabel) ?><?php if ((int)$summary['items_count'] > 0): ?> · <?= (int)$summary['items_count'] ?> položek<?php endif; ?></div>
+                            <?php if (!empty($summary['preview'])): ?>
+                                <div class="food-diary-side-item__meta mt-1"><?= h(implode(' | ', $summary['preview'])) ?></div>
+                            <?php endif; ?>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <template id="foodDiaryItemRowTemplate">
@@ -953,6 +1399,48 @@ renderAthleteHeader('Strava', false, true);
         skippedToggle.addEventListener('change', syncState);
         syncState();
     });
+
+    const customDrinkCheckbox = document.getElementById('drink-type-custom');
+    const customDrinkWrap = document.getElementById('customDrinkNameWrap');
+    const customDrinkInput = document.getElementById('customDrinkNameInput');
+    const syncCustomDrinkField = () => {
+        if (!customDrinkCheckbox || !customDrinkWrap || !customDrinkInput) {
+            return;
+        }
+
+        const enabled = customDrinkCheckbox.checked;
+        customDrinkWrap.classList.toggle('d-none', !enabled);
+        customDrinkInput.required = enabled;
+        if (!enabled) {
+            customDrinkInput.value = '';
+        }
+    };
+    if (customDrinkCheckbox) {
+        customDrinkCheckbox.addEventListener('change', syncCustomDrinkField);
+        syncCustomDrinkField();
+    }
+
+    // Existing persisted values are emphasized to improve quick scanning.
+    const markSavedFields = () => {
+        document.querySelectorAll('form input, form select, form textarea').forEach((field) => {
+            if (field.type === 'hidden' || field.type === 'file' || field.type === 'password') {
+                return;
+            }
+
+            let hasValue = false;
+            if (field.type === 'checkbox' || field.type === 'radio') {
+                hasValue = field.checked;
+            } else {
+                hasValue = String(field.value || '').trim() !== '';
+            }
+
+            field.classList.toggle('food-diary-field--saved', hasValue);
+        });
+    };
+
+    document.addEventListener('input', markSavedFields);
+    document.addEventListener('change', markSavedFields);
+    markSavedFields();
 })();
 </script>
 

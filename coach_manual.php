@@ -75,6 +75,8 @@ renderHeader('Návod pro trenéry', false, true);
 <div class="alert alert-success shadow-sm border-0">
     <strong>Novinky v této verzi:</strong>
     <ul class="mb-0 mt-2">
+        <li>v detailu sportovce je dostupná sekce <strong>Strava</strong> s denními záznamy jídel, aktivit a pitného režimu,</li>
+        <li>pitný režim je nově veden <strong>průběžně po dávkách</strong> a obsahuje typ nápoje (voda, sladký nápoj, káva, čaj, protein, pivo, tvrdý alkohol, vlastní),</li>
         <li>nová práce se <strong>zdravotním dotazníkem sportovce</strong> v dashboardu, detailu sportovce i během tréninku,</li>
         <li>moduly <strong>Events</strong> a <strong>MyCoach</strong> jsou řízené per-účtem (odemčeno/uzamčeno),</li>
         <li><strong>Apple CalDAV push</strong> + stažení Apple profilu <strong>.mobileconfig</strong>,</li>
@@ -92,6 +94,7 @@ renderHeader('Návod pro trenéry', false, true);
             <a href="#coach-health" class="btn btn-outline-dark btn-sm">Z. dotazník</a>
             <a href="#coach-training" class="btn btn-outline-dark btn-sm">Trénink</a>
             <a href="#coach-calendar" class="btn btn-outline-dark btn-sm">Kalendář</a>
+            <a href="#coach-food-diary" class="btn btn-outline-dark btn-sm">Strava</a>
             <a href="#coach-payments" class="btn btn-outline-dark btn-sm">Platby</a>
             <a href="#coach-events" class="btn btn-outline-dark btn-sm">Events</a>
             <a href="#coach-mycoach" class="btn btn-outline-dark btn-sm">MyCoach</a>
@@ -111,6 +114,7 @@ renderHeader('Návod pro trenéry', false, true);
             <div class="col-12 col-md-6"><i class="fas fa-calendar-alt me-2 text-muted"></i><strong>Kalendář:</strong> plánování, schvalování, Apple sync</div>
             <div class="col-12 col-md-6"><i class="fas fa-wallet me-2 text-muted"></i><strong>Platby:</strong> výzvy, stav úhrad, účtenky</div>
             <div class="col-12 col-md-6"><i class="fas fa-utensils me-2 text-muted"></i><strong>Jídelníčky:</strong> tvorba a přiřazení plánů</div>
+            <div class="col-12 col-md-6"><i class="fas fa-bowl-food me-2 text-muted"></i><strong>Strava sportovce:</strong> reálný příjem jídla, pitný režim po dávkách, poznámky trenéra</div>
             <div class="col-12 col-md-6"><i class="fas fa-video me-2 text-muted"></i><strong>Videa:</strong> upload, složky, sdílení sportovcům</div>
             <div class="col-12 col-md-6"><i class="fas fa-flag-checkered me-2 text-muted"></i><strong>Events:</strong> práce s publikovanými eventy</div>
             <div class="col-12 col-md-6"><i class="fas fa-brain me-2 text-muted"></i><strong>MyCoach:</strong> cíle, monitoring, dotazníky</div>
@@ -386,6 +390,27 @@ renderHeader('Návod pro trenéry', false, true);
     </div>
 </div>
 
+<div class="card border-0 shadow-sm mb-4" id="coach-food-diary">
+    <div class="card-header fw-semibold"><i class="fas fa-bowl-food me-2 text-warning"></i>8b) Strava sportovce: co kontrolovat denně</div>
+    <div class="card-body">
+        <h6 class="fw-bold">Jak otevřít Stravu konkrétního sportovce</h6>
+        <ol>
+            <li>V dashboardu nebo detailu sportovce klikněte na tlačítko Strava.</li>
+            <li>Vyberte den v kalendáři.</li>
+            <li>Zkontrolujte, co sportovec skutečně jedl a co označil jako vynechané.</li>
+            <li>Podle potřeby napište poznámku k jednotlivému jídlu nebo k celému dni.</li>
+        </ol>
+
+        <h6 class="fw-bold mt-3">Jak číst pitný režim</h6>
+        <ol>
+            <li>V denním detailu sledujte součet vypitého množství za den.</li>
+            <li>V seznamu dávek ověřte skladbu nápojů: voda, sladké nápoje, káva, čaj, protein, pivo, tvrdý alkohol a vlastní nápoje.</li>
+            <li>U položky Vlastní je vidět název, který sportovec doplnil.</li>
+            <li>Pokud je pití nedostatečné nebo nevhodně složené, zapište doporučení do poznámky k dni.</li>
+        </ol>
+    </div>
+</div>
+
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-header fw-semibold"><i class="fas fa-images me-2 text-warning"></i>9) Galerie: složky a nahrávání</div>
     <div class="card-body">
@@ -513,6 +538,7 @@ renderHeader('Návod pro trenéry', false, true);
         <ol class="mb-0">
             <li>Ráno: otevřete Kalendář a ověřte dnešní termíny.</li>
             <li>Před tréninkem: zkontrolujte zdravotní stav sportovce a nové změny v dotazníku.</li>
+            <li>Průběžně: ve Stravě kontrolujte reálný příjem jídla a pitný režim po dávkách.</li>
             <li>Po každém tréninku: zkontrolujte uložení výsledků.</li>
             <li>Odpoledne: projděte Zprávy a odpovězte na dotazy.</li>
             <li>Průběžně: kontrolujte platební výzvy ve vybraném období a označujte uhrazené položky.</li>

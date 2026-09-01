@@ -173,10 +173,16 @@ $dayId = (int)($day['id'] ?? 0);
 $mealBlocks = [];
 $dayCoachNote = null;
 $customActivities = [];
+$hydrationEntries = [];
+$hydrationMl = 0;
 if ($dayId > 0) {
     $mealBlocks = foodDiaryLoadMeals($pdo, $dayId, $coachId);
     $dayCoachNote = foodDiaryLoadDayNote($pdo, $dayId, $coachId);
     $customActivities = foodDiaryLoadCustomActivities($pdo, $dayId);
+    $hydrationEntries = foodDiaryLoadHydrationEntries($pdo, $dayId);
+    foreach ($hydrationEntries as $entry) {
+        $hydrationMl += (int)($entry['amount_ml'] ?? 0);
+    }
 } else {
     foreach (array_keys(foodDiaryMealTypes()) as $mealType) {
         $mealBlocks[$mealType] = ['meal' => null, 'items' => [], 'coach_note' => null];
@@ -352,6 +358,32 @@ renderHeader('Strava - ' . trim((string)$athlete['first_name'] . ' ' . (string)$
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body">
         <h4 class="mb-2"><?= h(foodDiaryFormatCzDateTitle($selectedDate)) ?></h4>
+        <div class="card border mb-3">
+            <div class="card-body py-3">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                    <h6 class="mb-0"><i class="fas fa-glass-water me-2 text-primary"></i>Pitný režim</h6>
+                    <div class="small">
+                        Vypito celkem:
+                        <strong><?= $hydrationMl > 0 ? h(number_format($hydrationMl / 1000, 2, ',', '')) . ' l' : 'nezadáno' ?></strong>
+                    </div>
+                </div>
+                <?php if (!empty($hydrationEntries)): ?>
+                <div class="d-grid gap-2">
+                    <?php foreach ($hydrationEntries as $entry): ?>
+                    <div class="d-flex align-items-center justify-content-between border rounded px-2 py-1 bg-light">
+                        <div class="small fw-semibold">
+                            <?= h((string)$entry['drink_label']) ?> - <?= (int)$entry['amount_ml'] ?> ml
+                        </div>
+                        <div class="small text-muted"><?= h(date('H:i', strtotime((string)$entry['created_at']))) ?></div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php else: ?>
+                <div class="small text-muted">Sportovec zatím nezadal žádný záznam pitného režimu.</div>
+                <?php endif; ?>
+            </div>
+        </div>
+
         <?php if (!empty($autoActivities) || !empty($customActivities)): ?>
         <h6 class="mt-3 mb-2"><i class="fas fa-person-running me-2 text-primary"></i>Aktivita</h6>
         <?php foreach ($autoActivities as $activity): ?>
