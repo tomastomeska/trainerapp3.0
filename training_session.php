@@ -140,10 +140,16 @@ renderHeader('Aktivní trénink', false, true);
 <?php foreach ($exercises as $idx => $ex): ?>
 <?php $series = $seriesByExercise[$ex['exercise_id']] ?? []; ?>
 <?php $sportType = $ex['sport_type'] ?? 'standard'; ?>
+<?php
+$exerciseMode = ((int)($ex['is_timed'] ?? 0) === 1)
+    ? 'timed'
+    : (((int)($ex['is_timed'] ?? 0) === 2) ? 'distance' : (((int)($ex['is_timed'] ?? 0) === 3) ? 'distance_time' : 'standard'));
+?>
 <div class="card border-0 shadow-sm mb-4 exercise-sort-item"
      id="exercise-card-<?= $ex['exercise_id'] ?>"
      data-exercise-id="<?= (int)$ex['exercise_id'] ?>"
-     data-is-timed="<?= !empty($ex['is_timed']) ? '1' : '0' ?>"
+    data-is-timed="<?= ($exerciseMode === 'timed' || $exerciseMode === 'distance_time') ? '1' : '0' ?>"
+    data-exercise-mode="<?= h($exerciseMode) ?>"
      draggable="true">
     <div class="card-header d-flex align-items-center bg-dark text-white">
         <span class="badge bg-warning text-dark me-2 fs-5"><?= $ex['exercise_order'] ?></span>
@@ -184,7 +190,7 @@ renderHeader('Aktivní trénink', false, true);
         </span>
     </div>
     <div class="card-body p-0">
-        <?php if (!empty($ex['is_timed'])): ?>
+        <?php if ($exerciseMode === 'timed'): ?>
         <!-- Časový formulář -->
         <div class="table-responsive">
             <table class="table table-bordered mb-0 align-middle text-center" id="series-table-<?= $ex['exercise_id'] ?>">
@@ -201,17 +207,111 @@ renderHeader('Aktivní trénink', false, true);
                     <tr id="series-row-<?= $s['id'] ?>"
                         data-exercise-id="<?= $ex['exercise_id'] ?>"
                         data-is-timed="1"
+                        data-exercise-mode="timed"
                         data-weight="<?= (float)$s['weight'] ?>"
                         data-equipment-weight="<?= (float)($s['equipment_weight'] ?? 0) ?>"
                         data-reps="0"
                         data-assist="0"
-                        data-duration-seconds="<?= (int)($s['duration_seconds'] ?? 0) ?>">
+                        data-duration-seconds="<?= (int)($s['duration_seconds'] ?? 0) ?>"
+                        data-distance-meters="0">
                         <td class="fw-bold text-muted"><?= $s['series_order'] ?></td>
                         <td class="fw-bold"><?= !empty($s['duration_seconds']) ? formatSeriesDuration((int)$s['duration_seconds']) : '–' ?></td>
                         <td class="fw-bold">
                             <?php $timedLoad = (float)$s['weight'] + (float)($s['equipment_weight'] ?? 0); ?>
                             <?= $timedLoad > 0 ? number_format($timedLoad, 1, ',', '') . ' kg' : '–' ?>
                         </td>
+                        <td>
+                            <button class="btn btn-outline-secondary btn-sm me-1"
+                                    onclick="openSeriesEditModal(this)"
+                                    title="Upravit sérii">
+                                <i class="fas fa-pen"></i>
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm"
+                                    onclick="deleteSeries(<?= $s['id'] ?>, <?= $ex['exercise_id'] ?>)"
+                                    title="Smazat sérii">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php elseif ($exerciseMode === 'distance'): ?>
+        <!-- Vzdálenostní formulář -->
+        <div class="table-responsive">
+            <table class="table table-bordered mb-0 align-middle text-center" id="series-table-<?= $ex['exercise_id'] ?>">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:50px">#</th>
+                        <th>Vzdálenost <small class="text-muted">(m)</small></th>
+                        <th>Váha celkem <small class="text-muted">(kg)</small></th>
+                        <th style="width:60px"></th>
+                    </tr>
+                </thead>
+                <tbody id="series-body-<?= $ex['exercise_id'] ?>">
+                    <?php foreach ($series as $s): ?>
+                    <?php $distanceMeters = max(0, (int)($s['reps'] ?? 0)); ?>
+                    <tr id="series-row-<?= $s['id'] ?>"
+                        data-exercise-id="<?= $ex['exercise_id'] ?>"
+                        data-is-timed="0"
+                        data-exercise-mode="distance"
+                        data-weight="<?= (float)$s['weight'] ?>"
+                        data-equipment-weight="<?= (float)($s['equipment_weight'] ?? 0) ?>"
+                        data-reps="<?= $distanceMeters ?>"
+                        data-assist="0"
+                        data-duration-seconds="0"
+                        data-distance-meters="<?= $distanceMeters ?>">
+                        <td class="fw-bold text-muted"><?= $s['series_order'] ?></td>
+                        <td class="fw-bold"><?= $distanceMeters > 0 ? number_format($distanceMeters, 0, ',', ' ') : '–' ?></td>
+                        <td class="fw-bold"><?= ((float)$s['weight'] + (float)($s['equipment_weight'] ?? 0)) > 0 ? number_format((float)$s['weight'] + (float)($s['equipment_weight'] ?? 0), 1, ',', '') : '–' ?></td>
+                        <td>
+                            <button class="btn btn-outline-secondary btn-sm me-1"
+                                    onclick="openSeriesEditModal(this)"
+                                    title="Upravit sérii">
+                                <i class="fas fa-pen"></i>
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm"
+                                    onclick="deleteSeries(<?= $s['id'] ?>, <?= $ex['exercise_id'] ?>)"
+                                    title="Smazat sérii">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php elseif ($exerciseMode === 'distance_time'): ?>
+        <!-- Vzdálenost + čas -->
+        <div class="table-responsive">
+            <table class="table table-bordered mb-0 align-middle text-center" id="series-table-<?= $ex['exercise_id'] ?>">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:50px">#</th>
+                        <th>Vzdálenost <small class="text-muted">(m)</small></th>
+                        <th>Čas</th>
+                        <th>Váha celkem <small class="text-muted">(kg)</small></th>
+                        <th style="width:60px"></th>
+                    </tr>
+                </thead>
+                <tbody id="series-body-<?= $ex['exercise_id'] ?>">
+                    <?php foreach ($series as $s): ?>
+                    <?php $distanceMeters = max(0, (int)($s['reps'] ?? 0)); ?>
+                    <tr id="series-row-<?= $s['id'] ?>"
+                        data-exercise-id="<?= $ex['exercise_id'] ?>"
+                        data-is-timed="1"
+                        data-exercise-mode="distance_time"
+                        data-weight="<?= (float)$s['weight'] ?>"
+                        data-equipment-weight="<?= (float)($s['equipment_weight'] ?? 0) ?>"
+                        data-reps="<?= $distanceMeters ?>"
+                        data-assist="0"
+                        data-duration-seconds="<?= (int)($s['duration_seconds'] ?? 0) ?>"
+                        data-distance-meters="<?= $distanceMeters ?>">
+                        <td class="fw-bold text-muted"><?= $s['series_order'] ?></td>
+                        <td class="fw-bold"><?= $distanceMeters > 0 ? number_format($distanceMeters, 0, ',', ' ') : '–' ?></td>
+                        <td class="fw-bold"><?= !empty($s['duration_seconds']) ? formatSeriesDuration((int)$s['duration_seconds']) : '–' ?></td>
+                        <td class="fw-bold"><?= ((float)$s['weight'] + (float)($s['equipment_weight'] ?? 0)) > 0 ? number_format((float)$s['weight'] + (float)($s['equipment_weight'] ?? 0), 1, ',', '') : '–' ?></td>
                         <td>
                             <button class="btn btn-outline-secondary btn-sm me-1"
                                     onclick="openSeriesEditModal(this)"
@@ -247,11 +347,13 @@ renderHeader('Aktivní trénink', false, true);
                     <tr id="series-row-<?= $s['id'] ?>"
                         data-exercise-id="<?= $ex['exercise_id'] ?>"
                         data-is-timed="0"
+                        data-exercise-mode="standard"
                         data-weight="<?= (float)$s['weight'] ?>"
                         data-equipment-weight="<?= (float)($s['equipment_weight'] ?? 0) ?>"
                         data-reps="<?= (int)$s['reps'] ?>"
                         data-assist="<?= (int)$s['assistance_reps'] ?>"
-                        data-duration-seconds="0">
+                        data-duration-seconds="0"
+                        data-distance-meters="0">
                         <td class="fw-bold text-muted"><?= $s['series_order'] ?></td>
                         <td class="fw-bold"><?= ((float)$s['weight'] + (float)($s['equipment_weight'] ?? 0)) > 0 ? number_format((float)$s['weight'] + (float)($s['equipment_weight'] ?? 0), 1, ',', '') : '–' ?></td>
                         <td><?= $s['reps'] ?: '–' ?></td>
@@ -300,18 +402,42 @@ renderHeader('Aktivní trénink', false, true);
                         <thead>
                             <tr>
                                 <th>#</th>
+                                <?php if ($exerciseMode === 'timed'): ?>
+                                <th>Čas</th>
+                                <th>Váha (kg)</th>
+                                <?php elseif ($exerciseMode === 'distance'): ?>
+                                <th>Vzdálenost (m)</th>
+                                <th>Váha (kg)</th>
+                                <?php elseif ($exerciseMode === 'distance_time'): ?>
+                                <th>Vzdálenost (m)</th>
+                                <th>Čas</th>
+                                <th>Váha (kg)</th>
+                                <?php else: ?>
                                 <th>Váha (kg)</th>
                                 <th>Opakování</th>
                                 <th>Dopomoc</th>
+                                <?php endif; ?>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($lastCompleted['series'] as $prev): ?>
                             <tr>
                                 <td class="fw-bold text-muted"><?= (int)$prev['series_order'] ?></td>
+                                <?php if ($exerciseMode === 'timed'): ?>
+                                <td><?= !empty($prev['duration_seconds']) ? formatSeriesDuration((int)$prev['duration_seconds']) : '–' ?></td>
+                                <td><?= number_format((float)$prev['weight'] + (float)($prev['equipment_weight'] ?? 0), 1, ',', '') ?></td>
+                                <?php elseif ($exerciseMode === 'distance'): ?>
+                                <td><?= (int)($prev['reps'] ?? 0) > 0 ? number_format((int)$prev['reps'], 0, ',', ' ') : '–' ?></td>
+                                <td><?= number_format((float)$prev['weight'] + (float)($prev['equipment_weight'] ?? 0), 1, ',', '') ?></td>
+                                <?php elseif ($exerciseMode === 'distance_time'): ?>
+                                <td><?= (int)($prev['reps'] ?? 0) > 0 ? number_format((int)$prev['reps'], 0, ',', ' ') : '–' ?></td>
+                                <td><?= !empty($prev['duration_seconds']) ? formatSeriesDuration((int)$prev['duration_seconds']) : '–' ?></td>
+                                <td><?= number_format((float)$prev['weight'] + (float)($prev['equipment_weight'] ?? 0), 1, ',', '') ?></td>
+                                <?php else: ?>
                                 <td><?= number_format((float)$prev['weight'] + (float)($prev['equipment_weight'] ?? 0), 1, ',', '') ?></td>
                                 <td><?= (int)$prev['reps'] ?></td>
                                 <td><?= (int)$prev['assistance_reps'] > 0 ? (int)$prev['assistance_reps'] : '–' ?></td>
+                                <?php endif; ?>
                             </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -319,7 +445,7 @@ renderHeader('Aktivní trénink', false, true);
                 </div>
             </div>
             <?php endif; ?>
-            <?php if ($sportType === 'standard' && empty($ex['is_timed'])): ?>
+            <?php if ($sportType === 'standard' && $exerciseMode === 'standard'): ?>
             <!-- Formulář pro přidání série (inline) -->
             <div class="add-series-row" id="add-series-form-<?= $ex['exercise_id'] ?>">
                 <div>
@@ -359,7 +485,7 @@ renderHeader('Aktivní trénink', false, true);
                     </button>
                 </div>
             </div>
-            <?php elseif (!empty($ex['is_timed'])): ?>
+            <?php elseif ($exerciseMode === 'timed'): ?>
             <!-- Formulář pro časový cvik -->
             <div class="add-series-row" id="add-series-form-<?= $ex['exercise_id'] ?>">
                 <div>
@@ -376,6 +502,87 @@ renderHeader('Aktivní trénink', false, true);
                             <?php endfor; ?>
                         </select>
                     </div>
+                </div>
+                <div>
+                    <label class="form-label small fw-semibold mb-1">Váha náčiní (kg)</label>
+                    <input type="number" step="0.5" min="0" max="999"
+                           class="form-control form-control-sm series-equipment-weight"
+                           id="equipment-weight-<?= $ex['exercise_id'] ?>"
+                           placeholder="10" style="width:120px">
+                    <div class="form-text small">Volitelné, bude přičteno k celkové váze.</div>
+                </div>
+                <div class="mb-0" style="padding-top:22px">
+                    <button type="button"
+                            class="btn btn-warning fw-bold"
+                            onclick="addSeries(this, <?= $ex['exercise_id'] ?>, <?= $sessionId ?>)">
+                        <i class="fas fa-plus me-1"></i>Přidat sérii
+                    </button>
+                </div>
+            </div>
+            <?php elseif ($exerciseMode === 'distance'): ?>
+            <!-- Formulář pro vzdálenostní cvik -->
+            <div class="add-series-row" id="add-series-form-<?= $ex['exercise_id'] ?>">
+                <div>
+                    <label class="form-label small fw-semibold mb-1">Vzdálenost (m)</label>
+                    <input type="number" step="1" min="0" max="99999"
+                           class="form-control form-control-sm series-distance"
+                           id="distance-<?= $ex['exercise_id'] ?>"
+                           placeholder="200" style="width:110px">
+                </div>
+                <div>
+                    <label class="form-label small fw-semibold mb-1">Váha (kg)</label>
+                    <input type="number" step="0.5" min="0" max="999"
+                           class="form-control form-control-sm series-weight"
+                           id="weight-<?= $ex['exercise_id'] ?>"
+                           placeholder="0" style="width:90px">
+                </div>
+                <div>
+                    <label class="form-label small fw-semibold mb-1">Váha náčiní (kg)</label>
+                    <input type="number" step="0.5" min="0" max="999"
+                           class="form-control form-control-sm series-equipment-weight"
+                           id="equipment-weight-<?= $ex['exercise_id'] ?>"
+                           placeholder="10" style="width:120px">
+                    <div class="form-text small">Volitelné, bude přičteno k celkové váze.</div>
+                </div>
+                <div class="mb-0" style="padding-top:22px">
+                    <button type="button"
+                            class="btn btn-warning fw-bold"
+                            onclick="addSeries(this, <?= $ex['exercise_id'] ?>, <?= $sessionId ?>)">
+                        <i class="fas fa-plus me-1"></i>Přidat sérii
+                    </button>
+                </div>
+            </div>
+            <?php elseif ($exerciseMode === 'distance_time'): ?>
+            <!-- Formulář pro vzdálenost + čas -->
+            <div class="add-series-row" id="add-series-form-<?= $ex['exercise_id'] ?>">
+                <div>
+                    <label class="form-label small fw-semibold mb-1">Vzdálenost (m)</label>
+                    <input type="number" step="1" min="0" max="99999"
+                           class="form-control form-control-sm series-distance"
+                           id="distance-<?= $ex['exercise_id'] ?>"
+                           placeholder="200" style="width:110px">
+                </div>
+                <div>
+                    <label class="form-label small fw-semibold mb-1">Čas</label>
+                    <div class="d-flex align-items-center gap-1">
+                        <select class="form-select form-select-sm" id="time-min-<?= $ex['exercise_id'] ?>" style="width:85px">
+                            <?php for ($m = 0; $m <= 60; $m++): ?>
+                            <option value="<?= $m ?>"><?= sprintf('%02d', $m) ?> min</option>
+                            <?php endfor; ?>
+                        </select>
+                        <select class="form-select form-select-sm" id="time-sec-<?= $ex['exercise_id'] ?>" style="width:85px">
+                            <?php for ($s = 0; $s <= 60; $s++): ?>
+                            <option value="<?= $s ?>"><?= sprintf('%02d', $s) ?> s</option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="form-label small fw-semibold mb-1">Váha (kg)</label>
+                    <input type="number" step="0.5" min="0" max="999"
+                           class="form-control form-control-sm series-weight"
+                           id="weight-<?= $ex['exercise_id'] ?>"
+                           placeholder="0" style="width:90px">
                 </div>
                 <div>
                     <label class="form-label small fw-semibold mb-1">Váha náčiní (kg)</label>
@@ -526,7 +733,7 @@ renderHeader('Aktivní trénink', false, true);
             <div class="modal-body">
                 <input type="hidden" id="edit-series-id">
                 <input type="hidden" id="edit-series-exercise-id">
-                <input type="hidden" id="edit-series-is-timed">
+                <input type="hidden" id="edit-series-mode">
 
                 <div class="mb-3 edit-series-standard-fields">
                     <label class="form-label small fw-semibold mb-1">Váha (kg)</label>
@@ -539,6 +746,10 @@ renderHeader('Aktivní trénink', false, true);
                 <div class="mb-3 edit-series-standard-fields">
                     <label class="form-label small fw-semibold mb-1">Dopomoc</label>
                     <input type="number" step="1" min="0" max="999" class="form-control" id="edit-series-assist">
+                </div>
+                <div class="mb-3 edit-series-distance-fields d-none">
+                    <label class="form-label small fw-semibold mb-1">Vzdálenost (m)</label>
+                    <input type="number" step="1" min="0" max="99999" class="form-control" id="edit-series-distance-meters">
                 </div>
                 <div class="mb-3 edit-series-standard-fields">
                     <label class="form-label small fw-semibold mb-1">Váha náčiní (kg)</label>
@@ -862,16 +1073,49 @@ function fillMinuteSecondInputs(totalSeconds, minEl, secEl) {
     if (secEl) secEl.value = String(seconds);
 }
 
-function renderSeriesRowHtml(exerciseId, rowNumber, seriesId, isTimed, payload) {
+function renderSeriesRowHtml(exerciseId, rowNumber, seriesId, mode, payload) {
     const editButton = `<button class="btn btn-outline-secondary btn-sm me-1"
                             onclick="openSeriesEditModal(this)"
                             title="Upravit sérii">
                         <i class="fas fa-pen"></i>
                     </button>`;
-    if (isTimed) {
+    if (mode === 'timed') {
         const load = (payload.weight + payload.equipmentWeight) > 0 ? (payload.weight + payload.equipmentWeight).toFixed(1).replace('.', ',') + ' kg' : '–';
         return `
                 <td class="fw-bold text-muted">${rowNumber}</td>
+                <td class="fw-bold">${payload.durationSeconds > 0 ? formatSeriesDurationJs(payload.durationSeconds) : '–'}</td>
+                <td class="fw-bold">${load}</td>
+                <td>
+                    ${editButton}
+                    <button class="btn btn-outline-danger btn-sm"
+                            onclick="deleteSeries(${seriesId}, ${exerciseId})"
+                            title="Smazat sérii">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </td>`;
+    }
+
+    if (mode === 'distance') {
+        const load = (payload.weight + payload.equipmentWeight) > 0 ? (payload.weight + payload.equipmentWeight).toFixed(1).replace('.', ',') : '–';
+        return `
+                <td class="fw-bold text-muted">${rowNumber}</td>
+                <td class="fw-bold">${payload.distanceMeters > 0 ? payload.distanceMeters : '–'}</td>
+                <td class="fw-bold">${load}</td>
+                <td>
+                    ${editButton}
+                    <button class="btn btn-outline-danger btn-sm"
+                            onclick="deleteSeries(${seriesId}, ${exerciseId})"
+                            title="Smazat sérii">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </td>`;
+    }
+
+    if (mode === 'distance_time') {
+        const load = (payload.weight + payload.equipmentWeight) > 0 ? (payload.weight + payload.equipmentWeight).toFixed(1).replace('.', ',') : '–';
+        return `
+                <td class="fw-bold text-muted">${rowNumber}</td>
+                <td class="fw-bold">${payload.distanceMeters > 0 ? payload.distanceMeters : '–'}</td>
                 <td class="fw-bold">${payload.durationSeconds > 0 ? formatSeriesDurationJs(payload.durationSeconds) : '–'}</td>
                 <td class="fw-bold">${load}</td>
                 <td>
@@ -899,14 +1143,16 @@ function renderSeriesRowHtml(exerciseId, rowNumber, seriesId, isTimed, payload) 
                 </td>`;
 }
 
-function setSeriesRowData(row, exerciseId, isTimed, payload) {
+function setSeriesRowData(row, exerciseId, mode, payload) {
     row.dataset.exerciseId = String(exerciseId);
-    row.dataset.isTimed = isTimed ? '1' : '0';
+    row.dataset.isTimed = mode === 'timed' ? '1' : '0';
+    row.dataset.exerciseMode = mode;
     row.dataset.weight = String(payload.weight || 0);
     row.dataset.equipmentWeight = String(payload.equipmentWeight || 0);
     row.dataset.reps = String(payload.reps || 0);
     row.dataset.assist = String(payload.assist || 0);
     row.dataset.durationSeconds = String(payload.durationSeconds || 0);
+    row.dataset.distanceMeters = String(payload.distanceMeters || 0);
 }
 
 function openSeriesEditModal(button) {
@@ -915,26 +1161,41 @@ function openSeriesEditModal(button) {
 
     const seriesId = row.id.replace('series-row-', '');
     const exerciseId = row.dataset.exerciseId || '';
-    const isTimed = row.dataset.isTimed === '1';
+    const mode = row.dataset.exerciseMode || (row.dataset.isTimed === '1' ? 'timed' : 'standard');
     const weight = row.dataset.weight || '0';
     const equipmentWeight = row.dataset.equipmentWeight || '0';
     const reps = row.dataset.reps || '0';
     const assist = row.dataset.assist || '0';
     const durationSeconds = parseInt(row.dataset.durationSeconds || '0', 10) || 0;
+    const distanceMeters = parseInt(row.dataset.distanceMeters || reps || '0', 10) || 0;
 
     document.getElementById('edit-series-id').value = seriesId;
     document.getElementById('edit-series-exercise-id').value = exerciseId;
-    document.getElementById('edit-series-is-timed').value = isTimed ? '1' : '0';
+    document.getElementById('edit-series-mode').value = mode;
 
     document.getElementById('edit-series-weight').value = weight;
     document.getElementById('edit-series-reps').value = reps;
     document.getElementById('edit-series-assist').value = assist;
+    document.getElementById('edit-series-distance-meters').value = distanceMeters > 0 ? String(distanceMeters) : '';
     document.getElementById('edit-series-equipment-weight').value = equipmentWeight;
     fillMinuteSecondInputs(durationSeconds, document.getElementById('edit-series-duration-min'), document.getElementById('edit-series-duration-sec'));
     document.getElementById('edit-series-timed-equipment-weight').value = equipmentWeight;
 
-    document.querySelectorAll('.edit-series-standard-fields').forEach(el => el.classList.toggle('d-none', isTimed));
-    document.querySelectorAll('.edit-series-timed-fields').forEach(el => el.classList.toggle('d-none', !isTimed));
+    const isTimed = mode === 'timed';
+    const isDistance = mode === 'distance';
+    const isDistanceTime = mode === 'distance_time';
+    const weightWrap = document.getElementById('edit-series-weight').closest('.edit-series-standard-fields');
+    const repsWrap = document.getElementById('edit-series-reps').closest('.edit-series-standard-fields');
+    const assistWrap = document.getElementById('edit-series-assist').closest('.edit-series-standard-fields');
+    const equipmentWrap = document.getElementById('edit-series-equipment-weight').closest('.edit-series-standard-fields');
+
+    if (weightWrap) weightWrap.classList.toggle('d-none', isTimed);
+    if (equipmentWrap) equipmentWrap.classList.toggle('d-none', isTimed);
+    if (repsWrap) repsWrap.classList.toggle('d-none', isTimed || isDistance || isDistanceTime);
+    if (assistWrap) assistWrap.classList.toggle('d-none', isTimed || isDistance || isDistanceTime);
+
+    document.querySelectorAll('.edit-series-timed-fields').forEach(el => el.classList.toggle('d-none', !(isTimed || isDistanceTime)));
+    document.querySelectorAll('.edit-series-distance-fields').forEach(el => el.classList.toggle('d-none', !(isDistance || isDistanceTime)));
 
     const modalEl = document.getElementById('editSeriesModal');
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
@@ -944,18 +1205,26 @@ function openSeriesEditModal(button) {
 async function saveSeriesEdit() {
     const seriesId = parseInt(document.getElementById('edit-series-id').value || '0', 10);
     const exerciseId = parseInt(document.getElementById('edit-series-exercise-id').value || '0', 10);
-    const isTimed = document.getElementById('edit-series-is-timed').value === '1';
+    const mode = document.getElementById('edit-series-mode').value || 'standard';
+    const isTimed = mode === 'timed';
+    const isDistance = mode === 'distance';
+    const isDistanceTime = mode === 'distance_time';
     const weight = parseFloat(document.getElementById('edit-series-weight').value) || 0;
     const reps = parseInt(document.getElementById('edit-series-reps').value) || 0;
     const assist = parseInt(document.getElementById('edit-series-assist').value) || 0;
-    const equipmentWeight = parseFloat(isTimed ? document.getElementById('edit-series-timed-equipment-weight').value : document.getElementById('edit-series-equipment-weight').value) || 0;
-    const durationSeconds = isTimed
+    const equipmentWeight = parseFloat((isTimed ? document.getElementById('edit-series-timed-equipment-weight').value : document.getElementById('edit-series-equipment-weight').value) || '0') || 0;
+    const durationSeconds = (isTimed || isDistanceTime)
         ? durationFromMinuteSecondInputs(document.getElementById('edit-series-duration-min'), document.getElementById('edit-series-duration-sec'))
         : 0;
+    const distanceMeters = (isDistance || isDistanceTime) ? (parseInt(document.getElementById('edit-series-distance-meters').value, 10) || 0) : 0;
 
     if (!seriesId) return;
-    if (isTimed && durationSeconds <= 0) {
+    if ((isTimed || isDistanceTime) && durationSeconds <= 0) {
         alert('Zadejte čas série ve formátu mm:ss.');
+        return;
+    }
+    if ((isDistance || isDistanceTime) && distanceMeters <= 0) {
+        alert('Zadejte vzdálenost v metrech.');
         return;
     }
 
@@ -968,9 +1237,10 @@ async function saveSeriesEdit() {
                 series_id: seriesId,
                 weight: isTimed ? 0 : weight,
                 equipment_weight: equipmentWeight,
-                reps: isTimed ? 0 : reps,
-                assistance_reps: isTimed ? 0 : assist,
-                duration_seconds: durationSeconds
+                reps: isTimed ? 0 : ((isDistance || isDistanceTime) ? distanceMeters : reps),
+                assistance_reps: (isTimed || isDistance || isDistanceTime) ? 0 : assist,
+                duration_seconds: durationSeconds,
+                distance_meters: distanceMeters
             })
         });
         const raw = await resp.text();
@@ -987,20 +1257,22 @@ async function saveSeriesEdit() {
 
         const row = document.getElementById('series-row-' + seriesId);
         if (row) {
-            setSeriesRowData(row, exerciseId, isTimed, {
+            setSeriesRowData(row, exerciseId, mode, {
                 weight: isTimed ? 0 : weight,
                 equipmentWeight: equipmentWeight,
-                reps: isTimed ? 0 : reps,
-                assist: isTimed ? 0 : assist,
-                durationSeconds: durationSeconds
+                reps: isTimed ? 0 : ((isDistance || isDistanceTime) ? distanceMeters : reps),
+                assist: (isTimed || isDistance || isDistanceTime) ? 0 : assist,
+                durationSeconds: durationSeconds,
+                distanceMeters: distanceMeters
             });
             const rowNumber = Array.from(row.parentElement.children).indexOf(row) + 1;
-            row.innerHTML = renderSeriesRowHtml(exerciseId, rowNumber, seriesId, isTimed, {
+            row.innerHTML = renderSeriesRowHtml(exerciseId, rowNumber, seriesId, mode, {
                 weight: isTimed ? 0 : weight,
                 equipmentWeight: equipmentWeight,
-                reps: isTimed ? 0 : reps,
-                assist: isTimed ? 0 : assist,
-                durationSeconds: durationSeconds
+                reps: isTimed ? 0 : ((isDistance || isDistanceTime) ? distanceMeters : reps),
+                assist: (isTimed || isDistance || isDistanceTime) ? 0 : assist,
+                durationSeconds: durationSeconds,
+                distanceMeters: distanceMeters
             });
         }
 
@@ -1012,22 +1284,31 @@ async function saveSeriesEdit() {
 }
 
 async function addSeries(button, exerciseId, sessionId) {
-    const isTimed = document.getElementById('exercise-card-' + exerciseId)?.dataset.isTimed === '1';
+    const mode = document.getElementById('exercise-card-' + exerciseId)?.dataset.exerciseMode || 'standard';
+    const isTimed = mode === 'timed';
+    const isDistance = mode === 'distance';
+    const isDistanceTime = mode === 'distance_time';
     const weightInput = document.getElementById('weight-' + exerciseId);
     const timeMinInput = document.getElementById('time-min-' + exerciseId);
     const timeSecInput = document.getElementById('time-sec-' + exerciseId);
     const equipmentWeightInput = document.getElementById('equipment-weight-' + exerciseId);
+    const distanceInput = document.getElementById('distance-' + exerciseId);
     const repsInput = document.getElementById('reps-' + exerciseId);
     const assistInput = document.getElementById('assist-' + exerciseId);
 
     const weight = isTimed ? 0 : (parseFloat(weightInput?.value) || 0);
     const equipmentWeight = parseFloat(equipmentWeightInput?.value) || 0;
-    const reps = isTimed ? 0 : (parseInt(repsInput?.value) || 0);
-    const assist = isTimed ? 0 : (parseInt(assistInput?.value) || 0);
-    const durationSeconds = isTimed ? durationFromMinuteSecondInputs(timeMinInput, timeSecInput) : 0;
+    const distanceMeters = (isDistance || isDistanceTime) ? (parseInt(distanceInput?.value, 10) || 0) : 0;
+    const reps = isTimed ? 0 : ((isDistance || isDistanceTime) ? distanceMeters : (parseInt(repsInput?.value) || 0));
+    const assist = (isTimed || isDistance || isDistanceTime) ? 0 : (parseInt(assistInput?.value) || 0);
+    const durationSeconds = (isTimed || isDistanceTime) ? durationFromMinuteSecondInputs(timeMinInput, timeSecInput) : 0;
 
-    if (isTimed && durationSeconds <= 0) {
+    if ((isTimed || isDistanceTime) && durationSeconds <= 0) {
         alert('Zadejte čas série ve formátu mm:ss.');
+        return;
+    }
+    if ((isDistance || isDistanceTime) && distanceMeters <= 0) {
+        alert('Zadejte vzdálenost v metrech.');
         return;
     }
 
@@ -1052,7 +1333,8 @@ async function addSeries(button, exerciseId, sessionId) {
                 equipment_weight: equipmentWeight,
                 reps:            reps,
                 assistance_reps: assist,
-                duration_seconds: durationSeconds
+                duration_seconds: durationSeconds,
+                distance_meters: distanceMeters
             })
         });
         const raw = await resp.text();
@@ -1066,19 +1348,21 @@ async function addSeries(button, exerciseId, sessionId) {
             // Přidej řádek do tabulky
             const tr = document.createElement('tr');
             tr.id = 'series-row-' + data.id;
-            tr.dataset.exerciseId = String(exerciseId);
-            tr.dataset.isTimed = isTimed ? '1' : '0';
-            tr.dataset.weight = String(weight);
-            tr.dataset.equipmentWeight = String(equipmentWeight);
-            tr.dataset.reps = String(reps);
-            tr.dataset.assist = String(assist);
-            tr.dataset.durationSeconds = String(durationSeconds);
-            tr.innerHTML = renderSeriesRowHtml(exerciseId, rowCount + 1, data.id, isTimed, {
+            setSeriesRowData(tr, exerciseId, mode, {
                 weight: weight,
                 equipmentWeight: equipmentWeight,
                 reps: reps,
                 assist: assist,
-                durationSeconds: durationSeconds
+                durationSeconds: durationSeconds,
+                distanceMeters: distanceMeters
+            });
+            tr.innerHTML = renderSeriesRowHtml(exerciseId, rowCount + 1, data.id, mode, {
+                weight: weight,
+                equipmentWeight: equipmentWeight,
+                reps: reps,
+                assist: assist,
+                durationSeconds: durationSeconds,
+                distanceMeters: distanceMeters
             });
             tbody.appendChild(tr);
 
@@ -1087,6 +1371,17 @@ async function addSeries(button, exerciseId, sessionId) {
                 fillMinuteSecondInputs(0, timeMinInput, timeSecInput);
                 if (equipmentWeightInput) equipmentWeightInput.value = '';
                 timeMinInput?.focus();
+            } else if (isDistance) {
+                if (distanceInput) distanceInput.value = '';
+                if (weightInput) weightInput.value = '';
+                if (equipmentWeightInput) equipmentWeightInput.value = '';
+                distanceInput?.focus();
+            } else if (isDistanceTime) {
+                if (distanceInput) distanceInput.value = '';
+                fillMinuteSecondInputs(0, timeMinInput, timeSecInput);
+                if (weightInput) weightInput.value = '';
+                if (equipmentWeightInput) equipmentWeightInput.value = '';
+                distanceInput?.focus();
             } else {
                 if (weightInput) weightInput.value = '';
                 if (equipmentWeightInput) equipmentWeightInput.value = '';
@@ -1272,7 +1567,23 @@ document.querySelectorAll('.series-assist').forEach(function(el) {
         if (e.key === 'Enter') {
             e.preventDefault();
             const exerciseId = this.id.replace('assist-', '');
-            addSeries(parseInt(exerciseId), <?= $sessionId ?>);
+            const addButton = document.querySelector('#add-series-form-' + exerciseId + ' button[onclick*="addSeries("]');
+            if (addButton) {
+                addSeries(addButton, parseInt(exerciseId, 10), <?= $sessionId ?>);
+            }
+        }
+    });
+});
+
+document.querySelectorAll('.series-distance').forEach(function(el) {
+    el.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const exerciseId = this.id.replace('distance-', '');
+            const addButton = document.querySelector('#add-series-form-' + exerciseId + ' button[onclick*="addSeries("]');
+            if (addButton) {
+                addSeries(addButton, parseInt(exerciseId, 10), <?= $sessionId ?>);
+            }
         }
     });
 });

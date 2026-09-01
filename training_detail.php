@@ -493,11 +493,16 @@ renderHeader('Detail tréninku');
 
 <?php foreach ($standardExercises as $ex): ?>
 <?php $series = $seriesByExercise[$ex['exercise_id']] ?? []; ?>
+<?php
+$exerciseMode = ((int)($ex['is_timed'] ?? 0) === 1)
+    ? 'timed'
+    : (((int)($ex['is_timed'] ?? 0) === 2) ? 'distance' : (((int)($ex['is_timed'] ?? 0) === 3) ? 'distance_time' : 'standard'));
+?>
 <div class="card border-0 shadow-sm mb-4 exercise-block" id="ex-<?= $ex['exercise_id'] ?>">
     <div class="card-header bg-dark text-white d-flex align-items-center">
         <span class="badge bg-warning text-dark me-2 fs-5"><?= $ex['exercise_order'] ?></span>
         <span class="fw-bold fs-5"><?= h($ex['exercise_name']) ?></span>
-        <?php if ($series && empty($ex['is_timed'])): ?>
+        <?php if ($series && $exerciseMode === 'standard'): ?>
         <?php
         $maxW  = max(array_map(fn($row) => (float)$row['weight'] + (float)($row['equipment_weight'] ?? 0), $series));
         $maxR  = max(array_column($series, 'reps'));
@@ -517,9 +522,16 @@ renderHeader('Detail tréninku');
                 <thead class="table-light">
                     <tr>
                         <th>#</th>
-                        <?php if (!empty($ex['is_timed'])): ?>
+                        <?php if ($exerciseMode === 'timed'): ?>
                         <th>Čas</th>
                         <th>Váha náčiní (kg)</th>
+                        <?php elseif ($exerciseMode === 'distance'): ?>
+                        <th>Vzdálenost (m)</th>
+                        <th>Váha (kg)</th>
+                        <?php elseif ($exerciseMode === 'distance_time'): ?>
+                        <th>Vzdálenost (m)</th>
+                        <th>Čas</th>
+                        <th>Váha (kg)</th>
                         <?php else: ?>
                         <th>Váha (kg)</th>
                         <th>Opakování</th>
@@ -533,10 +545,19 @@ renderHeader('Detail tréninku');
                     <?php foreach ($series as $s): ?>
                     <tr id="series-row-<?= $s['id'] ?>">
                         <td class="fw-bold text-muted"><?= $s['series_order'] ?></td>
-                        <?php if (!empty($ex['is_timed'])): ?>
+                        <?php if ($exerciseMode === 'timed'): ?>
                         <td class="fw-bold"><?= !empty($s['duration_seconds']) ? formatSeriesDuration((int)$s['duration_seconds']) : '–' ?></td>
                         <?php $seriesTimedLoad = (float)$s['weight'] + (float)($s['equipment_weight'] ?? 0); ?>
                         <td class="fw-bold"><?= $seriesTimedLoad > 0 ? number_format($seriesTimedLoad, 1, ',', '') : '–' ?></td>
+                        <?php elseif ($exerciseMode === 'distance'): ?>
+                        <td class="fw-bold"><?= (int)($s['reps'] ?? 0) > 0 ? number_format((int)$s['reps'], 0, ',', ' ') : '–' ?></td>
+                        <?php $seriesDistanceLoad = (float)$s['weight'] + (float)($s['equipment_weight'] ?? 0); ?>
+                        <td class="fw-bold"><?= $seriesDistanceLoad > 0 ? number_format($seriesDistanceLoad, 1, ',', '') : '–' ?></td>
+                        <?php elseif ($exerciseMode === 'distance_time'): ?>
+                        <td class="fw-bold"><?= (int)($s['reps'] ?? 0) > 0 ? number_format((int)$s['reps'], 0, ',', ' ') : '–' ?></td>
+                        <td class="fw-bold"><?= !empty($s['duration_seconds']) ? formatSeriesDuration((int)$s['duration_seconds']) : '–' ?></td>
+                        <?php $seriesDistanceTimeLoad = (float)$s['weight'] + (float)($s['equipment_weight'] ?? 0); ?>
+                        <td class="fw-bold"><?= $seriesDistanceTimeLoad > 0 ? number_format($seriesDistanceTimeLoad, 1, ',', '') : '–' ?></td>
                         <?php else: ?>
                         <?php $seriesWeightTotal = (float)$s['weight'] + (float)($s['equipment_weight'] ?? 0); ?>
                         <td class="fw-bold">
@@ -558,7 +579,7 @@ renderHeader('Detail tréninku');
                         <?php if ($editMode): ?>
                         <td>
                             <button class="btn btn-outline-secondary btn-sm mb-1"
-                                    onclick="editSeriesPrompt(<?= (int)$s['id'] ?>, <?= (int)$ex['exercise_id'] ?>, <?= !empty($ex['is_timed']) ? 1 : 0 ?>, <?= (float)$s['weight'] ?>, <?= (float)($s['equipment_weight'] ?? 0) ?>, <?= (int)$s['reps'] ?>, <?= (int)$s['assistance_reps'] ?>, <?= (int)($s['duration_seconds'] ?? 0) ?>)"
+                                    onclick="editSeriesPrompt(<?= (int)$s['id'] ?>, <?= (int)$ex['exercise_id'] ?>, <?= (int)($ex['is_timed'] ?? 0) ?>, <?= (float)$s['weight'] ?>, <?= (float)($s['equipment_weight'] ?? 0) ?>, <?= (int)$s['reps'] ?>, <?= (int)$s['assistance_reps'] ?>, <?= (int)($s['duration_seconds'] ?? 0) ?>)"
                                     title="Upravit sérii">
                                 <i class="fas fa-pen"></i>
                             </button>
@@ -572,7 +593,7 @@ renderHeader('Detail tréninku');
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
-                <?php if (empty($ex['is_timed'])): ?>
+                <?php if ($exerciseMode === 'standard'): ?>
                 <tfoot class="table-dark">
                     <tr>
                         <td colspan="4" class="text-end fw-semibold">Objem celkem</td>
@@ -599,7 +620,7 @@ renderHeader('Detail tréninku');
                                id="weight-<?= $ex['exercise_id'] ?>"
                                placeholder="80" style="width:90px">
                     </div>
-                    <?php if (empty($ex['is_timed'])): ?>
+                    <?php if ($exerciseMode === 'standard'): ?>
                     <div>
                         <label class="form-label small fw-semibold mb-1">Opakování</label>
                         <input type="number" step="1" min="0" max="999"
@@ -613,6 +634,37 @@ renderHeader('Detail tréninku');
                                class="form-control form-control-sm series-assist"
                                id="assist-<?= $ex['exercise_id'] ?>"
                                placeholder="0" style="width:80px">
+                    </div>
+                    <?php elseif ($exerciseMode === 'distance'): ?>
+                    <div>
+                        <label class="form-label small fw-semibold mb-1">Vzdálenost (m)</label>
+                        <input type="number" step="1" min="0" max="99999"
+                               class="form-control form-control-sm series-distance"
+                               id="distance-<?= $ex['exercise_id'] ?>"
+                               placeholder="200" style="width:100px">
+                    </div>
+                    <?php elseif ($exerciseMode === 'distance_time'): ?>
+                    <div>
+                        <label class="form-label small fw-semibold mb-1">Vzdálenost (m)</label>
+                        <input type="number" step="1" min="0" max="99999"
+                               class="form-control form-control-sm series-distance"
+                               id="distance-<?= $ex['exercise_id'] ?>"
+                               placeholder="200" style="width:100px">
+                    </div>
+                    <div>
+                        <label class="form-label small fw-semibold mb-1">Čas</label>
+                        <div class="d-flex align-items-center gap-1">
+                            <select class="form-select form-select-sm" id="time-min-<?= $ex['exercise_id'] ?>" style="width:85px">
+                                <?php for ($m = 0; $m <= 60; $m++): ?>
+                                <option value="<?= $m ?>"><?= sprintf('%02d', $m) ?> min</option>
+                                <?php endfor; ?>
+                            </select>
+                            <select class="form-select form-select-sm" id="time-sec-<?= $ex['exercise_id'] ?>" style="width:85px">
+                                <?php for ($s = 0; $s <= 60; $s++): ?>
+                                <option value="<?= $s ?>"><?= sprintf('%02d', $s) ?> s</option>
+                                <?php endfor; ?>
+                            </select>
+                        </div>
                     </div>
                     <?php else: ?>
                     <div>
@@ -869,17 +921,21 @@ function durationFromMinuteSecondInputs(minEl, secEl) {
 // Přidání série
 function addSeries(exerciseId, sessionId) {
     const isTimed = document.getElementById('time-min-' + exerciseId) !== null;
+    const isDistance = document.getElementById('distance-' + exerciseId) !== null;
+    const isDistanceTime = isTimed && isDistance;
     const weightInput = document.getElementById('weight-' + exerciseId);
     const equipmentWeightInput = document.getElementById('equipment-weight-' + exerciseId);
+    const distanceInput = document.getElementById('distance-' + exerciseId);
     const repsInput   = document.getElementById('reps-' + exerciseId);
     const assistInput = document.getElementById('assist-' + exerciseId);
     const timeMinInput = document.getElementById('time-min-' + exerciseId);
     const timeSecInput = document.getElementById('time-sec-' + exerciseId);
 
-    const weight = isTimed ? 0 : (parseFloat(weightInput.value) || 0);
-    const equipmentWeight = parseFloat(equipmentWeightInput.value) || 0;
-    const reps   = isTimed ? 0 : (parseInt(repsInput.value) || 0);
-    const assist = isTimed ? 0 : (parseInt(assistInput.value) || 0);
+    const weight = isTimed ? 0 : (parseFloat(weightInput?.value || '0') || 0);
+    const equipmentWeight = parseFloat(equipmentWeightInput?.value || '0') || 0;
+    const distanceMeters = isDistance ? (parseInt(distanceInput?.value || '0', 10) || 0) : 0;
+    const reps   = isTimed ? (isDistanceTime ? distanceMeters : 0) : (isDistance ? distanceMeters : (parseInt(repsInput?.value || '0', 10) || 0));
+    const assist = (isTimed || isDistance) ? 0 : (parseInt(assistInput?.value || '0', 10) || 0);
     const durationSeconds = isTimed ? durationFromMinuteSecondInputs(timeMinInput, timeSecInput) : 0;
 
     if (isTimed && durationSeconds <= 0) {
@@ -887,7 +943,12 @@ function addSeries(exerciseId, sessionId) {
         return;
     }
 
-    if (!isTimed && weight <= 0 && reps <= 0) {
+    if (isDistance && distanceMeters <= 0) {
+        alert('Zadejte vzdálenost v metrech.');
+        return;
+    }
+
+    if (!isTimed && !isDistance && weight <= 0 && reps <= 0) {
         alert('Zadej alespoň váhu nebo opakování');
         return;
     }
@@ -904,7 +965,8 @@ function addSeries(exerciseId, sessionId) {
         equipment_weight: equipmentWeight,
         reps: reps,
         assistance_reps: assist,
-        duration_seconds: durationSeconds
+        duration_seconds: durationSeconds,
+        distance_meters: distanceMeters
     };
     
     fetch('<?= BASE_URL ?>/api/save_series.php', {
@@ -927,12 +989,16 @@ function addSeries(exerciseId, sessionId) {
     });
 }
 
-function editSeriesPrompt(seriesId, exerciseId, isTimed, currentWeight, currentEquipmentWeight, currentReps, currentAssist, currentDurationSeconds) {
+function editSeriesPrompt(seriesId, exerciseId, modeFlag, currentWeight, currentEquipmentWeight, currentReps, currentAssist, currentDurationSeconds) {
+    const isTimed = parseInt(modeFlag, 10) === 1;
+    const isDistance = parseInt(modeFlag, 10) === 2;
+    const isDistanceTime = parseInt(modeFlag, 10) === 3;
     let weight = parseFloat(currentWeight) || 0;
     let equipmentWeight = parseFloat(currentEquipmentWeight) || 0;
     let reps = parseInt(currentReps, 10) || 0;
     let assist = parseInt(currentAssist, 10) || 0;
     let durationSeconds = parseInt(currentDurationSeconds, 10) || 0;
+    let distanceMeters = reps;
 
     if (isTimed) {
         const timeInput = prompt('Čas série (mm:ss)', durationSeconds > 0 ? formatSeriesDurationJs(durationSeconds) : '');
@@ -947,6 +1013,53 @@ function editSeriesPrompt(seriesId, exerciseId, isTimed, currentWeight, currentE
         equipmentWeight = parseFloat(String(equipmentInput).replace(',', '.')) || 0;
         weight = 0;
         reps = 0;
+        assist = 0;
+    } else if (isDistance) {
+        const distanceInput = prompt('Vzdálenost (m)', distanceMeters > 0 ? String(distanceMeters) : '');
+        if (distanceInput === null) return;
+        distanceMeters = parseInt(distanceInput, 10) || 0;
+        if (distanceMeters <= 0) {
+            alert('Neplatná vzdálenost.');
+            return;
+        }
+
+        const weightInput = prompt('Váha (kg, volitelně)', weight > 0 ? String(weight).replace('.', ',') : '');
+        if (weightInput === null) return;
+        weight = parseFloat(String(weightInput).replace(',', '.')) || 0;
+
+        const equipmentInput = prompt('Váha náčiní (kg, volitelně)', equipmentWeight > 0 ? String(equipmentWeight).replace('.', ',') : '');
+        if (equipmentInput === null) return;
+        equipmentWeight = parseFloat(String(equipmentInput).replace(',', '.')) || 0;
+
+        reps = distanceMeters;
+        assist = 0;
+        durationSeconds = 0;
+    } else if (isDistanceTime) {
+        const distanceInput = prompt('Vzdálenost (m)', distanceMeters > 0 ? String(distanceMeters) : '');
+        if (distanceInput === null) return;
+        distanceMeters = parseInt(distanceInput, 10) || 0;
+        if (distanceMeters <= 0) {
+            alert('Neplatná vzdálenost.');
+            return;
+        }
+
+        const timeInput = prompt('Čas série (mm:ss)', durationSeconds > 0 ? formatSeriesDurationJs(durationSeconds) : '');
+        if (timeInput === null) return;
+        durationSeconds = parseSeriesDuration(timeInput);
+        if (durationSeconds <= 0) {
+            alert('Neplatný čas série.');
+            return;
+        }
+
+        const weightInput = prompt('Váha (kg, volitelně)', weight > 0 ? String(weight).replace('.', ',') : '');
+        if (weightInput === null) return;
+        weight = parseFloat(String(weightInput).replace(',', '.')) || 0;
+
+        const equipmentInput = prompt('Váha náčiní (kg, volitelně)', equipmentWeight > 0 ? String(equipmentWeight).replace('.', ',') : '');
+        if (equipmentInput === null) return;
+        equipmentWeight = parseFloat(String(equipmentInput).replace(',', '.')) || 0;
+
+        reps = distanceMeters;
         assist = 0;
     } else {
         const weightInput = prompt('Váha (kg)', String(weight).replace('.', ','));
@@ -977,7 +1090,8 @@ function editSeriesPrompt(seriesId, exerciseId, isTimed, currentWeight, currentE
             equipment_weight: equipmentWeight,
             reps: reps,
             assistance_reps: assist,
-            duration_seconds: durationSeconds
+            duration_seconds: durationSeconds,
+            distance_meters: distanceMeters
         })
     })
     .then(r => r.json())

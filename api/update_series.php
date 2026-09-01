@@ -28,14 +28,16 @@ $equipmentWeight = (float)($input['equipment_weight'] ?? 0);
 $reps = (int)($input['reps'] ?? 0);
 $assist = (int)($input['assistance_reps'] ?? 0);
 $durationSeconds = (int)($input['duration_seconds'] ?? 0);
+$distanceMeters = (int)($input['distance_meters'] ?? $reps);
 $pdo = getDB();
 
 $stmt = $pdo->prepare(
-    'SELECT ss.id, e.is_timed
+        'SELECT ss.id, tse.is_timed
      FROM session_series ss
      JOIN training_sessions ts ON ts.id = ss.session_id
      JOIN athletes a ON a.id = ts.athlete_id
-     JOIN exercises e ON e.id = ss.exercise_id
+         LEFT JOIN training_session_exercises tse
+             ON tse.session_id = ss.session_id AND tse.exercise_id = ss.exercise_id
      WHERE ss.id = ? AND a.coach_id = ?
        AND ts.deleted_by_coach_at IS NULL'
 );
@@ -46,13 +48,35 @@ if (!$series) {
     exit;
 }
 
-$isTimed = (int)($series['is_timed'] ?? 0) === 1;
+$seriesMode = (int)($series['is_timed'] ?? 0);
+$isTimed = $seriesMode === 1;
+$isDistance = $seriesMode === 2;
+$isDistanceTime = $seriesMode === 3;
 if ($isTimed) {
     if ($durationSeconds <= 0) {
         echo json_encode(['success' => false, 'error' => 'Zadejte čas série']);
         exit;
     }
     $reps = 0;
+    $assist = 0;
+} elseif ($isDistance) {
+    if ($distanceMeters <= 0) {
+        echo json_encode(['success' => false, 'error' => 'Zadejte vzdálenost v metrech']);
+        exit;
+    }
+    $reps = $distanceMeters;
+    $assist = 0;
+    $durationSeconds = null;
+} elseif ($isDistanceTime) {
+    if ($distanceMeters <= 0) {
+        echo json_encode(['success' => false, 'error' => 'Zadejte vzdálenost v metrech']);
+        exit;
+    }
+    if ($durationSeconds <= 0) {
+        echo json_encode(['success' => false, 'error' => 'Zadejte čas série']);
+        exit;
+    }
+    $reps = $distanceMeters;
     $assist = 0;
 } else {
     $durationSeconds = null;

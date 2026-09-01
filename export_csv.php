@@ -53,18 +53,51 @@ if ($session['location']) {
 fputcsv($out, [], ';');
 
 foreach ($exercises as $ex) {
+    $exerciseMode = ((int)($ex['is_timed'] ?? 0) === 1)
+        ? 'timed'
+        : (((int)($ex['is_timed'] ?? 0) === 2) ? 'distance' : (((int)($ex['is_timed'] ?? 0) === 3) ? 'distance_time' : 'standard'));
     fputcsv($out, ['Cvik ' . $ex['exercise_order'] . ': ' . $ex['exercise_name']], ';');
-    fputcsv($out, ['#', 'Váha celkem (kg)', 'Opakování', 'Dopomoc', 'Objem (kg×rep)'], ';');
+    if ($exerciseMode === 'timed') {
+        fputcsv($out, ['#', 'Čas', 'Váha celkem (kg)'], ';');
+    } elseif ($exerciseMode === 'distance') {
+        fputcsv($out, ['#', 'Vzdálenost (m)', 'Váha celkem (kg)'], ';');
+    } elseif ($exerciseMode === 'distance_time') {
+        fputcsv($out, ['#', 'Vzdálenost (m)', 'Čas', 'Váha celkem (kg)'], ';');
+    } else {
+        fputcsv($out, ['#', 'Váha celkem (kg)', 'Opakování', 'Dopomoc', 'Objem (kg×rep)'], ';');
+    }
 
     $series = getSeriesForExercise($sessionId, $ex['exercise_id']);
     foreach ($series as $s) {
-        fputcsv($out, [
-            $s['series_order'],
-            number_format((float)$s['weight'] + (float)($s['equipment_weight'] ?? 0), 2, ',', ''),
-            $s['reps'],
-            $s['assistance_reps'],
-            number_format(((float)$s['weight'] + (float)($s['equipment_weight'] ?? 0)) * $s['reps'], 2, ',', ''),
-        ], ';');
+        $totalWeight = number_format((float)$s['weight'] + (float)($s['equipment_weight'] ?? 0), 2, ',', '');
+        if ($exerciseMode === 'timed') {
+            fputcsv($out, [
+                $s['series_order'],
+                !empty($s['duration_seconds']) ? formatSeriesDuration((int)$s['duration_seconds']) : '0:00',
+                $totalWeight,
+            ], ';');
+        } elseif ($exerciseMode === 'distance') {
+            fputcsv($out, [
+                $s['series_order'],
+                (int)($s['reps'] ?? 0),
+                $totalWeight,
+            ], ';');
+        } elseif ($exerciseMode === 'distance_time') {
+            fputcsv($out, [
+                $s['series_order'],
+                (int)($s['reps'] ?? 0),
+                !empty($s['duration_seconds']) ? formatSeriesDuration((int)$s['duration_seconds']) : '0:00',
+                $totalWeight,
+            ], ';');
+        } else {
+            fputcsv($out, [
+                $s['series_order'],
+                $totalWeight,
+                $s['reps'],
+                $s['assistance_reps'],
+                number_format(((float)$s['weight'] + (float)($s['equipment_weight'] ?? 0)) * $s['reps'], 2, ',', ''),
+            ], ';');
+        }
     }
     fputcsv($out, [], ';');
 }

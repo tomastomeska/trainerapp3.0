@@ -34,6 +34,7 @@ $equipmentWeight = (float)($input['equipment_weight'] ?? 0);
 $reps       = (int)($input['reps']        ?? 0);
 $assist     = (int)($input['assistance_reps'] ?? 0);
 $durationSeconds = (int)($input['duration_seconds'] ?? 0);
+$distanceMeters = (int)($input['distance_meters'] ?? $reps);
 
 $pdo = getDB();
 
@@ -50,22 +51,53 @@ if (!$stmt->fetch()) {
     exit;
 }
 
-// Ověření cviku
+// Ověření cviku + načtení režimu primárně ze snapshotu tréninku
+$stmtSnapshot = $pdo->prepare(
+    'SELECT is_timed
+     FROM training_session_exercises
+     WHERE session_id = ? AND exercise_id = ?
+     LIMIT 1'
+);
+$stmtSnapshot->execute([$sessionId, $exerciseId]);
+$snapshotExercise = $stmtSnapshot->fetch();
+
 $stmt2 = $pdo->prepare('SELECT id, is_timed FROM exercises WHERE id = ? AND (coach_id = ? OR is_global = 1)');
 $stmt2->execute([$exerciseId, $coachId]);
 $exercise = $stmt2->fetch();
-if (!$exercise) {
+if (!$exercise || !$snapshotExercise) {
     echo json_encode(['success' => false, 'error' => 'Cvik nenalezen']);
     exit;
 }
 
-$isTimed = (int)($exercise['is_timed'] ?? 0) === 1;
+$seriesMode = (int)($snapshotExercise['is_timed'] ?? $exercise['is_timed'] ?? 0);
+$isTimed = $seriesMode === 1;
+$isDistance = $seriesMode === 2;
+$isDistanceTime = $seriesMode === 3;
 if ($isTimed) {
     if ($durationSeconds <= 0) {
         echo json_encode(['success' => false, 'error' => 'Zadejte čas série']);
         exit;
     }
     $reps = 0;
+    $assist = 0;
+} elseif ($isDistance) {
+    if ($distanceMeters <= 0) {
+        echo json_encode(['success' => false, 'error' => 'Zadejte vzdálenost v metrech']);
+        exit;
+    }
+    $reps = $distanceMeters;
+    $assist = 0;
+    $durationSeconds = null;
+} elseif ($isDistanceTime) {
+    if ($distanceMeters <= 0) {
+        echo json_encode(['success' => false, 'error' => 'Zadejte vzdálenost v metrech']);
+        exit;
+    }
+    if ($durationSeconds <= 0) {
+        echo json_encode(['success' => false, 'error' => 'Zadejte čas série']);
+        exit;
+    }
+    $reps = $distanceMeters;
     $assist = 0;
 } else {
     $durationSeconds = null;

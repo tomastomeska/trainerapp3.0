@@ -3713,15 +3713,15 @@ function getSessionExercises(int $sessionId, int $setId): array {
 
       // Kompatibilita: některé session byly založeny bez is_timed ve snapshotu (výchozí 0).
       if (!$needsTimed) {
-        $hasTimedExerciseInDb = false;
+        $hasNonStandardModeInDb = false;
         $ids = array_values(array_unique(array_map(fn($row) => (int)$row['exercise_id'], $snapshotRows)));
         if (!empty($ids)) {
           $inClause = implode(',', array_fill(0, count($ids), '?'));
-          $stmtAnyTimed = $pdo->prepare("SELECT COUNT(*) FROM exercises WHERE id IN ($inClause) AND is_timed = 1");
+          $stmtAnyTimed = $pdo->prepare("SELECT COUNT(*) FROM exercises WHERE id IN ($inClause) AND is_timed <> 0");
           $stmtAnyTimed->execute($ids);
-          $hasTimedExerciseInDb = ((int)$stmtAnyTimed->fetchColumn()) > 0;
+          $hasNonStandardModeInDb = ((int)$stmtAnyTimed->fetchColumn()) > 0;
         }
-        if ($hasTimedExerciseInDb) {
+        if ($hasNonStandardModeInDb) {
           $needsTimed = true;
         }
       }
@@ -3747,7 +3747,7 @@ function getSessionExercises(int $sessionId, int $setId): array {
                   if (in_array(($row['sport_type'] ?? 'standard'), ['golf', 'run_outdoor', 'run_treadmill'], true)) {
                     $row['sport_type'] = 'standard';
                   }
-                    if (!isset($row['is_timed']) || $row['is_timed'] === '' || $row['is_timed'] === null) {
+                    if (!isset($row['is_timed']) || $row['is_timed'] === '' || $row['is_timed'] === null || ((int)$row['is_timed'] === 0 && (int)$exerciseMeta['is_timed'] !== 0)) {
                         $row['is_timed'] = $exerciseMeta['is_timed'];
                     }
                 }
@@ -4222,6 +4222,9 @@ function sendTrainingEmail(string $toEmail, array $session, array $exercises, ar
     foreach ($exercises as $i => $ex) {
         $series = getSeriesForExercise((int)$session['id'], (int)$ex['exercise_id']);
         if (empty($series)) continue;
+      $exerciseMode = ((int)($ex['is_timed'] ?? 0) === 1)
+        ? 'timed'
+        : (((int)($ex['is_timed'] ?? 0) === 2) ? 'distance' : (((int)($ex['is_timed'] ?? 0) === 3) ? 'distance_time' : 'standard'));
 
         $totalSeries += count($series);
         $bgHeader  = ($i % 2 === 0) ? '#1e1b4b' : '#312e81';
@@ -4237,37 +4240,81 @@ function sendTrainingEmail(string $toEmail, array $session, array $exercises, ar
         HTML;
 
         $exerciseRowsPlain .= strtoupper($ex['exercise_order'] . '. ' . $ex['exercise_name']) . "\n";
-        $exerciseRowsPlain .= sprintf("  %-4s %-10s %-10s %-10s\n", '#', 'Váha', 'Opa.', 'Dopomoc');
+        if ($exerciseMode === 'timed') {
+            $exerciseRowsPlain .= sprintf("  %-4s %-10s %-10s %-10s\n", '#', 'Čas', 'Váha', 'Pozn.');
+        } elseif ($exerciseMode === 'distance') {
+            $exerciseRowsPlain .= sprintf("  %-4s %-12s %-10s %-10s\n", '#', 'Vzdál. (m)', 'Váha', 'Pozn.');
+        } elseif ($exerciseMode === 'distance_time') {
+          $exerciseRowsPlain .= sprintf("  %-4s %-12s %-10s %-10s\n", '#', 'Vzdál. (m)', 'Čas', 'Váha');
+        } else {
+            $exerciseRowsPlain .= sprintf("  %-4s %-10s %-10s %-10s\n", '#', 'Váha', 'Opa.', 'Dopomoc');
+        }
 
         foreach ($series as $s) {
-            $assist = $s['assistance_reps'] > 0 ? $s['assistance_reps'] . 'x' : '–';
-          $weight = number_format((float)$s['weight'] + (float)($s['equipment_weight'] ?? 0), 1, ',', '') . ' kg';
-            $reps   = $s['reps'] . 'x';
-            $assistColor = $s['assistance_reps'] > 0 ? '#b45309' : '#9ca3af';
+            $weight = number_format((float)$s['weight'] + (float)($s['equipment_weight'] ?? 0), 1, ',', '') . ' kg';
+            if ($exerciseMode === 'timed') {
+                $timeValue = !empty($s['duration_seconds']) ? formatSeriesDuration((int)$s['duration_seconds']) : '–';
+                $exerciseRowsHtml .= <<<HTML
+                <tr style="background:{$bgRow};border-bottom:1px solid #e5e7eb;">
+                  <td style="padding:9px 16px;color:#6b7280;font-size:12px;width:36px;text-align:center;">{$h((string)$s['series_order'])}.</td>
+                  <td style="padding:9px 8px;font-weight:700;color:#111827;font-size:14px;">{$h($timeValue)}</td>
+                  <td style="padding:9px 8px;color:#374151;font-size:14px;">{$h($weight)}</td>
+                  <td style="padding:9px 16px;color:#9ca3af;font-size:13px;">–</td>
+                </tr>
+                HTML;
+                $exerciseRowsPlain .= sprintf("  %-4s %-10s %-10s %-10s\n", $s['series_order'] . '.', $timeValue, $weight, '–');
+            } elseif ($exerciseMode === 'distance') {
+                $distanceValue = (int)($s['reps'] ?? 0) > 0 ? (int)$s['reps'] . ' m' : '–';
+                $exerciseRowsHtml .= <<<HTML
+                <tr style="background:{$bgRow};border-bottom:1px solid #e5e7eb;">
+                  <td style="padding:9px 16px;color:#6b7280;font-size:12px;width:36px;text-align:center;">{$h((string)$s['series_order'])}.</td>
+                  <td style="padding:9px 8px;font-weight:700;color:#111827;font-size:14px;">{$h($distanceValue)}</td>
+                  <td style="padding:9px 8px;color:#374151;font-size:14px;">{$h($weight)}</td>
+                  <td style="padding:9px 16px;color:#9ca3af;font-size:13px;">–</td>
+                </tr>
+                HTML;
+                $exerciseRowsPlain .= sprintf("  %-4s %-12s %-10s %-10s\n", $s['series_order'] . '.', $distanceValue, $weight, '–');
+            } elseif ($exerciseMode === 'distance_time') {
+                $distanceValue = (int)($s['reps'] ?? 0) > 0 ? (int)$s['reps'] . ' m' : '–';
+                $timeValue = !empty($s['duration_seconds']) ? formatSeriesDuration((int)$s['duration_seconds']) : '–';
+                $exerciseRowsHtml .= <<<HTML
+                <tr style="background:{$bgRow};border-bottom:1px solid #e5e7eb;">
+                  <td style="padding:9px 16px;color:#6b7280;font-size:12px;width:36px;text-align:center;">{$h((string)$s['series_order'])}.</td>
+                  <td style="padding:9px 8px;font-weight:700;color:#111827;font-size:14px;">{$h($distanceValue)}</td>
+                  <td style="padding:9px 8px;color:#374151;font-size:14px;">{$h($timeValue)}</td>
+                  <td style="padding:9px 16px;color:#9ca3af;font-size:13px;">{$h($weight)}</td>
+                </tr>
+                HTML;
+                $exerciseRowsPlain .= sprintf("  %-4s %-12s %-10s %-10s\n", $s['series_order'] . '.', $distanceValue, $timeValue, $weight);
+            } else {
+                $assist = $s['assistance_reps'] > 0 ? $s['assistance_reps'] . 'x' : '–';
+                $reps   = $s['reps'] . 'x';
+                $assistColor = $s['assistance_reps'] > 0 ? '#b45309' : '#9ca3af';
 
-            $exerciseRowsHtml .= <<<HTML
-            <tr style="background:{$bgRow};border-bottom:1px solid #e5e7eb;">
-              <td style="padding:9px 16px;color:#6b7280;font-size:12px;width:36px;text-align:center;">
-                {$h((string)$s['series_order'])}.
-              </td>
-              <td style="padding:9px 8px;font-weight:700;color:#111827;font-size:14px;">
-                {$h($weight)}
-              </td>
-              <td style="padding:9px 8px;color:#374151;font-size:14px;">
-                {$h($reps)}
-              </td>
-              <td style="padding:9px 16px;color:{$assistColor};font-size:13px;">
-                {$h($assist)}
-              </td>
-            </tr>
-            HTML;
+                $exerciseRowsHtml .= <<<HTML
+                <tr style="background:{$bgRow};border-bottom:1px solid #e5e7eb;">
+                  <td style="padding:9px 16px;color:#6b7280;font-size:12px;width:36px;text-align:center;">
+                    {$h((string)$s['series_order'])}.
+                  </td>
+                  <td style="padding:9px 8px;font-weight:700;color:#111827;font-size:14px;">
+                    {$h($weight)}
+                  </td>
+                  <td style="padding:9px 8px;color:#374151;font-size:14px;">
+                    {$h($reps)}
+                  </td>
+                  <td style="padding:9px 16px;color:{$assistColor};font-size:13px;">
+                    {$h($assist)}
+                  </td>
+                </tr>
+                HTML;
 
-            $exerciseRowsPlain .= sprintf("  %-4s %-10s %-10s %-10s\n",
-                $s['series_order'] . '.',
-                $weight,
-                $reps,
-                $assist
-            );
+                $exerciseRowsPlain .= sprintf("  %-4s %-10s %-10s %-10s\n",
+                    $s['series_order'] . '.',
+                    $weight,
+                    $reps,
+                    $assist
+                );
+            }
         }
         $exerciseRowsPlain .= "\n";
     }

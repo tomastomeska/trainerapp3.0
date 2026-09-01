@@ -59,6 +59,33 @@ function decodeExerciseCategories(?string $raw): array {
     return empty($categories) ? ['uncategorized'] : $categories;
 }
 
+function exerciseModeFromIsTimed(mixed $isTimedRaw): string {
+    $value = (int)$isTimedRaw;
+    if ($value === 1) {
+        return 'timed';
+    }
+    if ($value === 2) {
+        return 'distance';
+    }
+    if ($value === 3) {
+        return 'distance_time';
+    }
+    return 'standard';
+}
+
+function exerciseModeToIsTimedFlag(string $mode): int {
+    if ($mode === 'timed') {
+        return 1;
+    }
+    if ($mode === 'distance') {
+        return 2;
+    }
+    if ($mode === 'distance_time') {
+        return 3;
+    }
+    return 0;
+}
+
 $exerciseCategoryOptions = exerciseCategoryOptions();
 
 // ------- POST akce -------
@@ -73,7 +100,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Přidat nový globální cvik
     if ($action === 'add') {
         $name = trim($_POST['name'] ?? '');
-        $isTimed = !empty($_POST['is_timed']) ? 1 : 0;
+        $modeRaw = trim((string)($_POST['exercise_mode'] ?? ''));
+        if ($modeRaw === '' && !empty($_POST['is_timed'])) {
+            $modeRaw = 'timed';
+        }
+        $isTimed = exerciseModeToIsTimedFlag($modeRaw);
         $muscleCategories = sanitizeExerciseCategories($_POST['muscle_categories'] ?? []);
         if ($name === '') {
             flash('danger', 'Zadejte název cviku.');
@@ -108,7 +139,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'rename') {
         $id   = intParam($_POST, 'exercise_id');
         $name = trim($_POST['new_name'] ?? '');
-        $isTimed = !empty($_POST['is_timed']) ? 1 : 0;
+        $modeRaw = trim((string)($_POST['exercise_mode'] ?? ''));
+        if ($modeRaw === '' && !empty($_POST['is_timed'])) {
+            $modeRaw = 'timed';
+        }
+        $isTimed = exerciseModeToIsTimedFlag($modeRaw);
         $muscleCategories = sanitizeExerciseCategories($_POST['muscle_categories'] ?? []);
         if (empty($muscleCategories)) {
             $muscleCategories = ['uncategorized'];
@@ -253,13 +288,16 @@ renderAdminHeader('Globální cviky');
                 <label class="form-label small mb-1">Název cviku</label>
                 <input type="text" name="name" class="form-control" required placeholder="Název cviku...">
             </div>
-            <div class="col-md-2">
-                <div class="form-check mt-4 pt-2">
-                    <input class="form-check-input" type="checkbox" name="is_timed" value="1" id="global-exercise-timed">
-                    <label class="form-check-label fw-semibold" for="global-exercise-timed">Časový</label>
-                </div>
+            <div class="col-md-3">
+                <label class="form-label small mb-1 fw-semibold" for="global-exercise-mode">Režim série</label>
+                <select class="form-select" name="exercise_mode" id="global-exercise-mode">
+                    <option value="standard" selected>Opakování</option>
+                    <option value="timed">Čas</option>
+                    <option value="distance">Vzdálenost</option>
+                    <option value="distance_time">Vzdálenost + čas</option>
+                </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label class="form-label small mb-1">Fotografie (nepovinné)</label>
                 <input type="file" name="photo" class="form-control" accept="image/*">
             </div>
@@ -334,8 +372,13 @@ renderAdminHeader('Globální cviky');
                         <span class="exercise-name fw-semibold">
                             <?= h($ex['name']) ?>
                             <span class="badge ms-1" style="background:#e8e4ff;color:#7c3aed;font-size:.7em">globální</span>
-                            <?php if (!empty($ex['is_timed'])): ?>
-                            <span class="badge bg-warning text-dark ms-1" style="font-size:.7em">časový</span>
+                            <?php $exerciseMode = exerciseModeFromIsTimed($ex['is_timed'] ?? 0); ?>
+                            <?php if ($exerciseMode === 'timed'): ?>
+                            <span class="badge bg-warning text-dark ms-1" style="font-size:.7em">čas</span>
+                            <?php elseif ($exerciseMode === 'distance'): ?>
+                            <span class="badge bg-primary ms-1" style="font-size:.7em">vzdálenost</span>
+                            <?php elseif ($exerciseMode === 'distance_time'): ?>
+                            <span class="badge bg-success ms-1" style="font-size:.7em">vzdálenost + čas</span>
                             <?php endif; ?>
                             <?php foreach ($ex['category_keys'] as $categoryKey): ?>
                                 <?php $categoryLabel = $exerciseCategoryOptions[$categoryKey] ?? $exerciseCategoryOptions['uncategorized']; ?>
@@ -350,10 +393,13 @@ renderAdminHeader('Globální cviky');
                             <div class="d-flex gap-2 flex-wrap align-items-center mt-1">
                                 <input type="text" name="new_name" class="form-control form-control-sm"
                                        value="<?= h($ex['name']) ?>" style="min-width:200px">
-                                <div class="form-check form-check-inline mb-0">
-                                    <input class="form-check-input" type="checkbox" name="is_timed" value="1" id="global-edit-timed-<?= $ex['id'] ?>" <?= !empty($ex['is_timed']) ? 'checked' : '' ?>>
-                                    <label class="form-check-label small" for="global-edit-timed-<?= $ex['id'] ?>">Časový</label>
-                                </div>
+                                <?php $editMode = exerciseModeFromIsTimed($ex['is_timed'] ?? 0); ?>
+                                <select name="exercise_mode" class="form-select form-select-sm" style="max-width:220px">
+                                    <option value="standard" <?= $editMode === 'standard' ? 'selected' : '' ?>>Opakování</option>
+                                    <option value="timed" <?= $editMode === 'timed' ? 'selected' : '' ?>>Čas</option>
+                                    <option value="distance" <?= $editMode === 'distance' ? 'selected' : '' ?>>Vzdálenost</option>
+                                    <option value="distance_time" <?= $editMode === 'distance_time' ? 'selected' : '' ?>>Vzdálenost + čas</option>
+                                </select>
                                 <input type="file" name="photo" class="form-control form-control-sm"
                                        accept="image/*" style="max-width:200px"
                                        title="Změnit fotografii (nepovinné)">
