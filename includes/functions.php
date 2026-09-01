@@ -7155,6 +7155,24 @@ function googleCalendarApiJsonRequest(string $method, string $url, string $acces
   ];
 }
 
+function buildCalendarEventDisplayTitle(array $event): string {
+  $customTitle = trim((string)($event['custom_title'] ?? ''));
+  if ($customTitle !== '') {
+    return $customTitle;
+  }
+
+  $athleteId = (int)($event['athlete_id'] ?? 0);
+  $secondAthleteId = (int)($event['second_athlete_id'] ?? 0);
+  if ($athleteId > 0 && $secondAthleteId > 0) {
+    return 'Párový trénink';
+  }
+  if ($athleteId > 0) {
+    return 'Trénink';
+  }
+
+  return 'Rezervace';
+}
+
 function buildGoogleCalendarEventPayload(array $event, int $coachId): array {
   $participants = [];
   $primary = trim((string)($event['first_name'] ?? '') . ' ' . (string)($event['last_name'] ?? ''));
@@ -8597,15 +8615,12 @@ function buildAppleCaldavEventIcs(int $coachId, array $event, string $uid): stri
     $participants[] = $secondary;
   }
 
-  $participantSummary = !empty($participants) ? implode(' + ', $participants) : 'Trenink';
   $location = trim((string)($event['location'] ?? ''));
-  $summary = $participantSummary;
+  $summary = buildCalendarEventDisplayTitle($event);
   if ($location !== '') {
     $summary .= ' | ' . $location;
   }
 
-  // Pokud je vyplneny vlastni nazev, nechame ho v popisu kvuli detailu,
-  // ale v SUMMARY priorizujeme sportovce + misto kvuli iOS mesicnimu prehledu.
   $customTitle = trim((string)($event['custom_title'] ?? ''));
   if ((string)($event['approval_status'] ?? 'approved') === 'pending') {
     $summary = 'Ceka na schvaleni - ' . $summary;
@@ -9414,10 +9429,7 @@ function buildAthleteAppleCaldavEventIcs(int $athleteId, array $event, string $u
     $participants[] = $secondary;
   }
 
-  $summary = trim((string)($event['custom_title'] ?? ''));
-  if ($summary === '') {
-    $summary = 'Trenink';
-  }
+  $summary = buildCalendarEventDisplayTitle($event);
   $location = trim((string)($event['location'] ?? ''));
   if ($location !== '') {
     $summary .= ' | ' . $location;

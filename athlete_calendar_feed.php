@@ -51,6 +51,29 @@ function athleteCalendarFormatLocalLabel(?string $dateTimeSql): string
     }
 }
 
+function athleteCalendarDisplayTitle(array $event): string
+{
+    if (function_exists('buildCalendarEventDisplayTitle')) {
+        return buildCalendarEventDisplayTitle($event);
+    }
+
+    $customTitle = trim((string)($event['custom_title'] ?? ''));
+    if ($customTitle !== '') {
+        return $customTitle;
+    }
+
+    $athleteId = (int)($event['athlete_id'] ?? 0);
+    $secondAthleteId = (int)($event['second_athlete_id'] ?? 0);
+    if ($athleteId > 0 && $secondAthleteId > 0) {
+        return 'Párový trénink';
+    }
+    if ($athleteId > 0) {
+        return 'Trénink';
+    }
+
+    return 'Rezervace';
+}
+
 function athleteCalendarParseToken(): string
 {
     $token = trim((string)($_GET['token'] ?? ''));
@@ -210,10 +233,7 @@ foreach ($events as $event) {
         $participants[] = $secondAthlete;
     }
 
-    $summary = trim((string)($event['custom_title'] ?? ''));
-    if ($summary === '') {
-        $summary = 'Trénink';
-    }
+    $summary = athleteCalendarDisplayTitle($event);
     $locationSummary = trim((string)($event['location'] ?? ''));
     if ($locationSummary !== '') {
         $summary .= ' | ' . $locationSummary;
