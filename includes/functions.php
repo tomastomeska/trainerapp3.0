@@ -1169,6 +1169,161 @@ if (!function_exists('getAppSetting')) {
     }
 }
 
+if (!function_exists('ensureEmailNotificationTemplatesTable')) {
+    function ensureEmailNotificationTemplatesTable(): void {
+        try {
+            $pdo = getDB();
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `email_notification_templates` (
+                `key` VARCHAR(120) NOT NULL PRIMARY KEY,
+                `name` VARCHAR(180) NOT NULL,
+                `description` TEXT NULL,
+                `subject` TEXT NULL,
+                `body` LONGTEXT NULL,
+                `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+                `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+            $defaults = [
+                'coach_welcome' => ['name' => 'Uvítací e-mail trenéra', 'description' => 'Při vytvoření nového trenérského účtu adminem.', 'subject' => 'Přihlašovací údaje do TrainerApp', 'body' => "Dobrý den,\n\nbyl Vám vytvořen účet trenéra v aplikaci TrainerApp.\n\nPřihlašovací stránka: {login_url}\nUživatelské jméno: {username}\nHeslo: {password}\n\nDoporučení: po prvním přihlášení si heslo změňte v profilu.\n\nS pozdravem\nAdministrace TrainerApp", 'is_active' => 1],
+                'athlete_welcome' => ['name' => 'Uvítací e-mail sportovce', 'description' => 'Při vytvoření sportovcového účtu nebo přidělení přístupu trenérem.', 'subject' => 'Přístup do TrainerApp', 'body' => "Ahoj {athlete_name},\n\ntrenér ti vytvořil přístup do aplikace TrainerApp.\n\nPřihlašovací jméno: {email}\nDočasné heslo: {password}\n\nPo prvním přihlášení bude vyžadována změna hesla.\n\nPřihlášení: {login_url}", 'is_active' => 1],
+                'password_reset' => ['name' => 'Reset hesla', 'description' => 'Požadavek na obnovení hesla z přihlašovacího formuláře.', 'subject' => 'Reset hesla - TrainerApp', 'body' => "Dobrý den {display_name},\n\nobdrželi jsme žádost o reset hesla pro účet typu {account_type}.\n\nPro nastavení nového hesla otevřete odkaz: {reset_url}\n\nPokud jste reset hesla nepožadovali, tento e-mail ignorujte.", 'is_active' => 1],
+                'training_summary' => ['name' => 'Souhrn tréninku', 'description' => 'Po dokončení tréninku během záznamu v aplikaci.', 'subject' => 'Tréninkový záznam – {training_name}', 'body' => "Ahoj {athlete_name},\n\npošli ti záznam z dnešního tréninku. Skvělá práce!\n\nTréninkový plán: {training_name}\nDatum: {session_date}\n\nS pozdravem,\n{coach_name} – Tvůj trenér", 'is_active' => 1],
+                'birthday_warning' => ['name' => 'Připomenutí narozenin', 'description' => 'Notifikace zasílaná několik dní před narozeninami sportovce.', 'subject' => 'Blíží se narozeniny: {athlete_name} ({age} let)', 'body' => "Dobrý den, {coach_name},\n\nváš sportovec {athlete_name} bude mít za {days_left} dní narozeniny ({birth_date}).\n\nV den narozenin mu/jí bude {age} let.\n\nS pozdravem\nTrainerApp – automatické notifikace", 'is_active' => 1],
+                'birthday_today' => ['name' => 'Dnes má narozeniny', 'description' => 'Notifikace o narozeninách ve stejný den.', 'subject' => 'Narozeniny: {athlete_name} slaví dnes {age} let!', 'body' => "Dobrý den, {coach_name},\n\ndnes slaví narozeniny váš sportovec {athlete_name} – je mu/jí {age} let!\n\nNezapomeňte mu/jí popřát.\n\nS pozdravem\nTrainerApp – automatické notifikace", 'is_active' => 1],
+                'coach_message' => ['name' => 'Nová zpráva trenérovi', 'description' => 'E-mail při nové zprávě v administraci.', 'subject' => 'Nová zpráva v TrainerApp: {subject}', 'body' => "Dobrý den, {coach_name},\n\nobdrželi jste novou zprávu v aplikaci TrainerApp.\n\nPředmět: {subject}\n\nPřejít do aplikace: {link}\n\nTrainerApp – automatické notifikace", 'is_active' => 1],
+                'calendar_notification' => ['name' => 'Kalendářová notifikace', 'description' => 'E-mail sportovci při změně nebo schválení události v kalendáři.', 'subject' => '{subject}', 'body' => "Ahoj {athlete_name},\n\n{message}\n\nDetail najdeš po přihlášení do TrainerApp.\n\nTrainerApp", 'is_active' => 1],
+                'support_ticket' => ['name' => 'Nový ticket podpory', 'description' => 'Při vytvoření nového tiketu v podpoře.', 'subject' => 'Nový ticket podpory #{ticket_id}: {subject}', 'body' => "Dobrý den,\n\nv aplikaci byl vytvořen nový ticket podpory #{ticket_id}.\n\nOdesílatel: {reporter}\nPředmět: {subject}\nTyp problému: {issue_type}\n\nPopis: {description}\n\nDetail: {ticket_url}", 'is_active' => 1],
+                'coach_access_request' => ['name' => 'Žádost o přístup trenéra', 'description' => 'Notifikace majiteli při nové žádosti o přístup trenéra.', 'subject' => 'Nová žádost o přístup trenéra', 'body' => "Nová žádost o přístup trenéra\n\nJméno: {name}\nE-mail: {email}\nČas: {created_at}\n\n{note}", 'is_active' => 1],
+                'weight_invite' => ['name' => 'Výzva k zadání hmotnosti', 'description' => 'Když trenér žádá sportovce o vyplnění hmotnosti.', 'subject' => 'Výzva k zadání tělesné hmotnosti', 'body' => "Ahoj {athlete_name},\n\ntrenér {coach_name} tě žádá o zadání aktuální tělesné hmotnosti.\n\nVyplň ji zde: {entry_url}\nOdkaz je platný do {expires_at}.\n\nTrainerApp", 'is_active' => 1],
+                'payment_request' => ['name' => 'Výzva k platbě', 'description' => 'Požadavek na platbu pro sportovce.', 'subject' => 'Výzva k platbě - {month_label}', 'body' => "Dobrý den, {athlete_name},\n\nzasílám výzvu k platbě za tréninky za období {month_label}.\n\nČástka: {amount_text}\nÚčet: {account}\nPoznámka: {note}\n\nQR: {qr_url}\n\nS pozdravem\n{coach_name}", 'is_active' => 1],
+                'mycoach_subscription' => ['name' => 'Aktivace MyCoach předplatného', 'description' => 'Předplatné MyCoach aktivováno pro uživatele.', 'subject' => 'Vaše předplatné MyCoach App bylo aktivováno', 'body' => "Dobrý den,\n\npředplatné MyCoach App bylo pro váš účet aktivováno.\n\nPlatnost předplatného: {start_date} – {end_date}\n\nNyní máte plný přístup ke všem funkcím aplikace.\n\nS pozdravem,\nTým MyCoach", 'is_active' => 1],
+            ];
+
+            foreach ($defaults as $key => $template) {
+                $stmt = $pdo->prepare('INSERT INTO `email_notification_templates` (`key`, `name`, `description`, `subject`, `body`, `is_active`) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `description` = VALUES(`description`), `subject` = VALUES(`subject`), `body` = VALUES(`body`), `is_active` = VALUES(`is_active`)');
+                $stmt->execute([
+                    $key,
+                    $template['name'],
+                    $template['description'],
+                    $template['subject'],
+                    $template['body'],
+                    $template['is_active'] ? 1 : 0,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            error_log('ensureEmailNotificationTemplatesTable error: ' . $e->getMessage());
+        }
+    }
+}
+
+if (!function_exists('getEmailNotificationTemplate')) {
+    function getEmailNotificationTemplate(string $key, array $fallback = []): array {
+        ensureEmailNotificationTemplatesTable();
+        $pdo = getDB();
+        $stmt = $pdo->prepare('SELECT * FROM `email_notification_templates` WHERE `key` = ? LIMIT 1');
+        $stmt->execute([$key]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row) {
+            return [
+                'key' => (string)($row['key'] ?? $key),
+                'name' => (string)($row['name'] ?? ($fallback['name'] ?? $key)),
+                'description' => (string)($row['description'] ?? ($fallback['description'] ?? '')),
+                'subject' => (string)($row['subject'] ?? ($fallback['subject'] ?? '')),
+                'body' => (string)($row['body'] ?? ($fallback['body'] ?? '')),
+                'is_active' => (int)($row['is_active'] ?? ($fallback['is_active'] ?? 1)),
+            ];
+        }
+
+        $default = [
+            'key' => $key,
+            'name' => $fallback['name'] ?? $key,
+            'description' => $fallback['description'] ?? '',
+            'subject' => $fallback['subject'] ?? '',
+            'body' => $fallback['body'] ?? '',
+            'is_active' => (int)($fallback['is_active'] ?? 1),
+        ];
+
+        $stmt = $pdo->prepare('INSERT INTO `email_notification_templates` (`key`, `name`, `description`, `subject`, `body`, `is_active`) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `description` = VALUES(`description`), `subject` = VALUES(`subject`), `body` = VALUES(`body`), `is_active` = VALUES(`is_active`)');
+        $stmt->execute([$default['key'], $default['name'], $default['description'], $default['subject'], $default['body'], $default['is_active'] ? 1 : 0]);
+        return $default;
+    }
+}
+
+if (!function_exists('getEmailNotificationTemplates')) {
+    function getEmailNotificationTemplates(): array {
+        ensureEmailNotificationTemplatesTable();
+        $pdo = getDB();
+        $stmt = $pdo->query('SELECT * FROM `email_notification_templates` ORDER BY `name` ASC');
+        $rows = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+        return array_map(static fn(array $row): array => [
+            'key' => (string)($row['key'] ?? ''),
+            'name' => (string)($row['name'] ?? ''),
+            'description' => (string)($row['description'] ?? ''),
+            'subject' => (string)($row['subject'] ?? ''),
+            'body' => (string)($row['body'] ?? ''),
+            'is_active' => (int)($row['is_active'] ?? 1),
+        ], $rows);
+    }
+}
+
+if (!function_exists('saveEmailNotificationTemplate')) {
+    function saveEmailNotificationTemplate(string $key, array $data): bool {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare('UPDATE `email_notification_templates` SET `name` = ?, `description` = ?, `subject` = ?, `body` = ?, `is_active` = ? WHERE `key` = ?');
+            return $stmt->execute([
+                (string)($data['name'] ?? ''),
+                (string)($data['description'] ?? ''),
+                (string)($data['subject'] ?? ''),
+                (string)($data['body'] ?? ''),
+                !empty($data['is_active']) ? 1 : 0,
+                $key,
+            ]);
+        } catch (\Throwable $e) {
+            error_log('saveEmailNotificationTemplate error: ' . $e->getMessage());
+            return false;
+        }
+    }
+}
+
+if (!function_exists('isEmailNotificationEnabled')) {
+    function isEmailNotificationEnabled(string $key): bool {
+        $template = getEmailNotificationTemplate($key);
+        return (int)($template['is_active'] ?? 1) === 1;
+    }
+}
+
+if (!function_exists('applyEmailTemplateOverride')) {
+    function applyEmailTemplateOverride(string $key, string $defaultSubject, string $defaultHtml, string $defaultPlain, array $context = []): array {
+        $template = getEmailNotificationTemplate($key);
+        if ((int)($template['is_active'] ?? 1) !== 1) {
+            return ['send' => false, 'subject' => $defaultSubject, 'html' => $defaultHtml, 'plain' => $defaultPlain];
+        }
+
+        $context = array_map(static fn($value) => (string)$value, $context);
+        $subject = trim((string)($template['subject'] ?? ''));
+        $body = trim((string)($template['body'] ?? ''));
+
+        if ($subject === '' && $body === '') {
+            return ['send' => true, 'subject' => $defaultSubject, 'html' => $defaultHtml, 'plain' => $defaultPlain];
+        }
+
+        $replace = [];
+        foreach ($context as $name => $value) {
+            $replace['{' . $name . '}'] = $value;
+        }
+        $resolvedSubject = $subject === '' ? $defaultSubject : strtr($subject, $replace);
+        $resolvedBody = $body === '' ? $defaultPlain : strtr($body, $replace);
+
+        return [
+            'send' => true,
+            'subject' => $resolvedSubject,
+            'html' => nl2br(htmlspecialchars($resolvedBody, ENT_QUOTES, 'UTF-8'), false),
+            'plain' => $resolvedBody,
+        ];
+    }
+}
+
     if (!function_exists('mycoachAccessMode')) {
       function mycoachAccessMode(): string {
         $rawMode = strtolower(trim(getAppSetting('mycoach_access_mode', 'selected')));
@@ -4195,6 +4350,10 @@ function deleteTrainingSessionPhotosByFilename(int $sessionId, string $filename)
  * @param array  $coach       Řádek coaches (name, username)
  */
 function sendTrainingEmail(string $toEmail, array $session, array $exercises, array $coach): bool {
+    if (!isEmailNotificationEnabled('training_summary')) {
+        return true;
+    }
+
     $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
     if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
         error_log('sendTrainingEmail: PHPMailer not found at ' . $phpmailerSrc);
@@ -4519,6 +4678,10 @@ HTML;
  * Odešle sportovci e-mailovou výzvu k platbě včetně QR kódu.
  */
 function sendPaymentRequestEmail(string $toEmail, array $data): bool {
+    if (!isEmailNotificationEnabled('payment_request')) {
+        return true;
+    }
+
     $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
     if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
         error_log('sendPaymentRequestEmail: PHPMailer not found at ' . $phpmailerSrc);
@@ -4623,6 +4786,10 @@ HTML;
  * Vrátí true při úspěchu, false při chybě.
  */
 function sendCoachWelcomeEmail(string $toEmail, string $username, string $password, string $loginUrl): bool {
+    if (!isEmailNotificationEnabled('coach_welcome')) {
+        return true;
+    }
+
     $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
     if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
         error_log('sendCoachWelcomeEmail: PHPMailer not found at ' . $phpmailerSrc);
@@ -4797,6 +4964,10 @@ function sendBirthdayWarningEmail(
     string $birthDate,
     int    $daysLeft
 ): bool {
+    if (!isEmailNotificationEnabled('birthday_warning')) {
+        return true;
+    }
+
     $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
     if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
         error_log('sendBirthdayWarningEmail: PHPMailer not found');
@@ -4900,6 +5071,10 @@ function sendBirthdayTodayEmail(
     string $athleteLast,
     int    $age
 ): bool {
+    if (!isEmailNotificationEnabled('birthday_today')) {
+        return true;
+    }
+
     $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
     if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
         error_log('sendBirthdayTodayEmail: PHPMailer not found');
@@ -5039,6 +5214,10 @@ function _configureMail(object $mail): void {
  * @return bool
  */
 function sendMessageNotificationEmail(string $toEmail, string $coachName, string $subject, int $messageId): bool {
+  if (!isEmailNotificationEnabled('coach_message')) {
+    return true;
+  }
+
   if (isEmailQueueEnabled() && emailNotificationQueueTableAvailable()) {
     return enqueueEmailNotificationJob(
       'coach_message_notification',
@@ -5186,6 +5365,10 @@ if (!function_exists('sendMyCoachSubscriptionActivatedEmail')) {
 }
 
 function sendAthleteWelcomeEmail(string $toEmail, string $athleteName, string $password, string $loginUrl): bool {
+  if (!isEmailNotificationEnabled('athlete_welcome')) {
+    return true;
+  }
+
   $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
   if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
     error_log('sendAthleteWelcomeEmail: PHPMailer not found at ' . $phpmailerSrc);
@@ -5248,6 +5431,10 @@ function sendAthleteWelcomeEmail(string $toEmail, string $athleteName, string $p
 }
 
 function sendAthleteCalendarNotificationEmail(string $toEmail, string $athleteName, string $subject, string $message): bool {
+  if (!isEmailNotificationEnabled('calendar_notification')) {
+    return true;
+  }
+
   if (isEmailQueueEnabled() && emailNotificationQueueTableAvailable()) {
     return enqueueEmailNotificationJob(
       'athlete_calendar_notification',
@@ -5355,6 +5542,10 @@ function getAdminNotificationEmail(): string {
  * Vrací počet úspěšně odeslaných e-mailů.
  */
 function sendSupportTicketNotificationEmail(int $ticketId, array $ticket, array $extraRecipients = []): int {
+  if (!isEmailNotificationEnabled('support_ticket')) {
+    return 0;
+  }
+
   $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
   if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
     return 0;
@@ -5447,6 +5638,10 @@ function sendSupportTicketNotificationEmail(int $ticketId, array $ticket, array 
 }
 
 function sendCoachAccessRequestOwnerEmail(string $ownerEmail, array $request): bool {
+  if (!isEmailNotificationEnabled('coach_access_request')) {
+    return true;
+  }
+
   $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
   if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
     return false;
@@ -5509,6 +5704,10 @@ function sendCoachAccessRequestOwnerEmail(string $ownerEmail, array $request): b
 }
 
 function sendPasswordResetEmail(string $toEmail, string $displayName, string $resetUrl, string $accountTypeLabel): bool {
+  if (!isEmailNotificationEnabled('password_reset')) {
+    return true;
+  }
+
   $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
   if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
     return false;
@@ -5618,6 +5817,10 @@ function deleteAthleteWeightLog(int $logId, int $athleteId): bool {
     string $entryUrl,
     string $expiresAt
   ): bool {
+    if (!isEmailNotificationEnabled('weight_invite')) {
+      return true;
+    }
+
     $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
     if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
       return false;

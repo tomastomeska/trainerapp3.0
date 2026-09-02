@@ -96,6 +96,7 @@ renderHeader('Návod pro trenéry', false, true);
             <a href="#coach-calendar" class="btn btn-outline-dark btn-sm">Kalendář</a>
             <a href="#coach-food-diary" class="btn btn-outline-dark btn-sm">Strava</a>
             <a href="#coach-payments" class="btn btn-outline-dark btn-sm">Platby</a>
+            <a href="#coach-files" class="btn btn-outline-dark btn-sm">Soubory</a>
             <a href="#coach-events" class="btn btn-outline-dark btn-sm">Events</a>
             <a href="#coach-mycoach" class="btn btn-outline-dark btn-sm">MyCoach</a>
             <a href="#coach-messages" class="btn btn-outline-dark btn-sm">Zprávy</a>
@@ -115,6 +116,7 @@ renderHeader('Návod pro trenéry', false, true);
             <div class="col-12 col-md-6"><i class="fas fa-wallet me-2 text-muted"></i><strong>Platby:</strong> výzvy, stav úhrad, účtenky</div>
             <div class="col-12 col-md-6"><i class="fas fa-utensils me-2 text-muted"></i><strong>Jídelníčky:</strong> tvorba a přiřazení plánů</div>
             <div class="col-12 col-md-6"><i class="fas fa-bowl-food me-2 text-muted"></i><strong>Strava sportovce:</strong> reálný příjem jídla, pitný režim po dávkách, poznámky trenéra</div>
+            <div class="col-12 col-md-6"><i class="fas fa-folder-open me-2 text-muted"></i><strong>Soubory sportovce:</strong> dokumenty, které vám sportovec zpřístupnil</div>
             <div class="col-12 col-md-6"><i class="fas fa-video me-2 text-muted"></i><strong>Videa:</strong> upload, složky, sdílení sportovcům</div>
             <div class="col-12 col-md-6"><i class="fas fa-flag-checkered me-2 text-muted"></i><strong>Events:</strong> práce s publikovanými eventy</div>
             <div class="col-12 col-md-6"><i class="fas fa-brain me-2 text-muted"></i><strong>MyCoach:</strong> cíle, monitoring, dotazníky</div>
@@ -425,8 +427,21 @@ renderHeader('Návod pro trenéry', false, true);
     </div>
 </div>
 
+<div class="card border-0 shadow-sm mb-4" id="coach-files">
+    <div class="card-header fw-semibold"><i class="fas fa-folder-open me-2 text-primary"></i>10) Soubory sportovce: kontrola sdílených dokumentů</div>
+    <div class="card-body">
+        <ol>
+            <li>V detailu konkrétního sportovce klikněte na tlačítko Soubory.</li>
+            <li>Červený badge na tlačítku ukazuje počet nově zpřístupněných a dosud neprohlédnutých souborů.</li>
+            <li>Po otevření přehledu se nové soubory označí jako prohlédnuté.</li>
+            <li>Dokumenty jsou řazené podle typu; vícesouborová sada má společný název a jednotlivé soubory se stahují samostatně.</li>
+            <li>Po nahrání sdíleného dokumentu přijde systémová zpráva i e-mail s názvem sportovce a typem dokumentu.</li>
+        </ol>
+    </div>
+</div>
+
 <div class="card border-0 shadow-sm mb-4" id="coach-events">
-    <div class="card-header fw-semibold"><i class="fas fa-flag-checkered me-2 text-warning"></i>10) Events: práce s eventy <span class="manual-priority manual-priority-low">Volitelné</span></div>
+    <div class="card-header fw-semibold"><i class="fas fa-flag-checkered me-2 text-warning"></i>11) Events: práce s eventy <span class="manual-priority manual-priority-low">Volitelné</span></div>
     <div class="card-body">
         <ol>
             <li>Na dashboardu otevřete dlaždici Events (pokud je účet odemčený).</li>
@@ -439,7 +454,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4" id="coach-mycoach">
-    <div class="card-header fw-semibold"><i class="fas fa-brain me-2 text-warning"></i>11) MyCoach: cíle a monitoring <span class="manual-priority manual-priority-mid">Průběžně</span></div>
+    <div class="card-header fw-semibold"><i class="fas fa-brain me-2 text-warning"></i>12) MyCoach: cíle a monitoring <span class="manual-priority manual-priority-mid">Průběžně</span></div>
     <div class="card-body">
         <ol>
             <li>Na dashboardu otevřete dlaždici MyCoach (pokud je účet odemčený).</li>
@@ -453,7 +468,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-video me-2 text-warning"></i>12) Videa: nahrání, třídění a sdílení</div>
+    <div class="card-header fw-semibold"><i class="fas fa-video me-2 text-warning"></i>13) Videa: nahrání, třídění a sdílení</div>
     <div class="card-body">
         <h6 class="fw-bold">Jak pracovat s videosekcí</h6>
         <ol>
@@ -485,7 +500,7 @@ renderHeader('Návod pro trenéry', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4" id="coach-messages">
-    <div class="card-header fw-semibold"><i class="fas fa-comments me-2 text-warning"></i>13) Zprávy: komunikace se sportovci <span class="manual-priority manual-priority-high">Reakce do 24 h</span></div>
+    <div class="card-header fw-semibold"><i class="fas fa-comments me-2 text-warning"></i>14) Zprávy: komunikace se sportovci <span class="manual-priority manual-priority-high">Reakce do 24 h</span></div>
     <div class="card-body">
         <h6 class="fw-bold">Jak odeslat novou zprávu</h6>
         <ol>
@@ -501,13 +516,14 @@ renderHeader('Návod pro trenéry', false, true);
         <ol>
             <li>Notifikace k narozeninám sportovců chodí automaticky e-mailem i do Zpráv.</li>
             <li>Kalendářové požadavky sportovců sledujte v přehledech a následně potvrzujte/odmítejte.</li>
+            <li>Po sdílení nového dokumentu sportovcem přijde zpráva s jeho jménem a typem dokumentu; stejná notifikace se odešle e-mailem.</li>
             <li>Změny hmotnosti, které si sportovec zapisuje v profilu, již nezatěžují inbox samostatnými zprávami.</li>
         </ol>
     </div>
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-chart-line me-2 text-warning"></i>14) Grafy a reporty: jak vyhodnocovat</div>
+    <div class="card-header fw-semibold"><i class="fas fa-chart-line me-2 text-warning"></i>15) Grafy a reporty: jak vyhodnocovat</div>
     <div class="card-body">
         <ol>
             <li>Otevřete Grafy nebo Reporty.</li>

@@ -25,6 +25,14 @@ if (!$athlete) {
 $healthStatus = healthQuestionnaireFetchStatus($pdo, $athleteId);
 $healthLatestSubmission = healthQuestionnaireFetchLatestSubmission($pdo, $athleteId);
 $healthUpdates = healthQuestionnaireFetchUpdatesForCoach($pdo, $athleteId, 8);
+$newAthleteFilesCount = 0;
+try {
+    $newAthleteFilesStmt = $pdo->prepare('SELECT COUNT(*) FROM athlete_files WHERE athlete_id = ? AND coach_id = ? AND shared_with_coach = 1 AND coach_viewed_at IS NULL');
+    $newAthleteFilesStmt->execute([$athleteId, $coachId]);
+    $newAthleteFilesCount = (int)$newAthleteFilesStmt->fetchColumn();
+} catch (Throwable $e) {
+    $newAthleteFilesCount = 0;
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
@@ -329,6 +337,10 @@ renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']), true, true
               class="btn btn-outline-primary btn-sm">
             <i class="fas fa-bowl-food me-1"></i>Strava
         </a>
+                <a href="<?= BASE_URL ?>/athlete_files_coach.php?athlete_id=<?= $athleteId ?>"
+                     class="btn btn-outline-primary btn-sm">
+                    <i class="fas fa-folder-open me-1"></i>Soubory<?php if ($newAthleteFilesCount > 0): ?> <span class="badge rounded-pill bg-danger ms-1"><?= $newAthleteFilesCount ?></span><?php endif; ?>
+                </a>
         <a href="<?= BASE_URL ?>/athlete_edit.php?id=<?= $athleteId ?>"
            class="btn btn-outline-secondary btn-sm">
             <i class="fas fa-edit me-1"></i>Upravit

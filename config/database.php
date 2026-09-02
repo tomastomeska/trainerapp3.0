@@ -836,6 +836,18 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
 
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `email_notification_templates` (
+            `key`        VARCHAR(120) NOT NULL PRIMARY KEY,
+            `name`       VARCHAR(180) NOT NULL,
+            `description` TEXT NULL,
+            `subject`    TEXT NULL,
+            `body`       LONGTEXT NULL,
+            `is_active`  TINYINT(1) NOT NULL DEFAULT 1,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
     // Eventy a jejich obsahove zalozky (sprava z administrace)
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS `special_events` (
@@ -2271,6 +2283,35 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
 
+    // Hromadné zprávy administrátora pro sportovce včetně přehledu přečtení.
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `admin_athlete_broadcasts` (
+            `id`         INT AUTO_INCREMENT PRIMARY KEY,
+            `subject`    VARCHAR(255) NOT NULL,
+            `body`       TEXT NOT NULL,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY `idx_admin_athlete_broadcasts_created` (`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `admin_athlete_broadcast_recipients` (
+            `id`              INT AUTO_INCREMENT PRIMARY KEY,
+            `broadcast_id`    INT NOT NULL,
+            `athlete_id`      INT NOT NULL,
+            `notification_id` INT NOT NULL,
+            `created_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY `uq_admin_athlete_broadcast_recipient` (`broadcast_id`, `athlete_id`),
+            KEY `idx_admin_athlete_broadcast_notification` (`notification_id`),
+            CONSTRAINT `fk_admin_athlete_broadcast_recipient_broadcast`
+                FOREIGN KEY (`broadcast_id`) REFERENCES `admin_athlete_broadcasts`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_admin_athlete_broadcast_recipient_athlete`
+                FOREIGN KEY (`athlete_id`) REFERENCES `athletes`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_admin_athlete_broadcast_recipient_notification`
+                FOREIGN KEY (`notification_id`) REFERENCES `athlete_notifications`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
     // Zpravy od trenera sportovcum (hromadne i jednotlive) + prehled precteni
     $pdo->exec(" 
         CREATE TABLE IF NOT EXISTS `coach_athlete_messages` (
@@ -2805,6 +2846,48 @@ function ensureSchemaUpgrades(PDO $pdo): void {
                 FOREIGN KEY (`athlete_id`) REFERENCES `athletes`(`id`) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
+
+    // Dokumenty nahrané sportovcem; soubory se zpřístupňují trenérovi jednotlivě.
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `athlete_files` (
+            `id`                INT AUTO_INCREMENT PRIMARY KEY,
+            `athlete_id`        INT NOT NULL,
+            `coach_id`          INT NOT NULL,
+            `file_path`         VARCHAR(500) NOT NULL,
+            `original_name`     VARCHAR(255) NOT NULL,
+            `display_name`      VARCHAR(255) NULL,
+            `upload_batch`      CHAR(32) NULL,
+            `file_size`         BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            `mime_type`         VARCHAR(255) NULL,
+            `document_category` VARCHAR(60) NOT NULL DEFAULT 'other',
+            `shared_with_coach` TINYINT(1) NOT NULL DEFAULT 0,
+            `coach_viewed_at`   DATETIME NULL,
+            `created_at`        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY `idx_athlete_files_athlete` (`athlete_id`, `created_at`),
+            KEY `idx_athlete_files_batch` (`athlete_id`, `upload_batch`),
+            KEY `idx_athlete_files_coach` (`coach_id`, `shared_with_coach`, `created_at`),
+            CONSTRAINT `fk_athlete_files_athlete`
+                FOREIGN KEY (`athlete_id`) REFERENCES `athletes`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_athlete_files_coach`
+                FOREIGN KEY (`coach_id`) REFERENCES `coaches`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $athleteFilesDisplayName = $pdo->query("SHOW COLUMNS FROM athlete_files LIKE 'display_name'");
+    if ($athleteFilesDisplayName !== false && !$athleteFilesDisplayName->fetch()) {
+        $pdo->exec('ALTER TABLE athlete_files ADD COLUMN display_name VARCHAR(255) NULL AFTER original_name');
+    }
+
+    $athleteFilesUploadBatch = $pdo->query("SHOW COLUMNS FROM athlete_files LIKE 'upload_batch'");
+    if ($athleteFilesUploadBatch !== false && !$athleteFilesUploadBatch->fetch()) {
+        $pdo->exec('ALTER TABLE athlete_files ADD COLUMN upload_batch CHAR(32) NULL AFTER display_name');
+        $pdo->exec('ALTER TABLE athlete_files ADD KEY idx_athlete_files_batch (athlete_id, upload_batch)');
+    }
+
+    $athleteFilesCoachViewedAt = $pdo->query("SHOW COLUMNS FROM athlete_files LIKE 'coach_viewed_at'");
+    if ($athleteFilesCoachViewedAt !== false && !$athleteFilesCoachViewedAt->fetch()) {
+        $pdo->exec('ALTER TABLE athlete_files ADD COLUMN coach_viewed_at DATETIME NULL AFTER shared_with_coach');
+    }
 
     // Soubory admina (pro trenéry)
     $pdo->exec("

@@ -11,12 +11,30 @@ $success = null;
 $testResult = null;
 $cronResult = null;
 
+ensureEmailNotificationTemplatesTable();
+
 // ── Zpracování formulářů ─────────────────────────────────────────────────────
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
         $error = 'Neplatný bezpečnostní token.';
     } elseif (isset($_POST['action'])) {
+        if ($_POST['action'] === 'save_template') {
+            $key = trim((string)($_POST['key'] ?? ''));
+            $name = trim((string)($_POST['name'] ?? ''));
+            $description = trim((string)($_POST['description'] ?? ''));
+            $subject = trim((string)($_POST['subject'] ?? ''));
+            $body = trim((string)($_POST['body'] ?? ''));
+            $isActive = isset($_POST['is_active']) ? 1 : 0;
+
+            if ($key === '' || $name === '') {
+                $error = 'Vyplňte klíč a název šablony.';
+            } else {
+                $stmt = $pdo->prepare('INSERT INTO `email_notification_templates` (`key`, `name`, `description`, `subject`, `body`, `is_active`) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `description` = VALUES(`description`), `subject` = VALUES(`subject`), `body` = VALUES(`body`), `is_active` = VALUES(`is_active`)');
+                $stmt->execute([$key, $name, $description, $subject, $body, $isActive]);
+                $success = 'Šablona byla uložena.';
+            }
+        }
 
         // Test SMTP
         if ($_POST['action'] === 'test_smtp') {
@@ -85,6 +103,7 @@ $smtpHost = defined('SMTP_HOST') ? SMTP_HOST : '–';
 $smtpPort = defined('SMTP_PORT') ? SMTP_PORT : '–';
 $smtpUser = defined('SMTP_USER') ? SMTP_USER : '–';
 $smtpFrom = defined('SMTP_FROM') ? SMTP_FROM : '–';
+$templates = getEmailNotificationTemplates();
 
 renderAdminHeader('E-mailové notifikace');
 ?>
@@ -98,6 +117,12 @@ renderAdminHeader('E-mailové notifikace');
 <?php if ($error): ?>
 <div class="alert alert-danger alert-dismissible fade show">
     <i class="fas fa-exclamation-circle me-1"></i><?= h($error) ?>
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+<?php endif; ?>
+<?php if ($success): ?>
+<div class="alert alert-success alert-dismissible fade show">
+    <i class="fas fa-check-circle me-1"></i><?= h($success) ?>
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 <?php endif; ?>
@@ -186,60 +211,44 @@ renderAdminHeader('E-mailové notifikace');
         </div>
     </div>
 
-    <!-- ── Karta: Typy notifikací ── -->
+    <!-- ── Karta: Šablony a e-mailové akce ── -->
     <div class="col-12">
         <div class="card border-0 shadow-sm">
             <div class="card-header fw-bold" style="background:#1e1e2e;color:#fff">
-                <i class="fas fa-bell me-2"></i>Typy e-mailových notifikací
+                <i class="fas fa-bell me-2"></i>Šablony a e-mailové akce
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-hover mb-0">
+                    <table class="table table-hover mb-0 align-middle">
                         <thead class="table-light">
                             <tr>
                                 <th>Typ notifikace</th>
-                                <th>Kdy se odesílá</th>
-                                <th>Příjemce</th>
+                                <th>Klíč</th>
+                                <th>Popis</th>
                                 <th>Stav</th>
+                                <th>Akce</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr>
-                                <td>
-                                    <i class="fas fa-dumbbell me-2 text-purple" style="color:#7c3aed"></i>
-                                    <strong>Souhrn tréninku</strong>
-                                </td>
-                                <td>Po dokončení tréninku trenérem</td>
-                                <td>Sportovec (e-mail v kartě sportovce)</td>
-                                <td><span class="badge bg-success">Aktivní</span></td>
-                            </tr>
-                            <tr>
-                                <td>
-                                    <i class="fas fa-user-plus me-2" style="color:#7c3aed"></i>
-                                    <strong>Vítejte v TrainerApp</strong>
-                                </td>
-                                <td>Při vytvoření trenérského účtu adminem</td>
-                                <td>Nový trenér (e-mail v kartě trenéra)</td>
-                                <td><span class="badge bg-success">Aktivní</span></td>
-                            </tr>
-                            <tr>
-                                <td>
-                                    <i class="fas fa-cake-candles me-2" style="color:#f59e0b"></i>
-                                    <strong>Upozornění na narozeniny</strong>
-                                </td>
-                                <td>4 dny před narozeninami sportovce</td>
-                                <td>Trenér sportovce</td>
-                                <td><span class="badge bg-warning text-dark">Vyžaduje cron</span></td>
-                            </tr>
-                            <tr>
-                                <td>
-                                    <i class="fas fa-birthday-cake me-2" style="color:#ef4444"></i>
-                                    <strong>Narozeniny dnes!</strong>
-                                </td>
-                                <td>V den narozenin sportovce</td>
-                                <td>Trenér sportovce</td>
-                                <td><span class="badge bg-warning text-dark">Vyžaduje cron</span></td>
-                            </tr>
+                            <?php foreach ($templates as $template): ?>
+                                <tr>
+                                    <td><strong><?= h($template['name']) ?></strong></td>
+                                    <td><code><?= h($template['key']) ?></code></td>
+                                    <td class="small text-muted"><?= h($template['description']) ?: '—' ?></td>
+                                    <td>
+                                        <?php if ((int)$template['is_active'] === 1): ?>
+                                            <span class="badge bg-success">Zapnuto</span>
+                                        <?php else: ?>
+                                            <span class="badge bg-secondary">Vypnuto</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#templateModal" data-key="<?= h($template['key']) ?>" data-name="<?= h($template['name']) ?>" data-description="<?= h($template['description']) ?>" data-subject="<?= h($template['subject']) ?>" data-body="<?= h($template['body']) ?>" data-active="<?= (int)$template['is_active'] ?>">
+                                            Upravit
+                                        </button>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
                         </tbody>
                     </table>
                 </div>
@@ -470,7 +479,69 @@ renderAdminHeader('E-mailové notifikace');
 
 </div><!-- /.row -->
 
+<div class="modal fade" id="templateModal" tabindex="-1" aria-labelledby="templateModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <form method="post">
+                <?= csrfField() ?>
+                <input type="hidden" name="action" value="save_template">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="templateModalLabel">Upravit šablonu</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Klíč</label>
+                            <input type="text" name="key" id="templateKey" class="form-control" readonly>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Název</label>
+                            <input type="text" name="name" id="templateName" class="form-control" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Popis</label>
+                            <textarea name="description" id="templateDescription" class="form-control" rows="2"></textarea>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Předmět</label>
+                            <input type="text" name="subject" id="templateSubject" class="form-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Text e-mailu</label>
+                            <textarea name="body" id="templateBody" class="form-control" rows="12" placeholder="Např. {athlete_name}, {coach_name}, {login_url}"></textarea>
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="is_active" id="templateActive" checked>
+                                <label class="form-check-label" for="templateActive">E-mail je aktivní</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zavřít</button>
+                    <button type="submit" class="btn btn-primary">Uložit šablonu</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
+const templateModal = document.getElementById('templateModal');
+if (templateModal) {
+  templateModal.addEventListener('show.bs.modal', function (event) {
+    const trigger = event.relatedTarget;
+    document.getElementById('templateKey').value = trigger.dataset.key || '';
+    document.getElementById('templateName').value = trigger.dataset.name || '';
+    document.getElementById('templateDescription').value = trigger.dataset.description || '';
+    document.getElementById('templateSubject').value = trigger.dataset.subject || '';
+    document.getElementById('templateBody').value = trigger.dataset.body || '';
+    document.getElementById('templateActive').checked = Number(trigger.dataset.active || 0) === 1;
+  });
+}
+
 function copyText(id) {
     var el = document.getElementById(id);
     el.select();

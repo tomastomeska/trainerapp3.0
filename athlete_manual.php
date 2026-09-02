@@ -79,6 +79,7 @@ renderAthleteHeader('Návod pro sportovce', false, true);
         <li>ve Stravě nový <strong>pitný režim</strong> průběžně po dávkách (voda, sladký nápoj, káva, čaj, protein, pivo, tvrdý alkohol, vlastní nápoj),</li>
         <li>nová dlaždice <strong>Z. dotazník</strong> na dashboardu a samostatná stránka zdravotního dotazníku,</li>
         <li>dlaždice <strong>Events</strong> a <strong>MyCoach</strong> na dashboardu (podle odemčení účtu),</li>
+        <li>dlaždice <strong>Soubory</strong> pro vlastní dokumenty s volitelným zpřístupněním trenérovi,</li>
         <li><strong>Apple Kalendář (CalDAV push)</strong> s možností stáhnout <strong>.mobileconfig</strong> profil,</li>
         <li>v kalendáři lepší práce s termíny: týdenní přehled, měsíční seznam, přehledné stavy schválení,</li>
         <li>sekce <strong>Videa</strong> s bezpečným interním přehráváním a automatickou obnovou seznamu.</li>
@@ -95,6 +96,7 @@ renderAthleteHeader('Návod pro sportovce', false, true);
             <a href="#athlete-food" class="btn btn-outline-dark btn-sm">Jídelníčky</a>
             <a href="#athlete-food-diary" class="btn btn-outline-dark btn-sm">Strava</a>
             <a href="#athlete-payments" class="btn btn-outline-dark btn-sm">Platby</a>
+            <a href="#athlete-files" class="btn btn-outline-dark btn-sm">Soubory</a>
             <a href="#athlete-events" class="btn btn-outline-dark btn-sm">Events</a>
             <a href="#athlete-mycoach" class="btn btn-outline-dark btn-sm">MyCoach</a>
             <a href="#athlete-messages" class="btn btn-outline-dark btn-sm">Zprávy</a>
@@ -112,6 +114,7 @@ renderAthleteHeader('Návod pro sportovce', false, true);
             <div class="col-12 col-md-6"><i class="fas fa-utensils me-2 text-muted"></i><strong>Jídelníčky:</strong> aktuální plán od trenéra</div>
             <div class="col-12 col-md-6"><i class="fas fa-bowl-food me-2 text-muted"></i><strong>Strava:</strong> reálně snědené jídlo, pitný režim, poznámky a fotky</div>
             <div class="col-12 col-md-6"><i class="fas fa-chart-line me-2 text-muted"></i><strong>Grafy:</strong> trend progresu a hmotnosti</div>
+            <div class="col-12 col-md-6"><i class="fas fa-folder-open me-2 text-muted"></i><strong>Soubory:</strong> vlastní dokumenty a jejich sdílení s trenérem</div>
             <div class="col-12 col-md-6"><i class="fas fa-video me-2 text-muted"></i><strong>Videa:</strong> sdílená videa od trenéra</div>
             <div class="col-12 col-md-6"><i class="fas fa-flag-checkered me-2 text-muted"></i><strong>Events:</strong> event karty, záložky, formuláře</div>
             <div class="col-12 col-md-6"><i class="fas fa-brain me-2 text-muted"></i><strong>MyCoach:</strong> cíle, dotazník, denní doporučení</div>
@@ -345,8 +348,22 @@ renderAthleteHeader('Návod pro sportovce', false, true);
     </div>
 </div>
 
+<div class="card border-0 shadow-sm mb-4" id="athlete-files">
+    <div class="card-header fw-semibold"><i class="fas fa-folder-open me-2 text-primary"></i>9) Soubory: vlastní dokumenty a sdílení s trenérem</div>
+    <div class="card-body">
+        <ol>
+            <li>Na dashboardu otevřete dlaždici Soubory.</li>
+            <li>Klikněte na Nahrát soubor a vyberte jeden dokument nebo více souborů ze svého zařízení.</li>
+            <li>Vyberte typ dokumentu; při výběru více souborů zadejte povinný společný název dokumentové sady.</li>
+            <li>Zapněte Zpřístupnit soubor trenérovi jen u podkladů, které má trenér vidět.</li>
+            <li>Po uploadu lze sdílení kdykoli přepnout; soukromé soubory vidíte pouze vy.</li>
+            <li>Soubory jsou v seznamu řazené podle typu; soubory v jedné sadě mají společný název a lze je stáhnout jednotlivě nebo smazat celou sadu.</li>
+        </ol>
+    </div>
+</div>
+
 <div class="card border-0 shadow-sm mb-4" id="athlete-events">
-    <div class="card-header fw-semibold"><i class="fas fa-flag-checkered me-2 text-warning"></i>9) Events: jak pracovat se speciálními událostmi <span class="manual-priority manual-priority-low">Volitelné</span></div>
+    <div class="card-header fw-semibold"><i class="fas fa-flag-checkered me-2 text-warning"></i>10) Events: jak pracovat se speciálními událostmi <span class="manual-priority manual-priority-low">Volitelné</span></div>
     <div class="card-body">
         <ol>
             <li>Pokud je modul odemčený, otevřete na dashboardu dlaždici Events.</li>
@@ -359,7 +376,7 @@ renderAthleteHeader('Návod pro sportovce', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4" id="athlete-mycoach">
-    <div class="card-header fw-semibold"><i class="fas fa-brain me-2 text-warning"></i>10) MyCoach: cíle, dotazník a denní doporučení <span class="manual-priority manual-priority-mid">Průběžně</span></div>
+    <div class="card-header fw-semibold"><i class="fas fa-brain me-2 text-warning"></i>11) MyCoach: cíle, dotazník a denní doporučení <span class="manual-priority manual-priority-mid">Průběžně</span></div>
     <div class="card-body">
         <ol>
             <li>Pokud je modul odemčený, otevřete na dashboardu dlaždici MyCoach.</li>
@@ -373,7 +390,7 @@ renderAthleteHeader('Návod pro sportovce', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header fw-semibold"><i class="fas fa-video me-2 text-warning"></i>11) Videa od trenéra: přehrávání a orientace</div>
+    <div class="card-header fw-semibold"><i class="fas fa-video me-2 text-warning"></i>12) Videa od trenéra: přehrávání a orientace</div>
     <div class="card-body">
         <h6 class="fw-bold">Jak otevřít videa od trenéra</h6>
         <ol>
@@ -393,7 +410,7 @@ renderAthleteHeader('Návod pro sportovce', false, true);
 </div>
 
 <div class="card border-0 shadow-sm mb-4" id="athlete-messages">
-    <div class="card-header fw-semibold"><i class="fas fa-envelope me-2 text-warning"></i>12) Zprávy: komunikace s trenérem <span class="manual-priority manual-priority-high">Reakce do 24 h</span></div>
+    <div class="card-header fw-semibold"><i class="fas fa-envelope me-2 text-warning"></i>13) Zprávy: komunikace s trenérem <span class="manual-priority manual-priority-high">Reakce do 24 h</span></div>
     <div class="card-body">
         <h6 class="fw-bold">Jak odeslat zprávu trenérovi</h6>
         <ol>

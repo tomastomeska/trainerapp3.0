@@ -1037,6 +1037,10 @@ renderAthleteHeader('Profil sportovce', false, true);
         <span class="quick-tile__label"><i class="fas fa-images me-1"></i>Galerie</span>
         <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
     </a>
+    <a href="<?= BASE_URL ?>/athlete_files.php" class="quick-tile quick-tile-info">
+        <span class="quick-tile__label"><i class="fas fa-folder-open me-1"></i>Soubory</span>
+        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+    </a>
     <a href="<?= BASE_URL ?>/athlete_videos.php" class="quick-tile quick-tile-danger">
         <span class="quick-tile__label"><i class="fas fa-video me-1"></i>Videa</span>
         <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>

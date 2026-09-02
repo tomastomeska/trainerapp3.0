@@ -206,8 +206,10 @@ renderAdminHeader('Návod pro SuperAdmin');
         <h6 class="fw-bold mt-3">Zprávy trenérům a hlášky po přihlášení</h6>
         <ol>
             <li>Systémové zprávy publikujte jasně, stručně a s termínem účinnosti.</li>
+            <li>V sekci Zprávy sportovcům odešlete interní oznámení všem sportovcům s aktivním přístupem do aplikace, bez ohledu na jejich trenéra.</li>
             <li>Hlášku po přihlášení používejte pro kritické změny nebo výpadky.</li>
             <li>U důležitých změn kombinujte hlášku + Infokanál + e-mailovou notifikaci.</li>
+            <li>Po zpřístupnění dokumentu sportovcem přijde trenérovi systémová zpráva i e-mail s názvem sportovce a typem dokumentu.</li>
         </ol>
     </div>
 </div>
@@ -218,6 +220,8 @@ renderAdminHeader('Návod pro SuperAdmin');
         <ol>
             <li>Pravidelně kontrolujte Errorlog a opakované chyby řešte prioritně.</li>
             <li>Migrace databáze spouštějte řízeně, mimo kritické špičky provozu.</li>
+            <li>Modul Soubory sportovce používá tabulku <code>athlete_files</code>; po nasazení spusťte na produkčním serveru <code>scripts/migrate_athlete_files.php</code>.</li>
+            <li>Dokumenty se ukládají do <code>uploads/athlete_files/athlete_ID/</code>; více souborů může tvořit jednu sadu přes <code>upload_batch</code> a zpřístupnění se ověřuje přes autorizovaný download endpoint.</li>
             <li>U synchronizací kalendářů kontrolujte fronty, chybové stavy a poslední úspěšné běhy.</li>
             <li>U e-mailů kontrolujte frontu notifikací a případné fallback odesílání.</li>
             <li>Před větší změnou si ověřte dopad na coach i athlete část aplikace.</li>

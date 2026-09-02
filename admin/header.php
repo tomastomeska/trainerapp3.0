@@ -135,8 +135,12 @@ function renderAdminHeader(string $title = ''): void {
 					<i class="fas fa-triangle-exclamation me-2"></i>Errorlog
 				</a>
 				<a href="<?= BASE_URL ?>/admin/zpravy.php"
-				   class="nav-link <?= in_array(basename($_SERVER['PHP_SELF']), ['zpravy.php','zprava_nova.php','zprava_detail.php']) ? 'active' : '' ?>">
+				   class="nav-link <?= in_array(basename($_SERVER['PHP_SELF']), ['zpravy.php','zprava_nova.php','zprava_detail.php','zprava_sportovci.php','zprava_sportovci_detail.php']) ? 'active' : '' ?>">
 					<i class="fas fa-comments me-2"></i>Zprávy trenérům
+				</a>
+				<a href="<?= BASE_URL ?>/admin/zprava_sportovci.php"
+				   class="nav-link <?= in_array(basename($_SERVER['PHP_SELF']), ['zprava_sportovci.php','zprava_sportovci_detail.php']) ? 'active' : '' ?>">
+					<i class="fas fa-bullhorn me-2"></i>Zprávy sportovcům
 				</a>
 				<a href="<?= BASE_URL ?>/admin/gallery.php"
 				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'gallery.php' ? 'active' : '' ?>">
