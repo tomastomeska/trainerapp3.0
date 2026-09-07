@@ -1720,11 +1720,13 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         CREATE TABLE IF NOT EXISTS `coach_calendar_locks` (
             `id`         INT AUTO_INCREMENT PRIMARY KEY,
             `coach_id`   INT NOT NULL,
+            `series_id`  VARCHAR(64) NULL,
             `note`       VARCHAR(255) NULL,
             `starts_at`  DATETIME NOT NULL,
             `ends_at`    DATETIME NOT NULL,
             `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY `idx_calendar_locks_series` (`coach_id`, `series_id`),
             KEY `idx_calendar_locks_coach_start` (`coach_id`, `starts_at`),
             KEY `idx_calendar_locks_coach_end` (`coach_id`, `ends_at`),
             CONSTRAINT `fk_calendar_locks_coach`

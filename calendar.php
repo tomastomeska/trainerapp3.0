@@ -769,6 +769,9 @@ renderHeader('Kalendář', false, true);
             <span class="badge" style="background:#f97316;color:#fff">Ke schválení</span>
             <span class="icloud-sync-legend"><span class="icloud-sync-mark">☁</span>Synchronizováno do iCloud</span>
             <span class="lock-chip">Uzamčeno</span>
+            <button type="button" class="btn btn-sm btn-outline-danger" id="deleteAllLocksBtn">
+                <i class="fas fa-unlock me-1"></i>Zrušit všechna uzamčení
+            </button>
         </div>
     </div>
 </div>
@@ -1420,6 +1423,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const paymentInfo = document.getElementById('paymentInfo');
     const requestInfo = document.getElementById('requestInfo');
     const deleteEventBtn = document.getElementById('deleteEventBtn');
+    const deleteAllLocksBtn = document.getElementById('deleteAllLocksBtn');
     const approveEventBtn = document.getElementById('approveEventBtn');
     const daypilotCalendarEl = document.getElementById('daypilotCalendar');
     const daypilotCard = document.getElementById('daypilotCard');
@@ -1441,6 +1445,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
     const focusDateParam = (urlParams.get('focus_date') || '').trim();
     let pendingFocusEventId = Number(urlParams.get('focus_event') || 0);
+    let activeLockSeriesId = '';
     let weekDataRequestSeq = 0;
     let navigationMonthValue = '';
 
@@ -2799,6 +2804,7 @@ document.addEventListener('DOMContentLoaded', () => {
             eventIsLockInput.checked = true;
             eventIsLockInput.disabled = true;
             lockIdInput.value = String(lock.id);
+            activeLockSeriesId = String(lock.series_id || '');
             eventIdInput.value = '';
 
             lockUnlockModeInput.checked = false;
@@ -2813,6 +2819,7 @@ document.addEventListener('DOMContentLoaded', () => {
             eventIsLockInput.checked = false;
             eventIsLockInput.disabled = true;
             lockIdInput.value = '';
+            activeLockSeriesId = '';
             eventIdInput.value = event.id;
             setSelectedEventTitleType(inferTitleTypeFromEvent(event));
             eventAthleteInput.value = event.athlete_id ? String(event.athlete_id) : '';
@@ -2863,6 +2870,7 @@ document.addEventListener('DOMContentLoaded', () => {
             eventIsLockInput.checked = false;
             eventIsLockInput.disabled = false;
             lockIdInput.value = '';
+            activeLockSeriesId = '';
             eventIdInput.value = '';
             setSelectedEventTitleType('training');
             eventAthleteInput.value = '';
@@ -3002,6 +3010,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: JSON.stringify({
                         csrf_token: csrfToken,
                         lock_id: lockIdInput.value ? Number(lockIdInput.value) : 0,
+                        update_scope: activeLockSeriesId && !lockUnlockModeInput.checked
+                            ? (confirm('Toto uzamčení je součástí opakované série. Chcete změnu použít pro celou sérii?\n\nOK = celá série\nStorno = pouze tento termín') ? 'series' : 'single')
+                            : 'single',
                         starts_at: lockStartsAt,
                         ends_at: lockEndsAt,
                         note: lockNoteInlineInput.value.trim(),
@@ -3244,7 +3255,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            if (!confirm('Opravdu chcete toto uzamčení smazat?')) {
+            let deleteScope = 'single';
+            if (activeLockSeriesId) {
+                const deleteSeries = confirm('Toto uzamčení je součástí opakované série. Chcete zrušit celou sérii?\n\nOK = celá série\nStorno = pouze tento termín');
+                deleteScope = deleteSeries ? 'series' : 'single';
+            } else if (!confirm('Opravdu chcete toto uzamčení smazat?')) {
                 return;
             }
 
@@ -3255,6 +3270,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({
                     csrf_token: csrfToken,
                     lock_id: lockId,
+                    delete_scope: deleteScope,
                 }),
             });
 
@@ -3316,6 +3332,31 @@ document.addEventListener('DOMContentLoaded', () => {
             finishDelete();
         }
     });
+
+    if (deleteAllLocksBtn) {
+        deleteAllLocksBtn.addEventListener('click', async () => {
+            if (!confirm('Opravdu chcete zrušit všechna uzamčení v celém kalendáři? Tato akce se týká pouze uzamčení, ne tréninků.')) {
+                return;
+            }
+            const finishDelete = beginBusyButton(deleteAllLocksBtn, 'Ruším...');
+            if (!finishDelete) return;
+            try {
+                const payload = await fetchJson('<?= BASE_URL ?>/api/calendar_delete_all_locks.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ csrf_token: csrfToken }),
+                });
+                if (!payload.success) {
+                    alert(payload.error || 'Uzamčení se nepodařilo zrušit.');
+                    return;
+                }
+                await loadWeekData();
+            } finally {
+                finishDelete();
+            }
+        });
+    }
 
     prevWeekBtn.addEventListener('click', async () => {
         currentWeekStart = addDays(currentWeekStart, -7);

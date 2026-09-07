@@ -312,6 +312,18 @@ $stmtSets = $pdo->prepare(
 $stmtSets->execute([$coachId]);
 $workoutSets = $stmtSets->fetchAll();
 
+$activeTrainingStmt = $pdo->prepare(
+        'SELECT ts.id, ts.paired_session_id, ts.started_at
+         FROM training_sessions ts
+         WHERE ts.athlete_id = ?
+             AND ts.completed_at IS NULL
+             AND ts.deleted_by_coach_at IS NULL
+         ORDER BY ts.started_at ASC
+         LIMIT 1'
+);
+$activeTrainingStmt->execute([$athleteId]);
+$activeTraining = $activeTrainingStmt->fetch() ?: null;
+
 renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']), true, true);
 ?>
 
@@ -518,7 +530,7 @@ renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']), true, true
                     <a href="<?= BASE_URL ?>/exercises.php" class="alert-link">cviky</a>.
                 </div>
                 <?php else: ?>
-                <form action="<?= BASE_URL ?>/training_start.php" method="post">
+                <form action="<?= BASE_URL ?>/training_start.php" method="post" id="startTrainingForm"<?= $activeTraining ? ' onsubmit="return openActiveTrainingWarning();"' : '' ?>>
                     <?= csrfField() ?>
                     <input type="hidden" name="athlete_id" value="<?= $athleteId ?>">
                     <div class="mb-3">
@@ -548,6 +560,38 @@ renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']), true, true
         </div>
     </div>
 </div>
+
+<?php if ($activeTraining): ?>
+<div class="modal fade" id="activeTrainingWarningModal" tabindex="-1" aria-labelledby="activeTrainingWarningModalLabel" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title fw-bold" id="activeTrainingWarningModalLabel">
+                    <i class="fas fa-triangle-exclamation me-2"></i>Neukončený trénink
+                </h5>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">Sportovec <strong><?= h($athlete['first_name'] . ' ' . $athlete['last_name']) ?></strong> má stále neukončený trénink.</p>
+                <p class="mb-0 text-muted">Byl zahájen <?= h(formatDateTime((string)$activeTraining['started_at'])) ?>. Nejprve ho ukončete, teprve potom lze zahájit další.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Zpět</button>
+                <a href="<?= BASE_URL ?>/<?= $activeTraining['paired_session_id'] ? 'training_paired_session.php?id=' . (int)$activeTraining['paired_session_id'] : 'training_session.php?id=' . (int)$activeTraining['id'] ?>" class="btn btn-danger fw-bold">
+                    <i class="fas fa-flag-checkered me-1"></i>Přejít k ukončení
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+function openActiveTrainingWarning() {
+    var modalElement = document.getElementById('activeTrainingWarningModal');
+    if (!modalElement || typeof bootstrap === 'undefined') return true;
+    bootstrap.Modal.getOrCreateInstance(modalElement).show();
+    return false;
+}
+</script>
+<?php endif; ?>
 
 <div class="card border-0 shadow-sm mb-4" id="health-questionnaire">
     <div class="card-header bg-danger-subtle fw-semibold">

@@ -28,6 +28,22 @@ if (!verifyCsrf((string)($input['csrf_token'] ?? ''))) {
 $coachId = (int)getCurrentCoachId();
 $pdo = getDB();
 
+function generateUuidV4(): string
+{
+    $data = random_bytes(16);
+    $data[6] = chr((ord($data[6]) & 0x0f) | 0x40);
+    $data[8] = chr((ord($data[8]) & 0x3f) | 0x80);
+    $hex = bin2hex($data);
+    return sprintf(
+        '%s-%s-%s-%s-%s',
+        substr($hex, 0, 8),
+        substr($hex, 8, 4),
+        substr($hex, 12, 4),
+        substr($hex, 16, 4),
+        substr($hex, 20, 12)
+    );
+}
+
 $lockId = (int)($input['lock_id'] ?? 0);
 $startsAtRaw = trim((string)($input['starts_at'] ?? ''));
 $endsAtRaw = trim((string)($input['ends_at'] ?? ''));
@@ -35,6 +51,7 @@ $note = trim((string)($input['note'] ?? ''));
 $mode = trim((string)($input['mode'] ?? 'lock'));
 $repeatMode = trim((string)($input['repeat_mode'] ?? 'none'));
 $repeatUntilRaw = trim((string)($input['repeat_until'] ?? ''));
+$updateScope = trim((string)($input['update_scope'] ?? 'single'));
 
 if (!in_array($mode, ['lock', 'unlock'], true)) {
     $mode = 'lock';
@@ -202,11 +219,86 @@ if ($mode === 'unlock') {
 }
 
 if ($lockId > 0) {
-    $ownerStmt = $pdo->prepare('SELECT id FROM coach_calendar_locks WHERE id = ? AND coach_id = ?');
+    $ownerStmt = $pdo->prepare('SELECT id, series_id FROM coach_calendar_locks WHERE id = ? AND coach_id = ?');
     $ownerStmt->execute([$lockId, $coachId]);
-    if (!$ownerStmt->fetch()) {
+    $ownerLock = $ownerStmt->fetch();
+    if (!$ownerLock) {
         echo json_encode(['success' => false, 'error' => 'Uzamčení nenalezeno']);
         exit;
+    }
+
+    if ($updateScope === 'series' && !empty($ownerLock['series_id'])) {
+        $seriesStmt = $pdo->prepare(
+            'SELECT id, starts_at, ends_at
+             FROM coach_calendar_locks
+             WHERE coach_id = ? AND series_id = ?
+             ORDER BY starts_at ASC, id ASC'
+        );
+        $seriesStmt->execute([$coachId, $ownerLock['series_id']]);
+        $seriesLocks = $seriesStmt->fetchAll();
+        if (!$seriesLocks) {
+            echo json_encode(['success' => false, 'error' => 'Série uzamčení nenalezena']);
+            exit;
+        }
+
+        $newDurationSeconds = $end->getTimestamp() - $start->getTimestamp();
+        $seriesIds = array_map(static fn (array $row): int => (int)$row['id'], $seriesLocks);
+        $placeholders = implode(',', array_fill(0, count($seriesIds), '?'));
+        $eventConflict = $pdo->prepare(
+            'SELECT id FROM coach_calendar_events
+             WHERE coach_id = ? AND starts_at < ? AND ends_at > ? LIMIT 1'
+        );
+        $lockConflict = $pdo->prepare(
+            "SELECT id FROM coach_calendar_locks
+             WHERE coach_id = ? AND starts_at < ? AND ends_at > ? AND id NOT IN ($placeholders) LIMIT 1"
+        );
+
+        try {
+            $pdo->beginTransaction();
+            foreach ($seriesLocks as $index => $seriesLock) {
+                $occurrenceStart = clone $start;
+                $occurrenceStart->modify('+' . ($index * 7) . ' days');
+                $occurrenceEnd = (clone $occurrenceStart)->modify('+' . $newDurationSeconds . ' seconds');
+                $occurrenceStartSql = $occurrenceStart->format('Y-m-d H:i:s');
+                $occurrenceEndSql = $occurrenceEnd->format('Y-m-d H:i:s');
+
+                $eventConflict->execute([$coachId, $occurrenceEndSql, $occurrenceStartSql]);
+                if ($eventConflict->fetch()) {
+                    throw new RuntimeException('V zadaném intervalu máte naplánovaný trénink: ' . $occurrenceStart->format('d.m.Y H:i'));
+                }
+                $lockConflict->execute(array_merge([$coachId, $occurrenceEndSql, $occurrenceStartSql], $seriesIds));
+                if ($lockConflict->fetch()) {
+                    throw new RuntimeException('Uzamčený interval se překrývá s jiným uzamčením.');
+                }
+            }
+
+            $updateSeries = $pdo->prepare(
+                'UPDATE coach_calendar_locks
+                 SET note = ?, starts_at = ?, ends_at = ?
+                 WHERE id = ? AND coach_id = ?'
+            );
+            foreach ($seriesLocks as $index => $seriesLock) {
+                $occurrenceStart = clone $start;
+                $occurrenceStart->modify('+' . ($index * 7) . ' days');
+                $occurrenceEnd = (clone $occurrenceStart)->modify('+' . $newDurationSeconds . ' seconds');
+                $updateSeries->execute([
+                    $note,
+                    $occurrenceStart->format('Y-m-d H:i:s'),
+                    $occurrenceEnd->format('Y-m-d H:i:s'),
+                    (int)$seriesLock['id'],
+                    $coachId,
+                ]);
+            }
+            $pdo->commit();
+            echo json_encode(['success' => true, 'id' => $lockId, 'mode' => 'updated_series']);
+            exit;
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            exit;
+        }
     }
 
     $conflictStmt->execute([$coachId, $endSql, $startSql]);
@@ -256,9 +348,10 @@ while (true) {
 }
 
 $insertLock = $pdo->prepare(
-    'INSERT INTO coach_calendar_locks (coach_id, note, starts_at, ends_at)
-     VALUES (?, ?, ?, ?)'
+    'INSERT INTO coach_calendar_locks (coach_id, series_id, note, starts_at, ends_at)
+     VALUES (?, ?, ?, ?, ?)'
 );
+$seriesId = $repeatMode === 'none' ? null : generateUuidV4();
 
 try {
     $pdo->beginTransaction();
@@ -279,7 +372,7 @@ try {
             throw new RuntimeException('Uzamčení se překrývá s existujícím intervalem: ' . $occStart->format('d.m.Y H:i'));
         }
 
-        $insertLock->execute([$coachId, $note, $occStartSql, $occEndSql]);
+        $insertLock->execute([$coachId, $seriesId, $note, $occStartSql, $occEndSql]);
     }
 
     $pdo->commit();

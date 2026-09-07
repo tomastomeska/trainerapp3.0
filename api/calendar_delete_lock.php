@@ -26,6 +26,7 @@ if (!verifyCsrf((string)($input['csrf_token'] ?? ''))) {
 }
 
 $lockId = (int)($input['lock_id'] ?? 0);
+$deleteScope = (string)($input['delete_scope'] ?? 'single');
 $coachId = (int)getCurrentCoachId();
 
 if ($lockId <= 0) {
@@ -34,8 +35,21 @@ if ($lockId <= 0) {
 }
 
 $pdo = getDB();
-$del = $pdo->prepare('DELETE FROM coach_calendar_locks WHERE id = ? AND coach_id = ?');
-$del->execute([$lockId, $coachId]);
+$owner = $pdo->prepare('SELECT series_id FROM coach_calendar_locks WHERE id = ? AND coach_id = ?');
+$owner->execute([$lockId, $coachId]);
+$lock = $owner->fetch();
+if (!$lock) {
+    echo json_encode(['success' => false, 'error' => 'Uzamčení nenalezeno']);
+    exit;
+}
+
+if ($deleteScope === 'series' && !empty($lock['series_id'])) {
+    $del = $pdo->prepare('DELETE FROM coach_calendar_locks WHERE coach_id = ? AND series_id = ?');
+    $del->execute([$coachId, $lock['series_id']]);
+} else {
+    $del = $pdo->prepare('DELETE FROM coach_calendar_locks WHERE id = ? AND coach_id = ?');
+    $del->execute([$lockId, $coachId]);
+}
 
 if ($del->rowCount() === 0) {
     echo json_encode(['success' => false, 'error' => 'Uzamčení nenalezeno']);

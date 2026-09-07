@@ -47,7 +47,8 @@ $stmt = $pdo->prepare(
 $stmt->execute([$athleteId]);
 $existing = $stmt->fetch();
 if ($existing) {
-    // Pokračuj v existující session (párové nebo individuální)
+    flash('warning', 'Sportovec má stále neukončený trénink. Nejprve ho ukončete, teprve potom lze zahájit další.');
+    // Přímý POST také vrátí trenéra k existujícímu tréninku (párovému nebo individuálnímu).
     if ($existing['paired_session_id']) {
         redirect(BASE_URL . '/training_paired_session.php?id=' . $existing['paired_session_id']);
     }

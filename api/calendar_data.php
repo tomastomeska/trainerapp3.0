@@ -61,7 +61,7 @@ $eventsStmt->execute([
 $events = $eventsStmt->fetchAll();
 
 $locksStmt = $pdo->prepare(
-    'SELECT id, note, starts_at, ends_at
+    'SELECT id, series_id, note, starts_at, ends_at
      FROM coach_calendar_locks
      WHERE coach_id = ?
        AND starts_at < ?

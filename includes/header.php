@@ -8,6 +8,24 @@ function renderHeader(string $title = '', bool $withCharts = false, bool $compac
     $flash   = getFlash();
     $appName = APP_NAME;
     $fullTitle = $title ? "$title – $appName" : $appName;
+    $openTrainingAlerts = [];
+    if ($coach) {
+        try {
+            $openTrainingStmt = getDB()->prepare(
+                'SELECT ts.id, ts.paired_session_id, ts.started_at, a.first_name, a.last_name
+                 FROM training_sessions ts
+                 JOIN athletes a ON a.id = ts.athlete_id
+                 WHERE a.coach_id = ?
+                   AND ts.completed_at IS NULL
+                   AND ts.deleted_by_coach_at IS NULL
+                 ORDER BY ts.started_at ASC'
+            );
+            $openTrainingStmt->execute([(int)$coach['id']]);
+            $openTrainingAlerts = $openTrainingStmt->fetchAll();
+        } catch (Throwable $e) {
+            $openTrainingAlerts = [];
+        }
+    }
     ?>
 <!DOCTYPE html>
 <html lang="cs">
@@ -233,6 +251,71 @@ if ($coach) {
 <?php endif; ?>
 
 <div class="container-fluid px-3 px-md-4 py-3 py-md-4">
+<?php if (!empty($openTrainingAlerts)): ?>
+<div class="modal fade" id="unfinishedTrainingModal" tabindex="-1" aria-labelledby="unfinishedTrainingModalLabel" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title fw-bold" id="unfinishedTrainingModalLabel">
+                    <i class="fas fa-clock me-2"></i>Trénink stále není ukončený
+                </h5>
+            </div>
+            <div class="modal-body">
+                <p class="mb-3">U některého tréninku uplynulo od zahájení 120 minut. Zkontrolujte prosím, zda jste ho nezapomněli ukončit.</p>
+                <div class="list-group">
+                <?php foreach ($openTrainingAlerts as $openTraining): ?>
+                    <?php $openTrainingName = trim((string)$openTraining['first_name'] . ' ' . (string)$openTraining['last_name']); ?>
+                    <div class="list-group-item d-flex justify-content-between align-items-center gap-3" data-training-start="<?= h((string)$openTraining['started_at']) ?>">
+                        <span class="fw-semibold"><?= h($openTrainingName) ?></span>
+                        <span class="text-muted text-nowrap"><?= h(formatDateTime((string)$openTraining['started_at'])) ?></span>
+                    </div>
+                <?php endforeach; ?>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Později</button>
+                <a href="#" class="btn btn-warning fw-bold" id="unfinishedTrainingOpenBtn">
+                    <i class="fas fa-flag-checkered me-1"></i>Přejít k ukončení
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var unfinishedTrainingModal = document.getElementById('unfinishedTrainingModal');
+    if (!unfinishedTrainingModal || typeof bootstrap === 'undefined') return;
+
+    var openTrainings = <?= json_encode(array_map(static function (array $training): array {
+        return [
+            'id' => (int)$training['id'],
+            'paired_session_id' => $training['paired_session_id'] !== null ? (int)$training['paired_session_id'] : null,
+            'started_at' => (string)$training['started_at'],
+        ];
+    }, $openTrainingAlerts), JSON_UNESCAPED_SLASHES) ?>;
+    var warningDelay = 120 * 60 * 1000;
+    var now = Date.now();
+    var overdueTraining = openTrainings.find(function (training) {
+        return now - new Date(training.started_at.replace(' ', 'T')).getTime() >= warningDelay;
+    });
+    if (!overdueTraining) return;
+
+    unfinishedTrainingModal.querySelectorAll('[data-training-start]').forEach(function (item) {
+        var startedAt = new Date(item.dataset.trainingStart.replace(' ', 'T')).getTime();
+        item.classList.toggle('d-none', now - startedAt < warningDelay);
+    });
+
+    var target = overdueTraining.paired_session_id
+        ? '<?= BASE_URL ?>/training_paired_session.php?id=' + overdueTraining.paired_session_id
+        : '<?= BASE_URL ?>/training_session.php?id=' + overdueTraining.id;
+    document.getElementById('unfinishedTrainingOpenBtn').href = target;
+
+    var modal = new bootstrap.Modal(unfinishedTrainingModal);
+    var remaining = warningDelay - (now - new Date(overdueTraining.started_at.replace(' ', 'T')).getTime());
+    window.setTimeout(function () { modal.show(); }, Math.max(0, remaining));
+});
+</script>
+<?php endif; ?>
 <?php if ($flash): ?>
 <div class="alert alert-<?= h($flash['type']) ?> alert-dismissible fade show" role="alert">
     <?= !empty($flash['html']) ? $flash['message'] : h($flash['message']) ?>
