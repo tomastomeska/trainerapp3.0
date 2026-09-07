@@ -9,7 +9,7 @@ requireLogin();
 $coachId  = getCurrentCoachId();
 $pairedId = intParam($_GET, 'id');
 $pdo      = getDB();
-$trainingVenues = getTrainingVenues();
+$trainingVenues = getTrainingVenuesForCoach((int)$coachId);
 
 // Ověření párového tréninku
 $stmt = $pdo->prepare('SELECT id, started_at FROM paired_sessions WHERE id = ? AND coach_id = ?');

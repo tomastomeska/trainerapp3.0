@@ -413,7 +413,7 @@ if (!in_array($activeTab, ['week', 'month', 'trainings', 'apple'], true)) {
     $activeTab = 'week';
 }
 
-$venues = array_values(array_filter(getTrainingVenuesForCoach((int)$athlete['coach_id']), fn($row) => !empty($row['name'])));
+$venues = array_values(array_filter(getTrainingVenues(), fn($row) => !empty($row['name'])));
 renderAthleteHeader('Můj kalendář', false, true);
 ?>
 

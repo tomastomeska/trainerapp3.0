@@ -378,7 +378,7 @@ if ($customTitle !== '') {
 if ($location !== '') {
     rememberTrainingVenue($location, $coachId);
 
-    $venueStmt = $pdo->prepare('SELECT name FROM training_venues WHERE name = ? LIMIT 1');
+    $venueStmt = $pdo->prepare('SELECT name FROM training_venues WHERE name = ? AND created_by_coach_id IS NULL LIMIT 1');
     $venueStmt->execute([$location]);
     $venue = $venueStmt->fetch();
     if ($venue && !empty($venue['name'])) {

@@ -162,6 +162,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         flash('success', 'Sportoviště bylo smazáno.');
         redirect(BASE_URL . '/admin/venues.php');
     }
+
+    if ($action === 'transfer_private') {
+        $venueId = (int)($_POST['venue_id'] ?? 0);
+        if ($venueId <= 0) {
+            flash('danger', 'Místo se nepodařilo předat trenérovi.');
+            redirect(BASE_URL . '/admin/venues.php');
+        }
+
+        $stmtVenue = $pdo->prepare(
+            'SELECT id, name, is_active, created_by_coach_id
+             FROM training_venues
+             WHERE id = ? AND created_by_coach_id IS NOT NULL'
+        );
+        $stmtVenue->execute([$venueId]);
+        $venue = $stmtVenue->fetch();
+        if (!$venue) {
+            flash('danger', 'Místo nebylo nalezeno nebo už patří do administrace.');
+            redirect(BASE_URL . '/admin/venues.php');
+        }
+
+        $coachId = (int)$venue['created_by_coach_id'];
+        $venueName = (string)$venue['name'];
+        $isActive = (int)$venue['is_active'] === 1 ? 1 : 0;
+
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare(
+                'INSERT INTO coach_training_venues (coach_id, name, is_active)
+                 VALUES (?, ?, ?)
+                 ON DUPLICATE KEY UPDATE
+                    is_active = VALUES(is_active),
+                    updated_at = NOW()'
+            )->execute([$coachId, $venueName, $isActive]);
+
+            $pdo->prepare('DELETE FROM training_venues WHERE id = ? AND created_by_coach_id IS NOT NULL')
+                ->execute([$venueId]);
+
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            flash('danger', 'Předání místa trenérovi selhalo.');
+            redirect(BASE_URL . '/admin/venues.php');
+        }
+
+        flash('success', 'Místo bylo předáno trenérovi a zmizelo z administračního katalogu.');
+        redirect(BASE_URL . '/admin/venues.php');
+    }
 }
 
 $venues = $pdo->query(
@@ -170,7 +219,18 @@ $venues = $pdo->query(
              WHERE ts.location COLLATE utf8mb4_unicode_ci = tv.name COLLATE utf8mb4_unicode_ci) AS usage_count
      FROM training_venues tv
      LEFT JOIN coaches c ON c.id = tv.created_by_coach_id
+     WHERE tv.created_by_coach_id IS NULL
      ORDER BY tv.is_active DESC, tv.name ASC'
+)->fetchAll();
+
+$coachOwnedGlobalVenues = $pdo->query(
+    'SELECT tv.*, c.name AS coach_name, c.username AS coach_username,
+            (SELECT COUNT(*) FROM training_sessions ts
+             WHERE ts.location COLLATE utf8mb4_unicode_ci = tv.name COLLATE utf8mb4_unicode_ci) AS usage_count
+     FROM training_venues tv
+     JOIN coaches c ON c.id = tv.created_by_coach_id
+     WHERE tv.created_by_coach_id IS NOT NULL
+     ORDER BY c.name ASC, tv.name ASC'
 )->fetchAll();
 
 $privateCoachVenues = $pdo->query(
@@ -320,9 +380,7 @@ renderAdminHeader('Sportoviště');
                 $venueName = (string)$venue['name'];
                 $venueAddress = (string)($venue['address'] ?? '');
                 $venueNote = (string)($venue['note'] ?? $venue['admin_note'] ?? '');
-                $venueCreator = !empty($venue['coach_name']) || !empty($venue['coach_username'])
-                    ? (string)($venue['coach_name'] ?: $venue['coach_username'])
-                    : 'Admin nebo import';
+                $venueCreator = 'Admin nebo import';
                 $detailId = 'venueDetail' . (int)$venue['id'];
                 ?>
                 <div class="venue-item venue-row"
@@ -412,6 +470,64 @@ renderAdminHeader('Sportoviště');
             <?php endif; ?>
         </div>
     </div>
+
+    <?php if (!empty($coachOwnedGlobalVenues)): ?>
+    <div class="card border-0 shadow-sm mt-4">
+        <div class="card-header bg-white fw-semibold d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <span>Místa k předání trenérům</span>
+            <span class="badge text-bg-warning"><?= count($coachOwnedGlobalVenues) ?> míst</span>
+        </div>
+        <div class="card-body">
+            <div class="small text-muted mb-3">
+                Tato místa vznikla u konkrétních trenérů, ale ještě leží v administračním katalogu. Převod je tiše přesune jen k jejich trenérovi; tréninky s tímto názvem zůstanou beze změny.
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Místo</th>
+                            <th>Trenér</th>
+                            <th>Použito</th>
+                            <th>Stav</th>
+                            <th class="text-end">Akce</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($coachOwnedGlobalVenues as $legacyVenue): ?>
+                        <?php $legacyCoachName = (string)($legacyVenue['coach_name'] ?: $legacyVenue['coach_username']); ?>
+                        <tr>
+                            <td class="fw-semibold"><?= h((string)$legacyVenue['name']) ?></td>
+                            <td>
+                                <?= h($legacyCoachName) ?>
+                                <?php if (!empty($legacyVenue['coach_username'])): ?>
+                                <span class="text-muted">(<?= h((string)$legacyVenue['coach_username']) ?>)</span>
+                                <?php endif; ?>
+                            </td>
+                            <td><span class="badge text-bg-dark"><?= (int)$legacyVenue['usage_count'] ?>x</span></td>
+                            <td>
+                                <span class="badge <?= (int)$legacyVenue['is_active'] === 1 ? 'text-bg-success' : 'text-bg-secondary' ?>">
+                                    <?= (int)$legacyVenue['is_active'] === 1 ? 'Aktivní' : 'Neaktivní' ?>
+                                </span>
+                            </td>
+                            <td class="text-end">
+                                <form method="post" class="d-inline">
+                                    <?= csrfField() ?>
+                                    <input type="hidden" name="action" value="transfer_private">
+                                    <input type="hidden" name="venue_id" value="<?= (int)$legacyVenue['id'] ?>">
+                                    <button type="submit" class="btn btn-sm btn-outline-primary"
+                                            onclick="return confirm('Předat toto místo pouze trenérovi? Z administračního katalogu zmizí, historie tréninků zůstane beze změny.')">
+                                        <i class="fas fa-user-check me-1"></i>Předat trenérovi
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <div class="card border-0 shadow-sm mt-4">
         <div class="card-header bg-white fw-semibold d-flex align-items-center justify-content-between flex-wrap gap-2">

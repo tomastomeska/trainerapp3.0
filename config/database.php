@@ -3060,6 +3060,7 @@ function getTrainingVenues(bool $includeInactive = false): array {
         $stmt = $pdo->query(
             'SELECT *
              FROM `training_venues`
+             WHERE `created_by_coach_id` IS NULL
              ORDER BY `is_active` DESC, `name` ASC'
         );
         return $stmt->fetchAll();
@@ -3068,7 +3069,8 @@ function getTrainingVenues(bool $includeInactive = false): array {
     $stmt = $pdo->query(
         'SELECT *
          FROM `training_venues`
-         WHERE `is_active` = 1
+         WHERE `created_by_coach_id` IS NULL
+           AND `is_active` = 1
          ORDER BY `name` ASC'
     );
     return $stmt->fetchAll();
@@ -3079,14 +3081,13 @@ function getTrainingVenuesForCoach(int $coachId, bool $includeInactive = false):
 
     $globalSql = 'SELECT *
                   FROM `training_venues`
-                  WHERE (`created_by_coach_id` IS NULL OR `created_by_coach_id` = ?)';
+                  WHERE `created_by_coach_id` IS NULL';
     if (!$includeInactive) {
         $globalSql .= ' AND `is_active` = 1';
     }
     $globalSql .= ' ORDER BY `is_active` DESC, `name` ASC';
 
-    $globalStmt = $pdo->prepare($globalSql);
-    $globalStmt->execute([$coachId]);
+    $globalStmt = $pdo->query($globalSql);
     $venues = $globalStmt->fetchAll();
 
     $privateSql = 'SELECT `id`, `coach_id`, `name`, `is_active`, `created_at`, `updated_at`
@@ -3157,20 +3158,15 @@ function rememberTrainingVenue(string $name, ?int $createdByCoachId = null): ?in
 
     if ($createdByCoachId !== null) {
         $existingStmt = $pdo->prepare(
-            'SELECT `id`, `created_by_coach_id`, `is_active`
+            'SELECT `id`, `is_active`
              FROM `training_venues`
-             WHERE `name` = ? AND (`created_by_coach_id` IS NULL OR `created_by_coach_id` = ?)
-             ORDER BY CASE WHEN `created_by_coach_id` IS NULL THEN 0 ELSE 1 END, `id` ASC
+             WHERE `name` = ? AND `created_by_coach_id` IS NULL
              LIMIT 1'
         );
-        $existingStmt->execute([$name, $createdByCoachId]);
+        $existingStmt->execute([$name]);
         $existingVenue = $existingStmt->fetch();
 
         if ($existingVenue) {
-            if ($existingVenue['created_by_coach_id'] !== null && (int)$existingVenue['is_active'] === 0) {
-                $pdo->prepare('UPDATE `training_venues` SET `is_active` = 1, `updated_at` = NOW() WHERE `id` = ?')
-                    ->execute([(int)$existingVenue['id']]);
-            }
             return (int)$existingVenue['id'];
         }
 

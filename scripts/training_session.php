@@ -8,7 +8,7 @@ requireLogin();
 $coachId   = getCurrentCoachId();
 $sessionId = intParam($_GET, 'id');
 $pdo       = getDB();
-$trainingVenues = getTrainingVenues();
+$trainingVenues = getTrainingVenuesForCoach((int)$coachId);
 
 // Načtení session + ověření, že patří trenérovi
 $stmt = $pdo->prepare(

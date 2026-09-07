@@ -7,7 +7,7 @@ requireLogin();
 
 $coachId = getCurrentCoachId();
 $pdo = getDB();
-$trainingVenues = getTrainingVenues();
+$trainingVenues = getTrainingVenuesForCoach((int)$coachId);
 $golfCourses = [];
 $teesByCourse = [];
 $errors = [];

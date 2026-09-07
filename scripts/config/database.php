@@ -382,6 +382,21 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
 
+    // Soukromá místa trenérů (nezobrazují se ostatním trenérům)
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `coach_training_venues` (
+            `id`         INT AUTO_INCREMENT PRIMARY KEY,
+            `coach_id`   INT NOT NULL,
+            `name`       VARCHAR(255) NOT NULL,
+            `is_active`  TINYINT(1) NOT NULL DEFAULT 1,
+            `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `uq_coach_training_venue_name` (`coach_id`, `name`),
+            KEY `idx_coach_training_venues_active_name` (`coach_id`, `is_active`, `name`),
+            CONSTRAINT `fk_coach_training_venue_coach` FOREIGN KEY (`coach_id`) REFERENCES `coaches`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
     // Kompatibilita starší verze sportovišť (admin_note -> note + adresa)
     $stmtVenueAddress = $pdo->query("SHOW COLUMNS FROM training_venues LIKE 'address'");
     if (!$stmtVenueAddress->fetch()) {
@@ -950,6 +965,7 @@ function getTrainingVenues(bool $includeInactive = false): array {
         $stmt = $pdo->query(
             'SELECT *
              FROM `training_venues`
+             WHERE `created_by_coach_id` IS NULL
              ORDER BY `is_active` DESC, `name` ASC'
         );
         return $stmt->fetchAll();
@@ -958,10 +974,83 @@ function getTrainingVenues(bool $includeInactive = false): array {
     $stmt = $pdo->query(
         'SELECT *
          FROM `training_venues`
-         WHERE `is_active` = 1
+         WHERE `created_by_coach_id` IS NULL
+           AND `is_active` = 1
          ORDER BY `name` ASC'
     );
     return $stmt->fetchAll();
+}
+
+function getTrainingVenuesForCoach(int $coachId, bool $includeInactive = false): array {
+    $pdo = getDB();
+
+    $globalSql = 'SELECT *
+                  FROM `training_venues`
+                  WHERE `created_by_coach_id` IS NULL';
+    if (!$includeInactive) {
+        $globalSql .= ' AND `is_active` = 1';
+    }
+    $globalSql .= ' ORDER BY `is_active` DESC, `name` ASC';
+
+    $globalStmt = $pdo->query($globalSql);
+    $venues = $globalStmt->fetchAll();
+
+    $privateSql = 'SELECT `id`, `coach_id`, `name`, `is_active`, `created_at`, `updated_at`
+                   FROM `coach_training_venues`
+                   WHERE `coach_id` = ?';
+    if (!$includeInactive) {
+        $privateSql .= ' AND `is_active` = 1';
+    }
+    $privateSql .= ' ORDER BY `is_active` DESC, `name` ASC';
+
+    $privateStmt = $pdo->prepare($privateSql);
+    $privateStmt->execute([$coachId]);
+    $privateVenues = $privateStmt->fetchAll();
+
+    $merged = [];
+    foreach ($venues as $venue) {
+        $name = trim((string)($venue['name'] ?? ''));
+        if ($name === '') {
+            continue;
+        }
+        $merged[mb_strtolower($name, 'UTF-8')] = $venue;
+    }
+
+    foreach ($privateVenues as $privateVenue) {
+        $name = trim((string)($privateVenue['name'] ?? ''));
+        if ($name === '') {
+            continue;
+        }
+
+        $key = mb_strtolower($name, 'UTF-8');
+        if (isset($merged[$key])) {
+            continue;
+        }
+
+        $merged[$key] = [
+            'id' => (int)$privateVenue['id'],
+            'name' => $name,
+            'address' => null,
+            'note' => null,
+            'is_active' => (int)$privateVenue['is_active'],
+            'created_by_coach_id' => $coachId,
+            'created_at' => $privateVenue['created_at'] ?? null,
+            'updated_at' => $privateVenue['updated_at'] ?? null,
+            'is_private_for_coach' => 1,
+        ];
+    }
+
+    $result = array_values($merged);
+    usort($result, static function (array $a, array $b): int {
+        $aActive = (int)($a['is_active'] ?? 0);
+        $bActive = (int)($b['is_active'] ?? 0);
+        if ($aActive !== $bActive) {
+            return $bActive <=> $aActive;
+        }
+        return strcasecmp((string)($a['name'] ?? ''), (string)($b['name'] ?? ''));
+    });
+
+    return $result;
 }
 
 function rememberTrainingVenue(string $name, ?int $createdByCoachId = null): ?int {
@@ -971,6 +1060,34 @@ function rememberTrainingVenue(string $name, ?int $createdByCoachId = null): ?in
     }
 
     $pdo = getDB();
+
+    if ($createdByCoachId !== null) {
+        $existingStmt = $pdo->prepare(
+            'SELECT `id`, `is_active`
+             FROM `training_venues`
+             WHERE `name` = ? AND `created_by_coach_id` IS NULL
+             LIMIT 1'
+        );
+        $existingStmt->execute([$name]);
+        $existingVenue = $existingStmt->fetch();
+
+        if ($existingVenue) {
+            return (int)$existingVenue['id'];
+        }
+
+        $privateStmt = $pdo->prepare(
+            'INSERT INTO `coach_training_venues` (`coach_id`, `name`, `is_active`)
+             VALUES (?, ?, 1)
+             ON DUPLICATE KEY UPDATE
+                `id` = LAST_INSERT_ID(`id`),
+                `is_active` = 1,
+                `updated_at` = NOW()'
+        );
+        $privateStmt->execute([$createdByCoachId, $name]);
+
+        return (int)$pdo->lastInsertId();
+    }
+
     $stmt = $pdo->prepare(
         'INSERT INTO `training_venues` (`name`, `created_by_coach_id`, `is_active`)
          VALUES (?, ?, 1)

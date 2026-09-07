@@ -490,13 +490,13 @@ if ($isRequestChangeMode) {
 }
 
 if ($location !== null) {
-    rememberTrainingVenue($location, (int)$athlete['coach_id']);
-
-    $venueStmt = $pdo->prepare('SELECT name FROM training_venues WHERE name = ? LIMIT 1');
+    $venueStmt = $pdo->prepare('SELECT name FROM training_venues WHERE name = ? AND created_by_coach_id IS NULL AND is_active = 1 LIMIT 1');
     $venueStmt->execute([$location]);
     $venue = $venueStmt->fetch();
     if ($venue && !empty($venue['name'])) {
         $location = (string)$venue['name'];
+    } else {
+        $location = null;
     }
 }
 
