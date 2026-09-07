@@ -5488,6 +5488,71 @@ function sendAthleteCalendarNotificationEmailNow(string $toEmail, string $athlet
   }
 }
 
+function sendGalleryNotificationEmail(string $toEmail, string $recipientName, string $recipientRole): bool {
+  if (!isEmailNotificationEnabled('gallery_notification')) {
+    return true;
+  }
+
+  $subject = 'Nový příspěvek v galerii TrainerApp';
+  if (isEmailQueueEnabled() && emailNotificationQueueTableAvailable()) {
+    return enqueueEmailNotificationJob(
+      'gallery_notification',
+      $toEmail,
+      $subject,
+      [
+        'recipient_name' => $recipientName,
+        'recipient_role' => $recipientRole,
+      ]
+    );
+  }
+
+  if (isEmailQueueEnabled() && !emailNotificationQueueTableAvailable()) {
+    error_log('Skipping immediate gallery email to avoid blocking request; email queue table is unavailable.');
+    return false;
+  }
+
+  return sendGalleryNotificationEmailNow($toEmail, $recipientName, $recipientRole, $subject);
+}
+
+function sendGalleryNotificationEmailNow(string $toEmail, string $recipientName, string $recipientRole, string $subject): bool {
+  $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
+  if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
+    return false;
+  }
+  require_once $phpmailerSrc . '/Exception.php';
+  require_once $phpmailerSrc . '/PHPMailer.php';
+  require_once $phpmailerSrc . '/SMTP.php';
+
+  $isAthlete = $recipientRole === 'athlete';
+  $galleryPath = $isAthlete ? '/athlete_gallery.php' : '/gallery.php';
+  $host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
+  $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+  $base = $host !== '' ? $scheme . '://' . $host : 'https://www.reservio.online';
+  $link = $base . BASE_URL . $galleryPath;
+  $safeName = htmlspecialchars($recipientName, ENT_QUOTES, 'UTF-8');
+  $safeLink = htmlspecialchars($link, ENT_QUOTES, 'UTF-8');
+  $htmlBody = "<p>Dobrý den, <strong>{$safeName}</strong>,</p>"
+    . '<p>v galerii TrainerApp je nový příspěvek od administrátora.</p>'
+    . "<p><a href=\"{$safeLink}\" style=\"background:#0d6efd;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none\">Otevřít galerii</a></p>"
+    . '<hr><p style="color:#888;font-size:.85em">TrainerApp – automatické notifikace</p>';
+  $plainBody = "Dobrý den, {$recipientName},\n\nv galerii TrainerApp je nový příspěvek od administrátora.\n\nOtevřít galerii: {$link}\n\nTrainerApp";
+
+  $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+  try {
+    _configureMail($mail);
+    $mail->addAddress($toEmail);
+    $mail->isHTML(true);
+    $mail->Subject = $subject;
+    $mail->Body = $htmlBody;
+    $mail->AltBody = $plainBody;
+    $mail->send();
+    return true;
+  } catch (\Exception $e) {
+    error_log('sendGalleryNotificationEmail error: ' . $mail->ErrorInfo . ' | ' . $e->getMessage());
+    return false;
+  }
+}
+
 function createCoachSystemMessage(int $coachId, string $subject, string $body, bool $sendEmail = true): ?int {
   $pdo = getDB();
   $ins = $pdo->prepare("INSERT INTO admin_messages (subject, body, sent_at, message_source) VALUES (?, ?, NOW(), 'system')");
@@ -6823,6 +6888,10 @@ function processEmailNotificationQueue(int $limit = 20): array {
         $athleteName = trim((string)($payload['athlete_name'] ?? 'sportovec'));
         $message = trim((string)($payload['message'] ?? ''));
         $sent = sendAthleteCalendarNotificationEmailNow($recipientEmail, $athleteName, $subject, $message);
+      } elseif ($templateKey === 'gallery_notification') {
+        $recipientName = trim((string)($payload['recipient_name'] ?? 'uživateli'));
+        $recipientRole = trim((string)($payload['recipient_role'] ?? 'coach'));
+        $sent = sendGalleryNotificationEmailNow($recipientEmail, $recipientName, $recipientRole, $subject);
       } else {
         throw new RuntimeException('Neznamy template email fronty: ' . $templateKey);
       }

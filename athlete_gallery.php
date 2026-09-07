@@ -49,12 +49,27 @@ foreach ($sharedFiles as &$sharedFile) {
 }
 unset($sharedFile);
 
-$adminFiles = $pdo->query("
+$adminAthleteRecipientsAvailable = (bool)$pdo->query("SHOW TABLES LIKE 'admin_gallery_file_athletes'")->fetch();
+$specificAdminAthleteCondition = $adminAthleteRecipientsAvailable
+    ? "OR (
+           agf.visibility = 'specific_athletes'
+           AND EXISTS (
+               SELECT 1
+               FROM admin_gallery_file_athletes agfa
+               WHERE agfa.file_id = agf.id
+                 AND agfa.athlete_id = ?
+           )
+       )"
+    : '';
+$adminFilesStmt = $pdo->prepare("
     SELECT agf.*
     FROM admin_gallery_files agf
-    WHERE agf.visibility = 'all_athletes'
+    WHERE agf.visibility IN ('all_athletes', 'all_users')
+       $specificAdminAthleteCondition
     ORDER BY agf.created_at DESC
-")->fetchAll();
+");
+$adminFilesStmt->execute($adminAthleteRecipientsAvailable ? [$athleteId] : []);
+$adminFiles = $adminFilesStmt->fetchAll();
 $adminFiles = array_values(array_filter($adminFiles, static function (array $file): bool {
     $filePath = (string)($file['file_path'] ?? '');
     return $filePath !== '' && file_exists(__DIR__ . '/uploads/gallery/admin/' . $filePath);
@@ -63,6 +78,14 @@ foreach ($adminFiles as &$adminFile) {
     $adminFile['_source'] = 'admin';
 }
 unset($adminFile);
+
+$pdo->prepare(
+        "UPDATE athlete_notifications
+         SET read_at = COALESCE(read_at, NOW())
+         WHERE athlete_id = ?
+             AND read_at IS NULL
+             AND subject = 'Nový soubor v galerii od administrátora'"
+)->execute([$athleteId]);
 
 function buildSharedSignature(array $files): string
 {
@@ -101,24 +124,32 @@ function renderSharedFilesSection(array $sharedFiles, string $uploadBaseUrl, str
                 $fileSrc = $uploadBaseUrl . '/' . rawurlencode($f['file_path']);
                 $ico = match($f['file_type']) { 'image' => 'fa-image', 'video' => 'fa-video', default => 'fa-file-alt' };
                 $icoColor = match($f['file_type']) { 'image' => 'text-success', 'video' => 'text-danger', default => 'text-info' };
+                $previewType = $f['file_type'] === 'document' ? 'document' : $f['file_type'];
+                $previewCall = 'openGalleryPreview(' . implode(', ', [
+                    json_encode($previewType, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP),
+                    json_encode($fileSrc, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP),
+                    json_encode($f['original_name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP),
+                    json_encode((string)($f['description'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP),
+                    json_encode(date('d.m.Y H:i', strtotime($f['created_at'])), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP),
+                ]) . ')';
                 ?>
                 <?php if ($f['file_type'] === 'image'): ?>
                 <button type="button" class="btn p-0 border-0 d-block w-100 text-start"
-                        onclick="openGalleryPreview('image', '<?= h($fileSrc) ?>', '<?= h(addslashes($f['original_name'])) ?>')">
+                    onclick="<?= h($previewCall) ?>">
                     <img src="<?= $fileSrc ?>" alt="<?= h($f['original_name']) ?>"
                          style="width:100%;height:120px;object-fit:cover;border-radius:.375rem .375rem 0 0">
                 </button>
                 <?php elseif ($f['file_type'] === 'video'): ?>
                 <div class="d-flex align-items-center justify-content-center" style="height:100px;background:#f8f9fa;border-radius:.375rem .375rem 0 0">
                     <button type="button" class="btn p-0 border-0 text-decoration-none"
-                            onclick="openGalleryPreview('video', '<?= h($fileSrc) ?>', '<?= h(addslashes($f['original_name'])) ?>')">
+                            onclick="<?= h($previewCall) ?>">
                         <i class="fas <?= $ico ?> <?= $icoColor ?>" style="font-size:2.5rem"></i>
                     </button>
                 </div>
                 <?php else: ?>
                 <div class="d-flex align-items-center justify-content-center" style="height:80px;background:#f8f9fa;border-radius:.375rem .375rem 0 0">
                     <button type="button" class="btn p-0 border-0 text-decoration-none"
-                            onclick="openGalleryPreview('document', '<?= h($fileSrc) ?>', '<?= h(addslashes($f['original_name'])) ?>')">
+                            onclick="<?= h($previewCall) ?>">
                         <i class="fas <?= $ico ?> <?= $icoColor ?>" style="font-size:2rem"></i>
                     </button>
                 </div>
@@ -130,7 +161,7 @@ function renderSharedFilesSection(array $sharedFiles, string $uploadBaseUrl, str
                     <?php endif; ?>
                     <div class="text-muted" style="font-size:.7rem"><?= date('d.m.Y', strtotime($f['created_at'])) ?></div>
                     <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-1" style="font-size:.75rem"
-                            onclick="openGalleryPreview('<?= h($f['file_type'] === 'document' ? 'document' : $f['file_type']) ?>', '<?= h($fileSrc) ?>', '<?= h(addslashes($f['original_name'])) ?>')">
+                            onclick="<?= h($previewCall) ?>">
                         <i class="fas fa-eye me-1"></i>Otevrit
                     </button>
                 </div>
@@ -189,13 +220,19 @@ renderAthleteHeader('Galerie', false, true);
 <div id="gallerySharedSection"><?= $sharedHtml ?></div>
 
 <div class="modal fade" id="filePreviewModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-fullscreen-md-down modal-xl modal-dialog-centered">
+    <div class="modal-dialog modal-fullscreen-md-down modal-xl modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
-                <h5 class="modal-title text-truncate" id="filePreviewTitle">Nahled souboru</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <div class="min-w-0">
+                    <h5 class="modal-title text-break" id="filePreviewTitle">Příspěvek</h5>
+                    <div class="small text-muted" id="filePreviewDate"></div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
             </div>
-            <div class="modal-body p-2 p-md-3" id="filePreviewBody" style="min-height:50vh;background:#f8f9fa"></div>
+            <div class="modal-body p-3">
+                <div id="filePreviewDescription" class="mb-3 text-break" style="white-space:pre-wrap"></div>
+                <div id="filePreviewBody" class="bg-light rounded p-2" style="min-height:200px"></div>
+            </div>
         </div>
     </div>
 </div>
@@ -203,24 +240,37 @@ renderAthleteHeader('Galerie', false, true);
 <script>
 let gallerySignature = <?= json_encode($sharedSignature) ?>;
 
-function openGalleryPreview(type, src, name) {
+function openGalleryPreview(type, src, name, description, createdAt) {
     const title = document.getElementById('filePreviewTitle');
+    const date = document.getElementById('filePreviewDate');
+    const descriptionElement = document.getElementById('filePreviewDescription');
     const body = document.getElementById('filePreviewBody');
-    if (!title || !body) return;
+    if (!title || !date || !descriptionElement || !body) return;
 
-    title.textContent = name || 'Nahled souboru';
+    title.textContent = name || 'Příspěvek';
+    date.textContent = createdAt || '';
+    descriptionElement.textContent = description || '';
+    descriptionElement.classList.toggle('d-none', !description);
+    body.replaceChildren();
 
+    let media;
     if (type === 'image') {
-        body.innerHTML = '<img src="' + src + '" alt="' + (name || '') + '" style="max-width:100%;max-height:75vh;display:block;margin:0 auto;border-radius:.5rem">';
+        media = document.createElement('img');
+        media.alt = name || '';
+        media.style.cssText = 'max-width:100%;max-height:70vh;display:block;margin:0 auto;border-radius:.5rem';
+        media.src = src;
     } else if (type === 'video') {
-        body.innerHTML = '<video controls autoplay style="width:100%;max-height:75vh;border-radius:.5rem;background:#000"><source src="' + src + '"></video>';
+        media = document.createElement('video');
+        media.controls = true;
+        media.style.cssText = 'width:100%;max-height:70vh;border-radius:.5rem;background:#000';
+        media.src = src;
     } else {
-        body.innerHTML = '' +
-            '<iframe src="' + src + '" style="width:100%;height:72vh;border:0;border-radius:.5rem;background:#fff"></iframe>' +
-            '<div class="mt-2 text-center">' +
-            '  <a href="' + src + '" class="btn btn-outline-secondary btn-sm">Stahnout soubor</a>' +
-            '</div>';
+        media = document.createElement('iframe');
+        media.title = name || 'Náhled dokumentu';
+        media.style.cssText = 'width:100%;height:70vh;border:0;border-radius:.5rem;background:#fff';
+        media.src = src;
     }
+    body.appendChild(media);
 
     const modalEl = document.getElementById('filePreviewModal');
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);

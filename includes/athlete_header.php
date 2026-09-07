@@ -7,6 +7,7 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
     $fullTitle = $title !== '' ? ($title . ' - ' . APP_NAME) : APP_NAME;
     $unread = 0;
     $unreadInfo = 0;
+    $unreadGallery = 0;
     $hasPendingAgreement = false;
 
     if ($athlete) {
@@ -15,6 +16,14 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
             $stmt = $pdo->prepare('SELECT COUNT(*) FROM athlete_notifications WHERE athlete_id = ? AND read_at IS NULL');
             $stmt->execute([(int)$athlete['id']]);
             $unread = (int)$stmt->fetchColumn();
+
+                        $galleryUnreadStmt = $pdo->prepare(
+                                "SELECT COUNT(*) FROM athlete_notifications
+                                 WHERE athlete_id = ? AND read_at IS NULL
+                                     AND subject = 'Nový soubor v galerii od administrátora'"
+                        );
+                        $galleryUnreadStmt->execute([(int)$athlete['id']]);
+                        $unreadGallery = (int)$galleryUnreadStmt->fetchColumn();
 
             $infoUnreadStmt = $pdo->prepare("\n                SELECT COUNT(*)\n                FROM info_articles ia\n                JOIN info_categories ic ON ic.id = ia.category_id\n                LEFT JOIN info_article_reads_athlete ir ON ir.article_id = ia.id AND ir.athlete_id = ?\n                WHERE ia.is_active = 1\n                  AND ia.published_at <= NOW()\n                  AND ia.target_audience IN ('all', 'athlete')\n                  AND ic.is_active = 1\n                  AND ic.audience IN ('all', 'athlete')\n                  AND ir.article_id IS NULL\n            ");
             $infoUnreadStmt->execute([(int)$athlete['id']]);
@@ -35,6 +44,7 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
         } catch (Throwable $e) {
             $unread = 0;
             $unreadInfo = 0;
+            $unreadGallery = 0;
             $hasPendingAgreement = false;
         }
     }
@@ -75,7 +85,11 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_mealplans.php"><i class="fas fa-utensils me-1"></i>Jídelníčky</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_food_diary.php"><i class="fas fa-bowl-food me-1"></i>Strava</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_graphs.php"><i class="fas fa-chart-line me-1"></i>Grafy</a></li>
-                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_gallery.php"><i class="fas fa-images me-1"></i>Galerie</a></li>
+                <li class="nav-item"><a class="nav-link d-inline-flex align-items-center" href="<?= BASE_URL ?>/athlete_gallery.php"><i class="fas fa-images me-1"></i>Galerie
+                    <?php if ($unreadGallery > 0): ?>
+                    <span class="badge rounded-pill bg-danger ms-1" style="font-size:.65rem"><?= $unreadGallery ?></span>
+                    <?php endif; ?>
+                </a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_videos.php"><i class="fas fa-video me-1"></i>Videa</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_manual.php"><i class="fas fa-circle-question me-1"></i>Návod</a></li>
                 <li class="nav-item"><a class="nav-link d-inline-flex align-items-center" href="<?= BASE_URL ?>/athlete_terms.php"><i class="fas fa-file-contract me-1"></i>Podmínky

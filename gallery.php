@@ -110,7 +110,7 @@ $athleteFolders = $athleteFolders->fetchAll();
 $adminFilesStmt = $pdo->prepare("
     SELECT agf.*
     FROM admin_gallery_files agf
-    WHERE agf.visibility = 'all_coaches'
+    WHERE agf.visibility IN ('all_coaches', 'all_users')
        OR (
            agf.visibility = 'specific_coaches'
            AND EXISTS (
@@ -127,6 +127,15 @@ $adminFiles = array_values(array_filter($adminFilesStmt->fetchAll(), static func
     $filePath = (string)($file['file_path'] ?? '');
     return $filePath !== '' && file_exists(__DIR__ . '/uploads/gallery/admin/' . $filePath);
 }));
+
+$pdo->prepare(
+        "UPDATE admin_message_recipients r
+         JOIN admin_messages m ON m.id = r.message_id
+         SET r.read_at = COALESCE(r.read_at, NOW())
+         WHERE r.coach_id = ?
+             AND r.read_at IS NULL
+             AND m.subject = 'Nový soubor v galerii od administrátora'"
+)->execute([$coachId]);
 
 renderHeader('Galerie', false, true);
 ?>
@@ -157,7 +166,8 @@ renderHeader('Galerie', false, true);
     $fileIcon = match($file['file_type']) { 'image' => 'fa-image text-success', 'video' => 'fa-video text-danger', default => 'fa-file-alt text-info' };
     ?>
     <div class="col-6 col-md-4 col-lg-3 col-xl-2">
-        <a href="<?= h($fileUrl) ?>" target="_blank" rel="noopener" class="text-decoration-none">
+        <button type="button" class="btn p-0 border-0 bg-transparent text-start w-100 h-100"
+                onclick='openAdminGalleryPost(<?= json_encode($file['file_type'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($fileUrl, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($file['original_name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode((string)($file['description'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode(date('d.m.Y H:i', strtotime($file['created_at'])), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)'>
             <div class="card border-0 shadow-sm h-100 gallery-folder-card overflow-hidden">
                 <?php if ($file['file_type'] === 'image'): ?>
                 <img src="<?= h($fileUrl) ?>" alt="<?= h($file['original_name']) ?>" style="width:100%;height:120px;object-fit:cover">
@@ -174,11 +184,64 @@ renderHeader('Galerie', false, true);
                     <div class="text-muted" style="font-size:.7rem"><?= date('d.m.Y', strtotime($file['created_at'])) ?></div>
                 </div>
             </div>
-        </a>
+        </button>
     </div>
     <?php endforeach; ?>
 </div>
 <?php endif; ?>
+
+<div class="modal fade" id="adminGalleryPostModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen-md-down modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <div class="min-w-0">
+                    <h5 class="modal-title text-break" id="adminGalleryPostTitle">Příspěvek od administrátora</h5>
+                    <div class="small text-muted" id="adminGalleryPostDate"></div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+            </div>
+            <div class="modal-body p-3">
+                <div id="adminGalleryPostDescription" class="mb-3 text-break" style="white-space:pre-wrap"></div>
+                <div id="adminGalleryPostMedia" class="bg-light rounded p-2" style="min-height:200px"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function openAdminGalleryPost(type, src, name, description, createdAt) {
+    document.getElementById('adminGalleryPostTitle').textContent = name || 'Příspěvek od administrátora';
+    document.getElementById('adminGalleryPostDate').textContent = createdAt || '';
+
+    const descriptionElement = document.getElementById('adminGalleryPostDescription');
+    descriptionElement.textContent = description || '';
+    descriptionElement.classList.toggle('d-none', !description);
+
+    const mediaElement = document.getElementById('adminGalleryPostMedia');
+    mediaElement.replaceChildren();
+
+    let media;
+    if (type === 'image') {
+        media = document.createElement('img');
+        media.alt = name || '';
+        media.style.cssText = 'display:block;max-width:100%;max-height:70vh;margin:0 auto;border-radius:.375rem';
+        media.src = src;
+    } else if (type === 'video') {
+        media = document.createElement('video');
+        media.controls = true;
+        media.style.cssText = 'display:block;width:100%;max-height:70vh;background:#000;border-radius:.375rem';
+        media.src = src;
+    } else {
+        media = document.createElement('iframe');
+        media.title = name || 'Náhled dokumentu';
+        media.style.cssText = 'display:block;width:100%;height:70vh;border:0;background:#fff;border-radius:.375rem';
+        media.src = src;
+    }
+    mediaElement.appendChild(media);
+
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('adminGalleryPostModal')).show();
+}
+</script>
 
 <h5 class="fw-bold text-muted mb-3"><i class="fas fa-user-shield me-2"></i>Moje galerie</h5>
 <div class="row g-3 mb-4">

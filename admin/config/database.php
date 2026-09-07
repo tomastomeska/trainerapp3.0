@@ -593,7 +593,7 @@ function ensureSchemaUpgrades(PDO $pdo): void {
             `file_type`           ENUM('image','video','document') NOT NULL DEFAULT 'document',
             `mime_type`           VARCHAR(200) NULL,
             `description`         TEXT NULL,
-            `visibility`          ENUM('all_coaches','specific_coaches','all_athletes') NOT NULL DEFAULT 'all_coaches',
+            `visibility`          ENUM('all_coaches','specific_coaches','all_athletes','specific_athletes','all_users') NOT NULL DEFAULT 'all_coaches',
             `uploaded_by_admin_id` INT NULL,
             `created_at`          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -610,6 +610,20 @@ function ensureSchemaUpgrades(PDO $pdo): void {
                 FOREIGN KEY (`file_id`) REFERENCES `admin_gallery_files`(`id`) ON DELETE CASCADE,
             CONSTRAINT `fk_admin_gc_coach`
                 FOREIGN KEY (`coach_id`) REFERENCES `coaches`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    // Galerie administrátora – viditelnost pro konkrétní sportovce
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `admin_gallery_file_athletes` (
+            `id`         INT AUTO_INCREMENT PRIMARY KEY,
+            `file_id`    INT NOT NULL,
+            `athlete_id` INT NOT NULL,
+            UNIQUE KEY `uq_admin_gallery_file_athlete` (`file_id`, `athlete_id`),
+            CONSTRAINT `fk_admin_ga_file`
+                FOREIGN KEY (`file_id`) REFERENCES `admin_gallery_files`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_admin_ga_athlete`
+                FOREIGN KEY (`athlete_id`) REFERENCES `athletes`(`id`) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
 

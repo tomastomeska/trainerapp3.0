@@ -109,6 +109,7 @@ function renderHeader(string $title = '', bool $withCharts = false, bool $compac
 $unreadMsgCount = 0;
 $pendingCalendarCount = 0;
 $unreadInfoCount = 0;
+$unreadGalleryCount = 0;
 if ($coach) {
     try {
         $pdo = getDB();
@@ -118,6 +119,17 @@ if ($coach) {
         ");
         $unreadStmt->execute([$coach['id']]);
         $unreadMsgCount = (int)$unreadStmt->fetchColumn();
+
+                $galleryUnreadStmt = $pdo->prepare("
+                        SELECT COUNT(*)
+                        FROM admin_message_recipients r
+                        JOIN admin_messages m ON m.id = r.message_id
+                        WHERE r.coach_id = ?
+                            AND r.read_at IS NULL
+                            AND m.subject = 'Nový soubor v galerii od administrátora'
+                ");
+                $galleryUnreadStmt->execute([$coach['id']]);
+                $unreadGalleryCount = (int)$galleryUnreadStmt->fetchColumn();
 
         $pendingCalendarStmt = $pdo->prepare("
             SELECT COUNT(*)
@@ -136,6 +148,7 @@ if ($coach) {
         $unreadMsgCount = 0;
         $pendingCalendarCount = 0;
         $unreadInfoCount = 0;
+        $unreadGalleryCount = 0;
     }
 }
 ?>
@@ -186,8 +199,11 @@ if ($coach) {
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link" href="<?= BASE_URL ?>/gallery.php">
+                    <a class="nav-link d-inline-flex align-items-center" href="<?= BASE_URL ?>/gallery.php">
                         <i class="fas fa-images me-1"></i>Galerie
+                        <?php if ($unreadGalleryCount > 0): ?>
+                        <span class="badge rounded-pill bg-danger ms-1 top-badge"><?= $unreadGalleryCount ?></span>
+                        <?php endif; ?>
                     </a>
                 </li>
                 <li class="nav-item">
