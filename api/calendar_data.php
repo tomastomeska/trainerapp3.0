@@ -12,6 +12,8 @@ if (!isLoggedIn()) {
 $coachId = getCurrentCoachId();
 $pdo = getDB();
 $lockSeriesAvailable = (bool)$pdo->query("SHOW COLUMNS FROM coach_calendar_locks LIKE 'series_id'")->fetch();
+$eventTitleTypeAvailable = (bool)$pdo->query("SHOW COLUMNS FROM coach_calendar_events LIKE 'title_type'")->fetch();
+$eventTitleTypeSelect = $eventTitleTypeAvailable ? 'e.title_type' : "'training' AS title_type";
 
 $weekStartRaw = trim((string)($_GET['week_start'] ?? ''));
 $weekBase = DateTimeImmutable::createFromFormat('Y-m-d', $weekStartRaw) ?: new DateTimeImmutable('today');
@@ -29,6 +31,7 @@ $eventsStmt = $pdo->prepare(
             e.coach_modified_at,
             e.is_makeup_session,
             e.billing_month,
+            ' . $eventTitleTypeSelect . ',
             e.custom_title,
             e.location,
             e.starts_at,

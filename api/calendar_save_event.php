@@ -27,6 +27,14 @@ if (!verifyCsrf((string)($input['csrf_token'] ?? ''))) {
 
 $coachId = (int)getCurrentCoachId();
 $pdo = getDB();
+$titleTypeColumn = $pdo->query("SHOW COLUMNS FROM coach_calendar_events LIKE 'title_type'")->fetch();
+if (!$titleTypeColumn) {
+    echo json_encode([
+        'success' => false,
+        'error' => 'Kalendář vyžaduje jednorázovou aktualizaci databáze administrátorem.',
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
 
 function generateUuidV4(): string
 {
@@ -393,6 +401,7 @@ if ($eventId > 0) {
                 e.coach_modified_at,
                 e.is_makeup_session,
                 e.billing_month,
+                e.title_type,
                 e.custom_title,
                 e.location,
                 e.starts_at,
@@ -511,6 +520,7 @@ if ($eventId > 0) {
              is_makeup_session = ?,
              billing_month = ?,
              color_key = ?,
+             title_type = ?,
              custom_title = ?,
              location = ?,
              starts_at = ?,
@@ -523,6 +533,7 @@ if ($eventId > 0) {
     $oldSeriesId = (string)($existingEvent['series_id'] ?? '');
     $oldSecondAthleteId = (int)($existingEvent['second_athlete_id'] ?? 0);
     $oldLocation = (string)($existingEvent['location'] ?? '');
+    $oldTitleType = (string)($existingEvent['title_type'] ?? 'training');
     $oldTitle = (string)($existingEvent['custom_title'] ?? '');
     $oldIsMakeup = (int)($existingEvent['is_makeup_session'] ?? 0);
     $oldBillingMonth = (string)($existingEvent['billing_month'] ?? '');
@@ -535,6 +546,7 @@ if ($eventId > 0) {
         || ($oldSeriesId !== (string)$newSeriesId)
         || ($oldSecondAthleteId !== (int)($secondAthleteId ?? 0))
         || ($oldLocation !== (string)$location)
+        || ($oldTitleType !== $titleType)
         || ($oldTitle !== (string)$customTitle)
         || ($oldIsMakeup !== (int)$isMakeupSession)
         || ($oldBillingMonth !== $billingMonthSql);
@@ -546,6 +558,7 @@ if ($eventId > 0) {
                     e.second_athlete_id,
                     e.starts_at,
                     e.ends_at,
+                    e.title_type,
                     e.custom_title,
                     e.location,
                     e.is_makeup_session,
@@ -572,12 +585,14 @@ if ($eventId > 0) {
 
         $sourceOldStart = (string)($sourceEvent['starts_at'] ?? '');
         $sourceOldEnd = (string)($sourceEvent['ends_at'] ?? '');
+        $sourceOldTitleType = (string)($sourceEvent['title_type'] ?? 'training');
         $sourceOldTitle = (string)($sourceEvent['custom_title'] ?? '');
         $sourceOldLocation = (string)($sourceEvent['location'] ?? '');
         $sourceOldIsMakeup = (int)($sourceEvent['is_makeup_session'] ?? 0);
         $sourceOldBillingMonth = (string)($sourceEvent['billing_month'] ?? '');
         $sourceChanged = ($sourceOldStart !== $startSql)
             || ($sourceOldEnd !== $endSql)
+            || ($sourceOldTitleType !== $titleType)
             || ($sourceOldTitle !== (string)$customTitle)
             || ($sourceOldLocation !== (string)$location)
             || ($sourceOldIsMakeup !== (int)$isMakeupSession)
@@ -595,6 +610,7 @@ if ($eventId > 0) {
                  is_makeup_session = ?,
                  billing_month = ?,
                  color_key = ?,
+                 title_type = ?,
                  custom_title = ?,
                  location = ?,
                  starts_at = ?,
@@ -615,6 +631,7 @@ if ($eventId > 0) {
                 (int)$isMakeupSession,
                 $billingMonthSql,
                 $colorKey,
+                $titleType,
                 $customTitle,
                 $location,
                 $startSql,
@@ -702,7 +719,7 @@ if ($eventId > 0) {
     try {
         $pdo->beginTransaction();
 
-        $upd->execute([$athleteId, $secondAthleteId, $newSeriesId, $nextApprovalStatus, $coachModifiedAt, (int)$isMakeupSession, $billingMonthSql, $colorKey, $customTitle, $location, $startSql, $endSql, $eventId, $coachId]);
+        $upd->execute([$athleteId, $secondAthleteId, $newSeriesId, $nextApprovalStatus, $coachModifiedAt, (int)$isMakeupSession, $billingMonthSql, $colorKey, $titleType, $customTitle, $location, $startSql, $endSql, $eventId, $coachId]);
 
         if ($shouldCreateRecurrenceFromUpdate && $repeatUntilForUpdate instanceof DateTime) {
             $lockStmtFuture = $pdo->prepare(
@@ -724,8 +741,8 @@ if ($eventId > 0) {
             );
 
             $insertStmtFuture = $pdo->prepare(
-                'INSERT INTO coach_calendar_events (coach_id, athlete_id, second_athlete_id, requested_by_athlete_id, approval_status, coach_modified_at, is_makeup_session, billing_month, series_id, color_key, custom_title, location, starts_at, ends_at)
-                 VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)'
+                'INSERT INTO coach_calendar_events (coach_id, athlete_id, second_athlete_id, requested_by_athlete_id, approval_status, coach_modified_at, is_makeup_session, billing_month, series_id, color_key, title_type, custom_title, location, starts_at, ends_at)
+                 VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             );
 
             $cursor = clone $start;
@@ -764,6 +781,7 @@ if ($eventId > 0) {
                     $occurrenceBillingMonthSql,
                     $newSeriesId,
                     $colorKey,
+                    $titleType,
                     $customTitle,
                     $location,
                     $occurrenceStartSql,
@@ -870,8 +888,8 @@ $overlapStmt = $pdo->prepare(
 );
 
 $insertStmt = $pdo->prepare(
-    'INSERT INTO coach_calendar_events (coach_id, athlete_id, second_athlete_id, requested_by_athlete_id, approval_status, coach_modified_at, is_makeup_session, billing_month, series_id, color_key, custom_title, location, starts_at, ends_at)
-     VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO coach_calendar_events (coach_id, athlete_id, second_athlete_id, requested_by_athlete_id, approval_status, coach_modified_at, is_makeup_session, billing_month, series_id, color_key, title_type, custom_title, location, starts_at, ends_at)
+     VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 
 $seriesId = $repeatMode === 'none' ? null : generateUuidV4();
@@ -910,6 +928,7 @@ try {
             $occurrenceBillingMonthSql,
             $seriesId,
             $colorKey,
+            $titleType,
             $customTitle,
             $location,
             $occurrenceStartSql,

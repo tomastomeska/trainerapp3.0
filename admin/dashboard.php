@@ -7,6 +7,32 @@ requireAdminLogin();
 require_once __DIR__ . '/header.php';
 
 $pdo = getDB();
+$calendarTitleTypeColumn = $pdo->query("SHOW COLUMNS FROM coach_calendar_events LIKE 'title_type'")->fetch();
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'enable_calendar_title_type') {
+    if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
+        flash('danger', 'Neplatný bezpečnostní token.');
+        redirect(BASE_URL . '/admin/dashboard.php');
+    }
+
+    try {
+        if (!$calendarTitleTypeColumn) {
+            $pdo->exec(
+                "ALTER TABLE coach_calendar_events
+                 ADD COLUMN title_type ENUM('training','consultation','other','group_lesson') NOT NULL DEFAULT 'training'
+                 AFTER color_key"
+            );
+        }
+        $pdo->exec("UPDATE coach_calendar_events SET title_type = 'consultation' WHERE custom_title = 'Konzultační hodina'");
+        $pdo->exec("UPDATE coach_calendar_events SET title_type = 'other' WHERE custom_title = 'Jiné'");
+        $pdo->exec("UPDATE coach_calendar_events SET title_type = 'group_lesson' WHERE custom_title = 'Skupinová lekce'");
+        flash('success', 'Kalendář byl aktualizován. Typ události se nyní při editaci zachová.');
+    } catch (Throwable $e) {
+        error_log('Calendar title type migration failed: ' . $e->getMessage());
+        flash('danger', 'Kalendář se nepodařilo aktualizovat. Kontaktujte správce serveru.');
+    }
+    redirect(BASE_URL . '/admin/dashboard.php');
+}
 
 // Statistiky
 $totalCoaches  = (int)$pdo->query('SELECT COUNT(*) FROM coaches')->fetchColumn();
@@ -49,6 +75,22 @@ renderAdminHeader('Přehled');
         </a>
     </div>
 </div>
+
+<?php if (!$calendarTitleTypeColumn): ?>
+<div class="alert alert-warning d-flex justify-content-between align-items-center gap-3 flex-wrap">
+    <div>
+        <i class="fas fa-calendar-days me-2"></i>
+        Kalendář potřebuje jednorázovou aktualizaci pro zachování typu události při editaci.
+    </div>
+    <form method="post" class="m-0">
+        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+        <input type="hidden" name="action" value="enable_calendar_title_type">
+        <button type="submit" class="btn btn-warning fw-semibold">
+            <i class="fas fa-play me-1"></i>Aktualizovat kalendář
+        </button>
+    </form>
+</div>
+<?php endif; ?>
 
 <!-- Statistiky -->
 <style>

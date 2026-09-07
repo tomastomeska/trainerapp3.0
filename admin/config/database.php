@@ -301,6 +301,7 @@ function ensureSchemaUpgrades(PDO $pdo): void {
             `coach_modified_at` DATETIME NULL,
             `series_id`    CHAR(36) NULL,
             `color_key`    VARCHAR(20) NOT NULL DEFAULT 'blue',
+            `title_type`   ENUM('training','consultation','other','group_lesson') NOT NULL DEFAULT 'training',
             `custom_title` VARCHAR(140) NULL,
             `location`     VARCHAR(255) NULL,
             `starts_at`    DATETIME NOT NULL,

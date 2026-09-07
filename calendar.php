@@ -1841,6 +1841,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function inferTitleTypeFromEvent(event) {
+        const storedTitleType = String(event?.title_type || '');
+        if (Object.prototype.hasOwnProperty.call(titleTypeLabels, storedTitleType)) {
+            return storedTitleType;
+        }
+
         const normalizedTitle = String(event?.custom_title || '').trim().toLowerCase();
         if (normalizedTitle === titleTypeLabels.consultation.toLowerCase()) {
             return 'consultation';
@@ -2824,7 +2829,7 @@ document.addEventListener('DOMContentLoaded', () => {
             setSelectedEventTitleType(inferTitleTypeFromEvent(event));
             eventAthleteInput.value = event.athlete_id ? String(event.athlete_id) : '';
             eventSecondAthleteInput.value = event.second_athlete_id ? String(event.second_athlete_id) : '';
-            eventCustomTitleInput.value = inferTitleTypeFromEvent(event) === 'training' ? (event.custom_title || '') : '';
+            eventCustomTitleInput.value = event.custom_title || '';
             const hasLocationOption = !!Array.from(eventLocationModeInput.options).find((option) => option.value === String(event.location || ''));
             eventLocationModeInput.value = hasLocationOption ? String(event.location) : 'custom';
             eventLocationInput.value = event.location || '';
