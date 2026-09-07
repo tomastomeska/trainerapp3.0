@@ -35,7 +35,11 @@ if ($lockId <= 0) {
 }
 
 $pdo = getDB();
-$owner = $pdo->prepare('SELECT series_id FROM coach_calendar_locks WHERE id = ? AND coach_id = ?');
+$lockSeriesAvailable = (bool)$pdo->query("SHOW COLUMNS FROM coach_calendar_locks LIKE 'series_id'")->fetch();
+$owner = $pdo->prepare(
+    'SELECT ' . ($lockSeriesAvailable ? 'series_id' : 'NULL AS series_id') . '
+     FROM coach_calendar_locks WHERE id = ? AND coach_id = ?'
+);
 $owner->execute([$lockId, $coachId]);
 $lock = $owner->fetch();
 if (!$lock) {

@@ -27,6 +27,7 @@ if (!verifyCsrf((string)($input['csrf_token'] ?? ''))) {
 
 $coachId = (int)getCurrentCoachId();
 $pdo = getDB();
+$lockSeriesAvailable = (bool)$pdo->query("SHOW COLUMNS FROM coach_calendar_locks LIKE 'series_id'")->fetch();
 
 function generateUuidV4(): string
 {
@@ -219,7 +220,10 @@ if ($mode === 'unlock') {
 }
 
 if ($lockId > 0) {
-    $ownerStmt = $pdo->prepare('SELECT id, series_id FROM coach_calendar_locks WHERE id = ? AND coach_id = ?');
+    $ownerStmt = $pdo->prepare(
+        'SELECT id, ' . ($lockSeriesAvailable ? 'series_id' : 'NULL AS series_id') . '
+         FROM coach_calendar_locks WHERE id = ? AND coach_id = ?'
+    );
     $ownerStmt->execute([$lockId, $coachId]);
     $ownerLock = $ownerStmt->fetch();
     if (!$ownerLock) {
@@ -227,7 +231,7 @@ if ($lockId > 0) {
         exit;
     }
 
-    if ($updateScope === 'series' && !empty($ownerLock['series_id'])) {
+    if ($lockSeriesAvailable && $updateScope === 'series' && !empty($ownerLock['series_id'])) {
         $seriesStmt = $pdo->prepare(
             'SELECT id, starts_at, ends_at
              FROM coach_calendar_locks
@@ -347,10 +351,15 @@ while (true) {
     }
 }
 
-$insertLock = $pdo->prepare(
-    'INSERT INTO coach_calendar_locks (coach_id, series_id, note, starts_at, ends_at)
-     VALUES (?, ?, ?, ?, ?)'
-);
+$insertLock = $lockSeriesAvailable
+    ? $pdo->prepare(
+        'INSERT INTO coach_calendar_locks (coach_id, series_id, note, starts_at, ends_at)
+         VALUES (?, ?, ?, ?, ?)'
+    )
+    : $pdo->prepare(
+        'INSERT INTO coach_calendar_locks (coach_id, note, starts_at, ends_at)
+         VALUES (?, ?, ?, ?)'
+    );
 $seriesId = $repeatMode === 'none' ? null : generateUuidV4();
 
 try {
@@ -372,7 +381,10 @@ try {
             throw new RuntimeException('Uzamčení se překrývá s existujícím intervalem: ' . $occStart->format('d.m.Y H:i'));
         }
 
-        $insertLock->execute([$coachId, $seriesId, $note, $occStartSql, $occEndSql]);
+        $insertLock->execute($lockSeriesAvailable
+            ? [$coachId, $seriesId, $note, $occStartSql, $occEndSql]
+            : [$coachId, $note, $occStartSql, $occEndSql]
+        );
     }
 
     $pdo->commit();

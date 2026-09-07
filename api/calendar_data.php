@@ -11,6 +11,7 @@ if (!isLoggedIn()) {
 
 $coachId = getCurrentCoachId();
 $pdo = getDB();
+$lockSeriesAvailable = (bool)$pdo->query("SHOW COLUMNS FROM coach_calendar_locks LIKE 'series_id'")->fetch();
 
 $weekStartRaw = trim((string)($_GET['week_start'] ?? ''));
 $weekBase = DateTimeImmutable::createFromFormat('Y-m-d', $weekStartRaw) ?: new DateTimeImmutable('today');
@@ -61,7 +62,7 @@ $eventsStmt->execute([
 $events = $eventsStmt->fetchAll();
 
 $locksStmt = $pdo->prepare(
-    'SELECT id, series_id, note, starts_at, ends_at
+    'SELECT id, ' . ($lockSeriesAvailable ? 'series_id' : 'NULL AS series_id') . ', note, starts_at, ends_at
      FROM coach_calendar_locks
      WHERE coach_id = ?
        AND starts_at < ?
