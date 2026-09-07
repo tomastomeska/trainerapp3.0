@@ -368,7 +368,7 @@ $googleCalendarConnected = !empty($coach['google_oauth_refresh_token']) && !empt
 $googleCalendarUrl = null;
 
 $activeTab = (string)($_GET['tab'] ?? 'week');
-if (!in_array($activeTab, ['week', 'month', 'apple'], true)) {
+if (!in_array($activeTab, ['week', 'month', 'trainings', 'apple'], true)) {
     $activeTab = 'week';
 }
 
@@ -392,6 +392,15 @@ renderHeader('Kalendář', false, true);
         gap: .5rem;
         flex-wrap: wrap;
         justify-content: flex-end;
+    }
+
+    @keyframes calendarTrainingAlert {
+        0%, 100% { opacity: 1; }
+        50% { opacity: .45; }
+    }
+
+    .calendar-training-alert {
+        animation: calendarTrainingAlert 1.2s ease-in-out infinite;
     }
 
     @media (max-width: 767.98px) {
@@ -724,6 +733,11 @@ renderHeader('Kalendář', false, true);
         </button>
     </li>
     <li class="nav-item" role="presentation">
+        <button class="nav-link <?= $activeTab === 'trainings' ? 'active' : '' ?>" id="training-list-tab" data-bs-toggle="tab" data-bs-target="#training-list-pane" type="button" role="tab" aria-controls="training-list-pane" aria-selected="<?= $activeTab === 'trainings' ? 'true' : 'false' ?>">
+            Tréninky <span class="badge rounded-pill text-bg-danger ms-1 d-none" id="trainingAlertBadge" aria-live="polite"></span>
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
         <button class="nav-link <?= $activeTab === 'month' ? 'active' : '' ?>" id="month-list-tab" data-bs-toggle="tab" data-bs-target="#month-list-pane" type="button" role="tab" aria-controls="month-list-pane" aria-selected="<?= $activeTab === 'month' ? 'true' : 'false' ?>">
             Měsíční seznam
         </button>
@@ -808,6 +822,35 @@ renderHeader('Kalendář', false, true);
             </div>
 
             <div class="text-muted small mt-2 d-none" id="monthListEmpty">V tomto měsíci nejsou žádné události.</div>
+        </div>
+    </div>
+</div>
+
+<div class="tab-pane fade <?= $activeTab === 'trainings' ? 'show active' : '' ?>" id="training-list-pane" role="tabpanel" aria-labelledby="training-list-tab" tabindex="0">
+    <div class="card border-0 shadow-sm">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                <div>
+                    <h5 class="mb-1"><i class="fas fa-dumbbell me-2 text-warning"></i>Tréninky</h5>
+                    <div class="small text-muted">Od dneška vzestupně. Oranžové položky čekají na vyřízení.</div>
+                </div>
+                <div class="d-flex gap-2 flex-wrap">
+                <select class="form-select form-select-sm" id="trainingStatusFilter" style="max-width: 210px">
+                    <option value="actionable" selected>Akce k vyřízení</option>
+                    <option value="pending">Čeká na schválení</option>
+                    <option value="change">Potvrzení změny</option>
+                    <option value="approved">Schválené</option>
+                    <option value="all">Vše</option>
+                </select>
+                <select class="form-select form-select-sm" id="trainingAthleteFilter" style="max-width: 240px">
+                    <option value="0">Všichni sportovci</option>
+                    <?php foreach ($athletes as $athleteRow): ?>
+                        <option value="<?= (int)$athleteRow['id'] ?>"><?= h(trim((string)$athleteRow['last_name'] . ' ' . (string)$athleteRow['first_name'])) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                </div>
+            </div>
+            <div id="trainingTiles" class="row g-3"><div class="col-12 text-muted">Načítám tréninky...</div></div>
         </div>
     </div>
 </div>
@@ -1383,6 +1426,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const monthListMonthInput = document.getElementById('monthListMonth');
     const monthListBody = document.getElementById('monthListBody');
     const monthListEmpty = document.getElementById('monthListEmpty');
+    const trainingStatusFilter = document.getElementById('trainingStatusFilter');
+    const trainingAthleteFilter = document.getElementById('trainingAthleteFilter');
+    const trainingAlertBadge = document.getElementById('trainingAlertBadge');
+    const trainingTiles = document.getElementById('trainingTiles');
     const weekMonthJumpInput = document.getElementById('weekMonthJumpInput');
     const weekRangeJumpSelect = document.getElementById('weekRangeJumpSelect');
     const eventAddToIosBtn = document.getElementById('eventAddToIosBtn');
@@ -2689,6 +2736,49 @@ document.addEventListener('DOMContentLoaded', () => {
         renderMonthList(payload.items || []);
     }
 
+    function renderTrainingTiles(items) {
+        trainingTiles.innerHTML = '';
+        if (!Array.isArray(items) || items.length === 0) {
+            trainingTiles.innerHTML = '<div class="col-12 text-muted">Žádné nadcházející tréninky.</div>';
+            return;
+        }
+        items.forEach((item) => {
+            const isApproved = item.status === 'approved';
+            const isChange = item.status === 'change';
+            const statusLabel = isApproved ? 'Schválený' : (isChange ? 'Čeká na změnu' : 'Čeká na schválení');
+            const statusClass = isApproved ? 'border-success' : 'border-warning';
+            const actionHtml = item.can_approve
+                ? `<button type="button" class="btn btn-sm btn-success js-training-approve" data-event-id="${Number(item.id || 0)}"><i class="fas fa-check me-1"></i>Schválit</button><button type="button" class="btn btn-sm btn-outline-danger js-training-cancel" data-event-id="${Number(item.id || 0)}"><i class="fas fa-ban me-1"></i>Zrušit</button>`
+                : `<button type="button" class="btn btn-sm btn-outline-danger js-training-cancel" data-event-id="${Number(item.id || 0)}"><i class="fas fa-ban me-1"></i>Zrušit</button>`;
+            const sourceHtml = item.source
+                ? `<div class="small mt-2 p-2 bg-light rounded"><span class="badge text-bg-secondary me-1">Původní</span>${escapeHtml(item.source.date_label)} ${escapeHtml(item.source.time_label)}${item.source.location ? ` · ${escapeHtml(item.source.location)}` : ''}</div>`
+                : '';
+            const col = document.createElement('div');
+            col.className = 'col-12 col-lg-6';
+            col.innerHTML = `<article class="card h-100 border-2 ${statusClass} shadow-sm"><div class="card-body"><div class="d-flex justify-content-between gap-2"><div><div class="fw-bold">${escapeHtml(item.date_label)} · ${escapeHtml(item.time_label)}</div><div class="mt-1">${escapeHtml(item.title)}</div></div><span class="badge ${isApproved ? 'text-bg-success' : 'text-bg-warning'}">${statusLabel}</span></div><div class="small text-muted mt-2"><i class="fas fa-user me-1"></i>${escapeHtml(item.athlete_label || 'Bez sportovce')}${item.location ? ` · <i class="fas fa-location-dot ms-2 me-1"></i>${escapeHtml(item.location)}` : ''}</div>${sourceHtml}<div class="d-flex gap-2 mt-3">${actionHtml}</div></div></article>`;
+            trainingTiles.appendChild(col);
+        });
+    }
+
+    async function loadTrainingTiles() {
+        if (!trainingTiles) return;
+        trainingTiles.innerHTML = '<div class="col-12 text-muted">Načítám tréninky...</div>';
+        const query = new URLSearchParams({
+            athlete_id: trainingAthleteFilter ? trainingAthleteFilter.value : '0',
+            status: trainingStatusFilter ? trainingStatusFilter.value : 'actionable',
+        });
+        const payload = await fetchJson(`<?= BASE_URL ?>/api/calendar_training_list.php?${query.toString()}`);
+        const actionCount = Number(payload.action_count || 0);
+        if (trainingAlertBadge) {
+            trainingAlertBadge.textContent = actionCount > 99 ? '99+' : String(actionCount);
+            trainingAlertBadge.classList.toggle('d-none', actionCount === 0);
+            trainingAlertBadge.classList.toggle('calendar-training-alert', actionCount > 0);
+            trainingAlertBadge.title = actionCount > 0 ? `${actionCount} akcí čeká na vyřízení` : '';
+        }
+        renderTrainingTiles(payload.success ? (payload.items || []) : []);
+        if (!payload.success) trainingTiles.innerHTML = `<div class="col-12 text-danger">${escapeHtml(payload.error || 'Načtení tréninků selhalo.')}</div>`;
+    }
+
     function openEventModal(event = null, slotDate = null, lock = null) {
         clearError(eventError);
         paymentInfo.textContent = '';
@@ -3110,6 +3200,37 @@ document.addEventListener('DOMContentLoaded', () => {
         await loadWeekData();
     });
 
+    trainingTiles.addEventListener('click', async (e) => {
+        const approveBtn = e.target.closest('.js-training-approve');
+        const cancelBtn = e.target.closest('.js-training-cancel');
+        const eventId = Number((approveBtn || cancelBtn)?.dataset.eventId || 0);
+        if (!eventId) return;
+
+        if (cancelBtn && !confirm('Opravdu chcete tento trénink zrušit?')) return;
+        const endpoint = approveBtn ? 'calendar_approve_event.php' : 'calendar_delete_event.php';
+        const body = { csrf_token: csrfToken, event_id: eventId };
+        if (cancelBtn) body.delete_scope = 'single';
+        const payload = await fetchJson(`<?= BASE_URL ?>/api/${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(body),
+        });
+        if (!payload.success) {
+            alert(payload.error || 'Akci se nepodařilo provést.');
+            return;
+        }
+        await loadTrainingTiles();
+        await loadWeekData();
+    });
+
+    if (trainingAthleteFilter) {
+        trainingAthleteFilter.addEventListener('change', loadTrainingTiles);
+    }
+    if (trainingStatusFilter) {
+        trainingStatusFilter.addEventListener('change', loadTrainingTiles);
+    }
+
     deleteEventBtn.addEventListener('click', async () => {
         const finishDelete = beginBusyButton(deleteEventBtn, 'Mazu...');
         if (!finishDelete) {
@@ -3257,6 +3378,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     (async () => {
         await loadWeekData();
+        await loadTrainingTiles();
 
         if (pendingFocusEventId > 0) {
             const focusEvent = events.find((event) => Number(event.id || 0) === pendingFocusEventId);
