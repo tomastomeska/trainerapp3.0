@@ -1101,8 +1101,23 @@ renderHeader('Kalendář', false, true);
 </div>
 </div>
 
+<style>
+#eventModal .modal-dialog { max-height: calc(100dvh - 1rem); margin-top: .5rem; margin-bottom: .5rem; }
+#eventModal .modal-body { padding: 1rem; }
+.event-type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem .75rem; }
+.event-advanced { border: 1px solid #d9dee5; border-radius: 6px; background: #f8f9fa; }
+.event-advanced summary { cursor: pointer; list-style: none; padding: .75rem; font-weight: 700; color: #374151; }
+.event-advanced summary::-webkit-details-marker { display: none; }
+.event-advanced summary::after { content: '\f078'; float: right; font-family: 'Font Awesome 6 Free'; font-weight: 900; transition: transform .15s ease; }
+.event-advanced[open] summary::after { transform: rotate(180deg); }
+.event-advanced-body { border-top: 1px solid #d9dee5; padding: .85rem; }
+@media (max-width: 420px) {
+    .event-type-grid { grid-template-columns: 1fr; gap: .4rem; }
+}
+</style>
+
 <div class="modal fade" id="eventModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-dialog-scrollable">
         <div class="modal-content">
             <form id="eventForm">
                 <div class="modal-header bg-dark text-white">
@@ -1133,24 +1148,11 @@ renderHeader('Kalendář', false, true);
                         </select>
                         <div class="form-text">Vyberte svého sportovce, nebo níže napište vlastní název.</div>
                     </div>
-
-                    <div class="mb-3">
-                        <label for="eventSecondAthlete" class="form-label fw-semibold">Druhý sportovec (párový trénink)</label>
-                        <select id="eventSecondAthlete" class="form-select">
-                            <option value="">-- Bez druhého sportovce --</option>
-                            <?php foreach ($athletes as $a): ?>
-                            <option value="<?= (int)$a['id'] ?>">
-                                <?= h($a['last_name'] . ' ' . $a['first_name']) ?>
-                            </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <div class="form-text">Vyberte druhého účastníka pro párovou hodinu.</div>
-                    </div>
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label fw-semibold d-block">Typ události</label>
-                        <div class="d-flex flex-column gap-2">
+                        <div class="event-type-grid">
                             <div class="form-check">
                                 <input class="form-check-input" type="radio" name="eventTitleType" id="eventTitleTraining" value="training" checked>
                                 <label class="form-check-label" for="eventTitleTraining">Trénink</label>
@@ -1194,8 +1196,45 @@ renderHeader('Kalendář', false, true);
                             </select>
                             <input type="text" id="eventLocation" class="form-control" maxlength="255" placeholder="Např. Stadion, fitko, hala, venku...">
                         </div>
-                        <div class="form-text">Vyberte existující místo ze sportovišť, nebo zadejte vlastní.</div>
                         <div class="small text-muted mt-1" id="eventLocationHint"></div>
+                    </div>
+
+                    <div class="mb-2">
+                        <label for="eventDate" class="form-label fw-semibold">Čas začátku</label>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <input type="date" id="eventDate" class="form-control" required>
+                            </div>
+                            <div class="col-3">
+                                <select id="eventHour" class="form-select" required></select>
+                            </div>
+                            <div class="col-3">
+                                <select id="eventMinute" class="form-select" required>
+                                    <option value="00">00</option>
+                                    <option value="15">15</option>
+                                    <option value="30">30</option>
+                                    <option value="45">45</option>
+                                </select>
+                            </div>
+                        </div>
+                        <input type="hidden" id="eventStart" value="">
+                        <div class="form-text">Délka je vždy 60 minut.</div>
+                    </div>
+
+                    <details class="event-advanced mt-3" id="eventAdvanced">
+                    <summary><i class="fas fa-sliders me-2"></i>Další nastavení</summary>
+                    <div class="event-advanced-body">
+                    <div class="mb-3" id="eventSecondAthleteWrap">
+                        <label for="eventSecondAthlete" class="form-label fw-semibold">Druhý sportovec</label>
+                        <select id="eventSecondAthlete" class="form-select">
+                            <option value="">-- Bez druhého sportovce --</option>
+                            <?php foreach ($athletes as $a): ?>
+                            <option value="<?= (int)$a['id'] ?>">
+                                <?= h($a['last_name'] . ' ' . $a['first_name']) ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <div class="form-text">Pro párový trénink vyberte druhého účastníka.</div>
                     </div>
 
                     <div class="mb-3">
@@ -1212,29 +1251,7 @@ renderHeader('Kalendář', false, true);
                         </select>
                     </div>
 
-                    <div class="mb-2">
-                        <label for="eventDate" class="form-label fw-semibold">Čas začátku</label>
-                        <div class="row g-2">
-                            <div class="col-md-7">
-                                <input type="date" id="eventDate" class="form-control" required>
-                            </div>
-                            <div class="col-3 col-md-3">
-                                <select id="eventHour" class="form-select" required></select>
-                            </div>
-                            <div class="col-3 col-md-2">
-                                <select id="eventMinute" class="form-select" required>
-                                    <option value="00">00</option>
-                                    <option value="15">15</option>
-                                    <option value="30">30</option>
-                                    <option value="45">45</option>
-                                </select>
-                            </div>
-                        </div>
-                        <input type="hidden" id="eventStart" value="">
-                    </div>
-                    <div class="small text-muted">Délka je vždy pevně 60 minut.</div>
-
-                    <div class="mt-3">
+                    <div>
                         <label for="eventRepeatMode" class="form-label fw-semibold">Opakování</label>
                         <select id="eventRepeatMode" class="form-select">
                             <option value="none">Neopakovat</option>
@@ -1261,6 +1278,8 @@ renderHeader('Kalendář', false, true);
                         </div>
                         <div class="small text-muted">Při označení jako náhrada se hrazený měsíc určí automaticky.</div>
                     </div>
+                    </div>
+                    </details>
 
                     <div class="alert alert-warning mt-3 mb-0 d-none" id="eventMakeupSuggestion">
                         <div class="fw-semibold mb-1"><i class="fas fa-circle-exclamation me-1"></i>Možná náhrada z dříve uhrazených tréninků</div>
@@ -1387,6 +1406,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const lockFields = document.getElementById('lockFields');
     const eventAthleteInput = document.getElementById('eventAthlete');
     const eventSecondAthleteInput = document.getElementById('eventSecondAthlete');
+    const eventSecondAthleteWrap = document.getElementById('eventSecondAthleteWrap');
+    const eventAdvanced = document.getElementById('eventAdvanced');
     const eventAthleteFields = document.getElementById('eventAthleteFields');
     const eventCustomTitleInput = document.getElementById('eventCustomTitle');
     const eventLocationModeInput = document.getElementById('eventLocationMode');
@@ -2163,6 +2184,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (eventAthleteFields) {
             eventAthleteFields.classList.toggle('d-none', lockMode || isGroupLesson);
         }
+        if (eventSecondAthleteWrap) {
+            eventSecondAthleteWrap.classList.toggle('d-none', lockMode || isGroupLesson);
+        }
 
         if (!lockMode && isGroupLesson) {
             eventAthleteInput.value = '';
@@ -2838,6 +2862,12 @@ document.addEventListener('DOMContentLoaded', () => {
             eventRepeatModeInput.value = 'none';
             eventRepeatUntilInput.value = '';
             eventIsMakeupInput.checked = Number(event.is_makeup_session || 0) === 1;
+            eventAdvanced.open = Boolean(
+                event.second_athlete_id
+                || normalizeColorKey(event.color_key) !== 'green'
+                || event.series_id
+                || Number(event.is_makeup_session || 0) === 1
+            );
             setRepeatControlsEnabled(!event.series_id);
             updateRepeatControls();
             deleteEventBtn.classList.remove('d-none');
@@ -2909,6 +2939,7 @@ document.addEventListener('DOMContentLoaded', () => {
             eventRepeatModeInput.value = 'none';
             eventRepeatUntilInput.value = '';
             eventIsMakeupInput.checked = false;
+            eventAdvanced.open = false;
             setRepeatControlsEnabled(true);
             updateRepeatControls();
             deleteEventBtn.classList.add('d-none');
@@ -2977,6 +3008,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     eventUseMakeupBtn.addEventListener('click', () => {
         eventIsMakeupInput.checked = true;
+        eventAdvanced.open = true;
         eventUseMakeupBtn.classList.add('d-none');
     });
 
