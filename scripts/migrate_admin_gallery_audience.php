@@ -1,0 +1,37 @@
+<?php
+$isCli = php_sapi_name() === 'cli';
+
+if ($isCli) {
+    require_once __DIR__ . '/../config/database.php';
+} else {
+    require_once __DIR__ . '/../includes/admin_auth.php';
+
+    $secret = getCronSecret();
+    $provided = (string)($_GET['secret'] ?? '');
+    if (!hash_equals($secret, $provided)) {
+        http_response_code(403);
+        header('Content-Type: text/plain; charset=UTF-8');
+        exit('Unauthorized - neplatny secret token.');
+    }
+}
+
+header('Content-Type: application/json; charset=utf-8');
+
+try {
+    $pdo = getDB();
+    $pdo->exec(
+        "ALTER TABLE admin_gallery_files
+         MODIFY visibility ENUM('all_coaches','specific_coaches','all_athletes') NOT NULL DEFAULT 'all_coaches'"
+    );
+
+    echo json_encode([
+        'success' => true,
+        'message' => 'Publikum galerie administrátora bylo rozšířeno o všechny sportovce.',
+    ], JSON_UNESCAPED_UNICODE);
+} catch (Throwable $e) {
+    http_response_code(500);
+    echo json_encode([
+        'success' => false,
+        'error' => $e->getMessage(),
+    ], JSON_UNESCAPED_UNICODE);
+}

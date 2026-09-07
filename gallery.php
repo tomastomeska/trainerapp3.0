@@ -107,6 +107,27 @@ $athleteFolders = $pdo->prepare("
 $athleteFolders->execute([$coachId]);
 $athleteFolders = $athleteFolders->fetchAll();
 
+$adminFilesStmt = $pdo->prepare("
+    SELECT agf.*
+    FROM admin_gallery_files agf
+    WHERE agf.visibility = 'all_coaches'
+       OR (
+           agf.visibility = 'specific_coaches'
+           AND EXISTS (
+               SELECT 1
+               FROM admin_gallery_file_coaches agfc
+               WHERE agfc.file_id = agf.id
+                 AND agfc.coach_id = ?
+           )
+       )
+    ORDER BY agf.created_at DESC
+");
+$adminFilesStmt->execute([$coachId]);
+$adminFiles = array_values(array_filter($adminFilesStmt->fetchAll(), static function (array $file): bool {
+    $filePath = (string)($file['file_path'] ?? '');
+    return $filePath !== '' && file_exists(__DIR__ . '/uploads/gallery/admin/' . $filePath);
+}));
+
 renderHeader('Galerie', false, true);
 ?>
 
@@ -126,6 +147,38 @@ renderHeader('Galerie', false, true);
     <i class="fas fa-info-circle me-2 text-muted"></i>
     Soubory nahravate vzdy do sve galerie. U kazdeho souboru pak nastavite, komu se zobrazi.
 </div>
+
+<?php if ($adminFiles !== []): ?>
+<h5 class="fw-bold text-muted mb-3"><i class="fas fa-user-shield me-2"></i>Od administrátora</h5>
+<div class="row g-3 mb-4">
+    <?php foreach ($adminFiles as $file): ?>
+    <?php
+    $fileUrl = BASE_URL . '/uploads/gallery/admin/' . rawurlencode((string)$file['file_path']);
+    $fileIcon = match($file['file_type']) { 'image' => 'fa-image text-success', 'video' => 'fa-video text-danger', default => 'fa-file-alt text-info' };
+    ?>
+    <div class="col-6 col-md-4 col-lg-3 col-xl-2">
+        <a href="<?= h($fileUrl) ?>" target="_blank" rel="noopener" class="text-decoration-none">
+            <div class="card border-0 shadow-sm h-100 gallery-folder-card overflow-hidden">
+                <?php if ($file['file_type'] === 'image'): ?>
+                <img src="<?= h($fileUrl) ?>" alt="<?= h($file['original_name']) ?>" style="width:100%;height:120px;object-fit:cover">
+                <?php else: ?>
+                <div class="d-flex align-items-center justify-content-center bg-light" style="height:120px">
+                    <i class="fas <?= $fileIcon ?>" style="font-size:2.5rem"></i>
+                </div>
+                <?php endif; ?>
+                <div class="card-body p-2">
+                    <div class="small fw-semibold text-dark text-truncate"><?= h($file['original_name']) ?></div>
+                    <?php if (!empty($file['description'])): ?>
+                    <div class="text-muted" style="font-size:.75rem"><?= h(mb_strimwidth($file['description'], 0, 60, '...')) ?></div>
+                    <?php endif; ?>
+                    <div class="text-muted" style="font-size:.7rem"><?= date('d.m.Y', strtotime($file['created_at'])) ?></div>
+                </div>
+            </div>
+        </a>
+    </div>
+    <?php endforeach; ?>
+</div>
+<?php endif; ?>
 
 <h5 class="fw-bold text-muted mb-3"><i class="fas fa-user-shield me-2"></i>Moje galerie</h5>
 <div class="row g-3 mb-4">

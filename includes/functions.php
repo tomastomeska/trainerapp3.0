@@ -8556,7 +8556,6 @@ function discoverAppleCaldavTrainerAppCalendarUrl(string $username, string $pass
     }
     $diagnostics['available_urls'] = array_values(array_unique($diagnostics['available_urls']));
 
-    $trainerPathCandidates = [];
     $remoteCheckCandidates = [];
     foreach ($candidateUrls as $candidateUrl) {
       $candidateDisplay = '';
@@ -8569,9 +8568,6 @@ function discoverAppleCaldavTrainerAppCalendarUrl(string $username, string $pass
 
       if (appleCaldavDisplayNameLooksLike($candidateDisplay, $displayName)) {
         return normalizeAppleCaldavCalendarUrl($candidateUrl);
-      }
-      if (appleCaldavUrlLikelyTrainerAppCalendar($candidateUrl)) {
-        $trainerPathCandidates[] = normalizeAppleCaldavCalendarUrl($candidateUrl);
       }
       $remoteCheckCandidates[] = normalizeAppleCaldavCalendarUrl($candidateUrl);
     }
@@ -8589,11 +8585,6 @@ function discoverAppleCaldavTrainerAppCalendarUrl(string $username, string $pass
           return normalizeAppleCaldavCalendarUrl($candidateUrl);
         }
       }
-    }
-
-    $trainerPathCandidates = array_values(array_unique(array_filter($trainerPathCandidates)));
-    if (!empty($trainerPathCandidates)) {
-      return (string)$trainerPathCandidates[0];
     }
 
     $diagnostics['detail'] = 'TrainerApp kalendar se nepodarilo spolehlive odlisit od ostatnich iCloud kalendaru pri rychlem skenu. Automaticky fallback na jiny zapisovatelny kalendar byl zablokovan.';

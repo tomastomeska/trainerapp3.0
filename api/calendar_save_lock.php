@@ -221,7 +221,7 @@ if ($mode === 'unlock') {
 
 if ($lockId > 0) {
     $ownerStmt = $pdo->prepare(
-        'SELECT id, ' . ($lockSeriesAvailable ? 'series_id' : 'NULL AS series_id') . '
+        'SELECT id, ' . ($lockSeriesAvailable ? 'series_id' : 'NULL AS series_id') . ', note, starts_at, ends_at
          FROM coach_calendar_locks WHERE id = ? AND coach_id = ?'
     );
     $ownerStmt->execute([$lockId, $coachId]);
@@ -231,21 +231,52 @@ if ($lockId > 0) {
         exit;
     }
 
-    if ($lockSeriesAvailable && $updateScope === 'series' && !empty($ownerLock['series_id'])) {
-        $seriesStmt = $pdo->prepare(
-            'SELECT id, starts_at, ends_at
-             FROM coach_calendar_locks
-             WHERE coach_id = ? AND series_id = ?
-             ORDER BY starts_at ASC, id ASC'
-        );
-        $seriesStmt->execute([$coachId, $ownerLock['series_id']]);
-        $seriesLocks = $seriesStmt->fetchAll();
+    if ($updateScope === 'series' && ($lockSeriesAvailable ? !empty($ownerLock['series_id']) : true)) {
+        if ($lockSeriesAvailable) {
+            $seriesStmt = $pdo->prepare(
+                'SELECT id, starts_at, ends_at
+                 FROM coach_calendar_locks
+                 WHERE coach_id = ? AND series_id = ?
+                 ORDER BY starts_at ASC, id ASC'
+            );
+            $seriesStmt->execute([$coachId, $ownerLock['series_id']]);
+            $seriesLocks = $seriesStmt->fetchAll();
+        } else {
+            $seriesStmt = $pdo->prepare(
+                'SELECT id, note, starts_at, ends_at
+                 FROM coach_calendar_locks WHERE coach_id = ?
+                 ORDER BY starts_at ASC, id ASC'
+            );
+            $seriesStmt->execute([$coachId]);
+            $seriesLocks = [];
+            $ownerStart = new DateTime((string)$ownerLock['starts_at']);
+            $ownerEnd = new DateTime((string)$ownerLock['ends_at']);
+            $ownerDuration = $ownerEnd->getTimestamp() - $ownerStart->getTimestamp();
+            foreach ($seriesStmt->fetchAll() as $candidateLock) {
+                $candidateStart = new DateTime((string)$candidateLock['starts_at']);
+                $candidateEnd = new DateTime((string)$candidateLock['ends_at']);
+                if ((string)($candidateLock['note'] ?? '') === (string)($ownerLock['note'] ?? '')
+                    && $candidateStart->format('N H:i:s') === $ownerStart->format('N H:i:s')
+                    && ($candidateEnd->getTimestamp() - $candidateStart->getTimestamp()) === $ownerDuration) {
+                    $seriesLocks[] = $candidateLock;
+                }
+            }
+        }
         if (!$seriesLocks) {
             echo json_encode(['success' => false, 'error' => 'Série uzamčení nenalezena']);
             exit;
         }
 
         $newDurationSeconds = $end->getTimestamp() - $start->getTimestamp();
+        $ownerIndex = 0;
+        foreach ($seriesLocks as $seriesIndex => $seriesLock) {
+            if ((int)$seriesLock['id'] === $lockId) {
+                $ownerIndex = $seriesIndex;
+                break;
+            }
+        }
+        $seriesLocksToUpdate = array_slice($seriesLocks, $ownerIndex);
+        $selectedOriginalStart = new DateTime((string)$seriesLocks[$ownerIndex]['starts_at']);
         $seriesIds = array_map(static fn (array $row): int => (int)$row['id'], $seriesLocks);
         $placeholders = implode(',', array_fill(0, count($seriesIds), '?'));
         $eventConflict = $pdo->prepare(
@@ -259,9 +290,11 @@ if ($lockId > 0) {
 
         try {
             $pdo->beginTransaction();
-            foreach ($seriesLocks as $index => $seriesLock) {
+            foreach ($seriesLocksToUpdate as $seriesLock) {
+                $originalStart = new DateTime((string)$seriesLock['starts_at']);
+                $weekOffset = (int)round(($originalStart->getTimestamp() - $selectedOriginalStart->getTimestamp()) / 604800);
                 $occurrenceStart = clone $start;
-                $occurrenceStart->modify('+' . ($index * 7) . ' days');
+                $occurrenceStart->modify('+' . ($weekOffset * 7) . ' days');
                 $occurrenceEnd = (clone $occurrenceStart)->modify('+' . $newDurationSeconds . ' seconds');
                 $occurrenceStartSql = $occurrenceStart->format('Y-m-d H:i:s');
                 $occurrenceEndSql = $occurrenceEnd->format('Y-m-d H:i:s');
@@ -281,9 +314,11 @@ if ($lockId > 0) {
                  SET note = ?, starts_at = ?, ends_at = ?
                  WHERE id = ? AND coach_id = ?'
             );
-            foreach ($seriesLocks as $index => $seriesLock) {
+            foreach ($seriesLocksToUpdate as $seriesLock) {
+                $originalStart = new DateTime((string)$seriesLock['starts_at']);
+                $weekOffset = (int)round(($originalStart->getTimestamp() - $selectedOriginalStart->getTimestamp()) / 604800);
                 $occurrenceStart = clone $start;
-                $occurrenceStart->modify('+' . ($index * 7) . ' days');
+                $occurrenceStart->modify('+' . ($weekOffset * 7) . ' days');
                 $occurrenceEnd = (clone $occurrenceStart)->modify('+' . $newDurationSeconds . ' seconds');
                 $updateSeries->execute([
                     $note,

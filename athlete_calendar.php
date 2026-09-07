@@ -122,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($calendarUrl === '') {
                 try {
                     $calendarCreated = false;
-                    $calendarUrl = ensureAppleCaldavTrainerAppCalendarUrl($username, $appPassword, 'TrainerApp', $calendarCreated);
+                    $calendarUrl = ensureAppleCaldavTrainerAppCalendarUrl($username, $appPassword, 'TrainerApp - Sportovec', $calendarCreated);
                 } catch (Throwable $e) {
                     $discoveryErrorDetail = trim((string)$e->getMessage());
                     flash('danger', 'Apple CalDAV: nepodarilo se najit ani vytvorit kalendar "TrainerApp". Detail: ' . mb_substr(preg_replace('/\s+/', ' ', $discoveryErrorDetail), 0, 220, 'UTF-8') . '.');
@@ -133,7 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $urlProbe = appleCaldavProbeCollectionWritable($calendarUrl, $username, $appPassword);
                     if (empty($urlProbe['ok'])) {
                         $calendarCreated = false;
-                        $calendarUrl = ensureAppleCaldavTrainerAppCalendarUrl($username, $appPassword, 'TrainerApp', $calendarCreated);
+                        $calendarUrl = ensureAppleCaldavTrainerAppCalendarUrl($username, $appPassword, 'TrainerApp - Sportovec', $calendarCreated);
                     }
                 } catch (Throwable $e) {
                     flash('danger', 'Apple CalDAV: zadane URL kalendare se nepodarilo overit ani nahradit spravnym kalendarem. Detail: ' . mb_substr(preg_replace('/\s+/', ' ', trim((string)$e->getMessage())), 0, 220, 'UTF-8') . '.');
@@ -236,7 +236,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         try {
             $calendarCreated = false;
-            $calendarUrl = ensureAppleCaldavTrainerAppCalendarUrl($username, $appPassword, 'TrainerApp', $calendarCreated);
+            $calendarUrl = ensureAppleCaldavTrainerAppCalendarUrl($username, $appPassword, 'TrainerApp - Sportovec', $calendarCreated);
         } catch (Throwable $e) {
             flash('danger', 'Apple CalDAV: URL kalendare TrainerApp se nepodarilo automaticky vygenerovat. Detail: ' . mb_substr(preg_replace('/\s+/', ' ', trim((string)$e->getMessage())), 0, 900, 'UTF-8') . '.');
             redirect(BASE_URL . '/athlete_calendar.php?tab=apple');

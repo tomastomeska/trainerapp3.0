@@ -10,8 +10,12 @@ $adminId = $_SESSION['admin_id'] ?? null;
 
 // Všichni aktivní trenéři
 $coaches = $pdo->query("SELECT id, name, username FROM coaches WHERE is_active = 1 ORDER BY name")->fetchAll();
+$athleteIds = array_map('intval', $pdo->query("SELECT id FROM athletes ORDER BY id")->fetchAll(PDO::FETCH_COLUMN));
 
 $errors = [];
+$visibilityColumn = $pdo->query("SHOW COLUMNS FROM admin_gallery_files LIKE 'visibility'")->fetch();
+$athleteAudienceEnabled = $visibilityColumn
+    && str_contains((string)($visibilityColumn['Type'] ?? ''), "'all_athletes'");
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
@@ -21,12 +25,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $action = $_POST['action'] ?? '';
 
+    if ($action === 'enable_athlete_audience') {
+        try {
+            $pdo->exec(
+                "ALTER TABLE admin_gallery_files
+                 MODIFY visibility ENUM('all_coaches','specific_coaches','all_athletes') NOT NULL DEFAULT 'all_coaches'"
+            );
+            flash('success', 'Galerie pro všechny sportovce byla povolena.');
+        } catch (Throwable $e) {
+            error_log('Admin gallery athlete audience migration failed: ' . $e->getMessage());
+            flash('danger', 'Databázi se nepodařilo upravit. Kontaktujte správce serveru.');
+        }
+        redirect(BASE_URL . '/admin/gallery.php');
+    }
+
     // Nahrání souboru
     if ($action === 'upload') {
         $description = trim($_POST['description'] ?? '');
-        $visibility  = in_array($_POST['visibility'] ?? '', ['all_coaches', 'specific_coaches'])
+        $visibility  = in_array($_POST['visibility'] ?? '', ['all_coaches', 'specific_coaches', 'all_athletes'], true)
                        ? $_POST['visibility'] : 'all_coaches';
         $specificIds = array_map('intval', array_filter($_POST['specific_coaches'] ?? []));
+        $validCoachIds = array_map('intval', array_column($coaches, 'id'));
+        $specificIds = array_values(array_intersect($specificIds, $validCoachIds));
+
+        if ($visibility === 'specific_coaches' && $specificIds === []) {
+            $errors[] = 'Vyberte alespoň jednoho aktivního trenéra.';
+        }
 
         $allowed = ['jpg','jpeg','png','gif','webp','mp4','mov','avi','mkv','webm',
                     'pdf','doc','docx','xls','xlsx','csv','txt','zip','rar','7z','ppt','pptx'];
@@ -43,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                       'tmp_name' => [$files['tmp_name']], 'error' => [$files['error']], 'size' => [$files['size']]];
         }
 
-        foreach ($files['name'] as $i => $origName) {
+        foreach (empty($errors) ? $files['name'] : [] as $i => $origName) {
             if ($files['error'][$i] !== UPLOAD_ERR_OK || !$origName) continue;
             $size = $files['size'][$i];
             if ($size > 200 * 1024 * 1024) { $errors[] = h($origName) . ': max 200 MB.'; continue; }
@@ -73,30 +97,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $uploadedCount++;
         }
 
-        if ($uploadedCount > 0 && empty($errors)) {
-            // Notifikace trenérům
-            $notifyIds = $visibility === 'all_coaches'
-                ? array_column($coaches, 'id')
-                : $specificIds;
+        if ($uploadedCount > 0) {
+            if ($visibility === 'all_athletes') {
+                foreach ($athleteIds as $athleteId) {
+                    createAthleteNotification(
+                        $athleteId,
+                        'Nový soubor v galerii od administrátora',
+                        "Administrátor přidal nové soubory do galerie TrainerApp.\n\nPřejděte do sekce Galerie a prohlédněte si je."
+                    );
+                }
+            } else {
+                $notifyIds = $visibility === 'all_coaches'
+                    ? array_column($coaches, 'id')
+                    : $specificIds;
 
-            foreach ($notifyIds as $cid) {
-                createCoachSystemMessage(
-                    $cid,
-                    'Nový soubor v galerii od administrátora',
-                    "Administrátor přidal nové soubory do galerie TrainerApp.\n\nPřejděte do sekce Galerie a prohlédněte si je.",
-                    true
-                );
+                foreach ($notifyIds as $cid) {
+                    createCoachSystemMessage(
+                        $cid,
+                        'Nový soubor v galerii od administrátora',
+                        "Administrátor přidal nové soubory do galerie TrainerApp.\n\nPřejděte do sekce Galerie a prohlédněte si je.",
+                        true
+                    );
+                }
             }
 
-            flash('success', "Nahráno $uploadedCount soubor(ů). Trenéři byli upozorněni.");
+            $recipientLabel = $visibility === 'all_athletes' ? 'Sportovci byli upozorněni.' : 'Trenéři byli upozorněni.';
+            $flashType = empty($errors) ? 'success' : 'warning';
+            $failureLabel = empty($errors) ? '' : ' Některé soubory se nepodařilo nahrát.';
+            flash($flashType, "Nahráno $uploadedCount soubor(ů). $recipientLabel$failureLabel");
             redirect(BASE_URL . '/admin/gallery.php');
         }
 
         if (!empty($errors) && $uploadedCount === 0) {
             // Zobrazíme chyby dole
-        } elseif ($uploadedCount > 0) {
-            flash('warning', "Nahráno $uploadedCount soubor(ů), ale některé selhaly.");
-            redirect(BASE_URL . '/admin/gallery.php');
         }
     }
 
@@ -133,6 +166,22 @@ renderAdminHeader('Galerie');
         <i class="fas fa-cloud-upload-alt me-1"></i>Nahrát soubory
     </button>
 </div>
+
+<?php if (!$athleteAudienceEnabled): ?>
+<div class="alert alert-warning d-flex justify-content-between align-items-center gap-3 flex-wrap">
+    <div>
+        <i class="fas fa-database me-2"></i>
+        Pro publikování všem sportovcům je potřeba jednorázově rozšířit databázi.
+    </div>
+    <form method="post" class="m-0">
+        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+        <input type="hidden" name="action" value="enable_athlete_audience">
+        <button type="submit" class="btn btn-warning fw-semibold">
+            <i class="fas fa-play me-1"></i>Povolit galerii pro sportovce
+        </button>
+    </form>
+</div>
+<?php endif; ?>
 
 <?php if (!empty($errors)): ?>
 <div class="alert alert-danger">
@@ -181,6 +230,8 @@ renderAdminHeader('Galerie');
                 <td>
                     <?php if ($f['visibility'] === 'all_coaches'): ?>
                     <span class="badge bg-success">Všichni trenéři</span>
+                    <?php elseif ($f['visibility'] === 'all_athletes'): ?>
+                    <span class="badge bg-primary">Všichni sportovci</span>
                     <?php else: ?>
                     <span class="badge bg-warning text-dark"><?= $f['coach_count'] ?> trenér(ů)</span>
                     <?php endif; ?>
@@ -233,6 +284,7 @@ renderAdminHeader('Galerie');
                     <label class="form-label fw-semibold">Viditelnost</label>
                     <select name="visibility" class="form-select" id="visSelect">
                         <option value="all_coaches">👥 Všichni trenéři</option>
+                        <option value="all_athletes" <?= $athleteAudienceEnabled ? '' : 'disabled' ?>>🏃 Všichni sportovci</option>
                         <option value="specific_coaches">👤 Vybraní trenéři</option>
                     </select>
                 </div>
@@ -255,7 +307,7 @@ renderAdminHeader('Galerie');
                 </div>
                 <div class="alert alert-info small mb-0">
                     <i class="fas fa-bell me-1"></i>
-                    Po nahrání budou všichni dotčení trenéři automaticky notifikováni systémovou zprávou.
+                    Po nahrání budou všichni dotčení uživatelé automaticky upozorněni systémovou zprávou.
                 </div>
             </div>
             <div class="modal-footer">

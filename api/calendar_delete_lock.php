@@ -37,7 +37,7 @@ if ($lockId <= 0) {
 $pdo = getDB();
 $lockSeriesAvailable = (bool)$pdo->query("SHOW COLUMNS FROM coach_calendar_locks LIKE 'series_id'")->fetch();
 $owner = $pdo->prepare(
-    'SELECT ' . ($lockSeriesAvailable ? 'series_id' : 'NULL AS series_id') . '
+    'SELECT ' . ($lockSeriesAvailable ? 'series_id' : 'NULL AS series_id') . ', note, starts_at, ends_at
      FROM coach_calendar_locks WHERE id = ? AND coach_id = ?'
 );
 $owner->execute([$lockId, $coachId]);
@@ -50,6 +50,29 @@ if (!$lock) {
 if ($deleteScope === 'series' && !empty($lock['series_id'])) {
     $del = $pdo->prepare('DELETE FROM coach_calendar_locks WHERE coach_id = ? AND series_id = ?');
     $del->execute([$coachId, $lock['series_id']]);
+} elseif ($deleteScope === 'series' && !$lockSeriesAvailable) {
+    $lockStart = new DateTime((string)$lock['starts_at']);
+    $lockEnd = new DateTime((string)$lock['ends_at']);
+    $legacyLocksStmt = $pdo->prepare(
+        'SELECT id, note, starts_at, ends_at FROM coach_calendar_locks WHERE coach_id = ?'
+    );
+    $legacyLocksStmt->execute([$coachId]);
+    $legacyIds = [];
+    foreach ($legacyLocksStmt->fetchAll() as $legacyLock) {
+        $candidateStart = new DateTime((string)$legacyLock['starts_at']);
+        $candidateEnd = new DateTime((string)$legacyLock['ends_at']);
+        if ((string)($legacyLock['note'] ?? '') === (string)($lock['note'] ?? '')
+            && $candidateStart->format('N H:i:s') === $lockStart->format('N H:i:s')
+            && ($candidateEnd->getTimestamp() - $candidateStart->getTimestamp()) === ($lockEnd->getTimestamp() - $lockStart->getTimestamp())) {
+            $legacyIds[] = (int)$legacyLock['id'];
+        }
+    }
+    if (!$legacyIds) {
+        $legacyIds[] = $lockId;
+    }
+    $placeholders = implode(',', array_fill(0, count($legacyIds), '?'));
+    $del = $pdo->prepare("DELETE FROM coach_calendar_locks WHERE coach_id = ? AND id IN ($placeholders)");
+    $del->execute(array_merge([$coachId], $legacyIds));
 } else {
     $del = $pdo->prepare('DELETE FROM coach_calendar_locks WHERE id = ? AND coach_id = ?');
     $del->execute([$lockId, $coachId]);

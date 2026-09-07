@@ -592,7 +592,7 @@ function ensureSchemaUpgrades(PDO $pdo): void {
             `file_type`           ENUM('image','video','document') NOT NULL DEFAULT 'document',
             `mime_type`           VARCHAR(200) NULL,
             `description`         TEXT NULL,
-            `visibility`          ENUM('all_coaches','specific_coaches') NOT NULL DEFAULT 'all_coaches',
+            `visibility`          ENUM('all_coaches','specific_coaches','all_athletes') NOT NULL DEFAULT 'all_coaches',
             `uploaded_by_admin_id` INT NULL,
             `created_at`          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4

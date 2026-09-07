@@ -76,6 +76,21 @@ $locksStmt->execute([
 ]);
 $locks = $locksStmt->fetchAll();
 
+if (!$lockSeriesAvailable && $locks) {
+    // Starší opakování vznikla jako samostatné řádky bez series_id.
+    // Stejný den v týdnu, čas, délka a poznámka bezpečně označí jejich původní logiku.
+    foreach ($locks as &$lock) {
+        $lockStart = new DateTime((string)$lock['starts_at']);
+        $lockEnd = new DateTime((string)$lock['ends_at']);
+        $lock['series_id'] = 'legacy-' . sha1(
+            (string)($lock['note'] ?? '') . '|' .
+            $lockStart->format('N H:i:s') . '|' .
+            ($lockEnd->getTimestamp() - $lockStart->getTimestamp())
+        );
+    }
+    unset($lock);
+}
+
 echo json_encode([
     'success' => true,
     'week_start' => $weekStart->format('Y-m-d'),

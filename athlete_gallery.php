@@ -44,6 +44,26 @@ $sharedFiles = array_values(array_filter($sharedFiles, static function (array $f
     return is_string($f['file_path'] ?? null) && $f['file_path'] !== '' && file_exists($full);
 }));
 
+foreach ($sharedFiles as &$sharedFile) {
+    $sharedFile['_source'] = 'coach';
+}
+unset($sharedFile);
+
+$adminFiles = $pdo->query("
+    SELECT agf.*
+    FROM admin_gallery_files agf
+    WHERE agf.visibility = 'all_athletes'
+    ORDER BY agf.created_at DESC
+")->fetchAll();
+$adminFiles = array_values(array_filter($adminFiles, static function (array $file): bool {
+    $filePath = (string)($file['file_path'] ?? '');
+    return $filePath !== '' && file_exists(__DIR__ . '/uploads/gallery/admin/' . $filePath);
+}));
+foreach ($adminFiles as &$adminFile) {
+    $adminFile['_source'] = 'admin';
+}
+unset($adminFile);
+
 function buildSharedSignature(array $files): string
 {
     $parts = [];
@@ -53,12 +73,13 @@ function buildSharedSignature(array $files): string
             (string)($f['file_path'] ?? ''),
             (string)($f['created_at'] ?? ''),
             (string)($f['visibility'] ?? ''),
+            (string)($f['_source'] ?? ''),
         ]);
     }
     return sha1(implode(';', $parts));
 }
 
-function renderSharedFilesSection(array $sharedFiles, int $coachId): string
+function renderSharedFilesSection(array $sharedFiles, string $uploadBaseUrl, string $heading, string $headingIcon): string
 {
     ob_start();
     if (empty($sharedFiles)): ?>
@@ -69,7 +90,7 @@ function renderSharedFilesSection(array $sharedFiles, int $coachId): string
 <?php else: ?>
 <div class="mb-5">
     <h5 class="fw-bold mb-3">
-        <i class="fas fa-user-check me-2 text-primary"></i>Od trenera
+        <i class="fas <?= h($headingIcon) ?> me-2 text-primary"></i><?= h($heading) ?>
         <span class="badge bg-secondary ms-2" style="font-size:.75rem"><?= count($sharedFiles) ?></span>
     </h5>
     <div class="row g-3">
@@ -77,7 +98,7 @@ function renderSharedFilesSection(array $sharedFiles, int $coachId): string
         <div class="col-6 col-md-4 col-lg-3 col-xl-2">
             <div class="card border-0 shadow-sm h-100">
                 <?php
-                $fileSrc = BASE_URL . '/uploads/gallery/coach_' . $coachId . '/' . rawurlencode($f['file_path']);
+                $fileSrc = $uploadBaseUrl . '/' . rawurlencode($f['file_path']);
                 $ico = match($f['file_type']) { 'image' => 'fa-image', 'video' => 'fa-video', default => 'fa-file-alt' };
                 $icoColor = match($f['file_type']) { 'image' => 'text-success', 'video' => 'text-danger', default => 'text-info' };
                 ?>
@@ -123,8 +144,27 @@ function renderSharedFilesSection(array $sharedFiles, int $coachId): string
     return (string)ob_get_clean();
 }
 
-$sharedSignature = buildSharedSignature($sharedFiles);
-$sharedHtml = renderSharedFilesSection($sharedFiles, $coachId);
+$sharedSignature = buildSharedSignature(array_merge($adminFiles, $sharedFiles));
+$sharedHtml = '';
+if ($adminFiles !== []) {
+    $sharedHtml .= renderSharedFilesSection(
+        $adminFiles,
+        BASE_URL . '/uploads/gallery/admin',
+        'Od administrátora',
+        'fa-user-shield'
+    );
+}
+if ($sharedFiles !== []) {
+    $sharedHtml .= renderSharedFilesSection(
+        $sharedFiles,
+        BASE_URL . '/uploads/gallery/coach_' . $coachId,
+        'Od trenéra',
+        'fa-user-check'
+    );
+}
+if ($sharedHtml === '') {
+    $sharedHtml = renderSharedFilesSection([], '', '', '');
+}
 
 if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
     header('Content-Type: application/json; charset=UTF-8');
