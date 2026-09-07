@@ -27,14 +27,18 @@ foreach ($athletes as $athlete) {
 }
 $validCoachIds = array_map('intval', array_column($coaches, 'id'));
 $allowedVisibilities = ['all_coaches', 'specific_coaches', 'all_athletes', 'specific_athletes', 'all_users'];
+$descriptionMaxLength = 10000;
 
 $errors = [];
 $visibilityColumn = $pdo->query("SHOW COLUMNS FROM admin_gallery_files LIKE 'visibility'")->fetch();
 $visibilityType = (string)($visibilityColumn['Type'] ?? '');
+$titleColumn = $pdo->query("SHOW COLUMNS FROM admin_gallery_files LIKE 'title'")->fetch();
+$galleryPostTitleEnabled = (bool)$titleColumn;
 $athleteRecipientsTable = $pdo->query("SHOW TABLES LIKE 'admin_gallery_file_athletes'")->fetch();
 $athleteAudienceEnabled = str_contains($visibilityType, "'specific_athletes'")
     && str_contains($visibilityType, "'all_users'")
     && (bool)$athleteRecipientsTable;
+$galleryUpgradeReady = $athleteAudienceEnabled && $galleryPostTitleEnabled;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
@@ -50,6 +54,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 "ALTER TABLE admin_gallery_files
                  MODIFY visibility ENUM('all_coaches','specific_coaches','all_athletes','specific_athletes','all_users') NOT NULL DEFAULT 'all_coaches'"
             );
+            if (!$galleryPostTitleEnabled) {
+                $pdo->exec('ALTER TABLE admin_gallery_files ADD COLUMN title VARCHAR(180) NULL AFTER original_name');
+            }
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS admin_gallery_file_athletes (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -62,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         FOREIGN KEY (athlete_id) REFERENCES athletes(id) ON DELETE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             ");
-            flash('success', 'Všechna publika galerie byla povolena.');
+            flash('success', 'Galerie byla aktualizována. Lze používat vlastní názvy i všechna publika.');
         } catch (Throwable $e) {
             error_log('Admin gallery athlete audience migration failed: ' . $e->getMessage());
             flash('danger', 'Databázi se nepodařilo upravit. Kontaktujte správce serveru.');
@@ -72,6 +79,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'update_visibility') {
         $fileId = intParam($_POST, 'file_id');
+        $postTitle = mb_substr(trim((string)($_POST['title'] ?? '')), 0, 180, 'UTF-8');
+        $description = mb_substr(trim((string)($_POST['description'] ?? '')), 0, $descriptionMaxLength, 'UTF-8');
         $visibility = in_array($_POST['visibility'] ?? '', $allowedVisibilities, true)
             ? (string)$_POST['visibility']
             : 'all_coaches';
@@ -86,6 +95,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($visibility === 'specific_coaches' && $specificCoachIds === []) {
             flash('danger', 'Vyberte alespoň jednoho aktivního trenéra.');
+            redirect(BASE_URL . '/admin/gallery.php');
+        }
+        if ($postTitle === '') {
+            flash('danger', 'Vyplňte vlastní název příspěvku.');
+            redirect(BASE_URL . '/admin/gallery.php');
+        }
+        if (!$galleryPostTitleEnabled) {
+            flash('danger', 'Nejprve aktualizujte galerii.');
             redirect(BASE_URL . '/admin/gallery.php');
         }
         if ($visibility === 'specific_athletes' && $specificAthleteIds === []) {
@@ -106,7 +123,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         try {
             $pdo->beginTransaction();
-            $pdo->prepare('UPDATE admin_gallery_files SET visibility = ? WHERE id = ?')->execute([$visibility, $fileId]);
+            $pdo->prepare('UPDATE admin_gallery_files SET title = ?, description = ?, visibility = ? WHERE id = ?')
+                ->execute([$postTitle, $description !== '' ? $description : null, $visibility, $fileId]);
             $pdo->prepare('DELETE FROM admin_gallery_file_coaches WHERE file_id = ?')->execute([$fileId]);
             if ($athleteAudienceEnabled) {
                 $pdo->prepare('DELETE FROM admin_gallery_file_athletes WHERE file_id = ?')->execute([$fileId]);
@@ -126,7 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $pdo->commit();
-            flash('success', 'Viditelnost souboru byla změněna.');
+            flash('success', 'Příspěvek byl upraven.');
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
@@ -139,13 +157,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Nahrání souboru
     if ($action === 'upload') {
-        $description = trim($_POST['description'] ?? '');
+        $postTitle = mb_substr(trim((string)($_POST['title'] ?? '')), 0, 180, 'UTF-8');
+        $description = mb_substr(trim((string)($_POST['description'] ?? '')), 0, $descriptionMaxLength, 'UTF-8');
         $visibility  = in_array($_POST['visibility'] ?? '', $allowedVisibilities, true)
                        ? $_POST['visibility'] : 'all_coaches';
         $specificCoachIds = array_map('intval', array_filter($_POST['specific_coaches'] ?? []));
         $specificAthleteIds = array_map('intval', array_filter($_POST['specific_athletes'] ?? []));
         $specificCoachIds = array_values(array_intersect($specificCoachIds, $validCoachIds));
         $specificAthleteIds = array_values(array_intersect($specificAthleteIds, $athleteIds));
+
+        if (!$galleryPostTitleEnabled) {
+            $errors[] = 'Nejprve aktualizujte galerii.';
+        } elseif ($postTitle === '') {
+            $errors[] = 'Vyplňte vlastní název příspěvku.';
+        }
 
         if ($visibility === 'specific_coaches' && $specificCoachIds === []) {
             $errors[] = 'Vyberte alespoň jednoho aktivního trenéra.';
@@ -188,8 +213,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $ftype = str_starts_with($mime, 'image/') ? 'image'
                    : (str_starts_with($mime, 'video/') ? 'video' : 'document');
 
-            $ins = $pdo->prepare("INSERT INTO admin_gallery_files (file_path, original_name, file_size, file_type, mime_type, description, visibility, uploaded_by_admin_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-            $ins->execute([$newName, $origName, $size, $ftype, $mime, $description ?: null, $visibility, $adminId]);
+            $ins = $pdo->prepare("INSERT INTO admin_gallery_files (file_path, original_name, title, file_size, file_type, mime_type, description, visibility, uploaded_by_admin_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $ins->execute([$newName, $origName, $postTitle, $size, $ftype, $mime, $description ?: null, $visibility, $adminId]);
             $newFileId = (int)$pdo->lastInsertId();
             $uploadedIds[] = $newFileId;
 
@@ -209,6 +234,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($uploadedCount > 0) {
+            $emailExcerpt = preg_replace('/\s+/u', ' ', $description) ?? $description;
+            $emailExcerpt = mb_strimwidth(trim($emailExcerpt), 0, 300, '…', 'UTF-8');
             $notifyCoachIds = match ($visibility) {
                 'all_coaches', 'all_users' => $validCoachIds,
                 'specific_coaches' => $specificCoachIds,
@@ -232,7 +259,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'sendGalleryNotificationEmail',
                         (string)$athleteRecipient['email'],
                         $athleteName !== '' ? $athleteName : 'sportovče',
-                        'athlete'
+                        'athlete',
+                        $postTitle,
+                        $emailExcerpt
                     );
                 }
             }
@@ -251,8 +280,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'sendGalleryNotificationEmail',
                         (string)$coachRecipient['email'],
                         $coachName !== '' ? $coachName : 'trenére',
-                        'coach'
+                        'coach',
+                        $postTitle,
+                        $emailExcerpt
                     );
+                }
+            }
+
+            if (($notifyCoachIds !== [] || $notifyAthleteIds !== []) && isEmailQueueEnabled()) {
+                try {
+                    processEmailNotificationQueue(200, 'gallery_notification');
+                } catch (Throwable $e) {
+                    error_log('Immediate gallery email processing failed: ' . $e->getMessage());
                 }
             }
 
@@ -311,17 +350,17 @@ renderAdminHeader('Galerie');
     </button>
 </div>
 
-<?php if (!$athleteAudienceEnabled): ?>
+<?php if (!$galleryUpgradeReady): ?>
 <div class="alert alert-warning d-flex justify-content-between align-items-center gap-3 flex-wrap">
     <div>
         <i class="fas fa-database me-2"></i>
-        Pro výběr sportovců a společné publikování je potřeba jednorázově rozšířit databázi.
+        Pro vlastní názvy příspěvků a všechna publika je potřeba jednorázově aktualizovat galerii.
     </div>
     <form method="post" class="m-0">
         <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
         <input type="hidden" name="action" value="enable_athlete_audience">
         <button type="submit" class="btn btn-warning fw-semibold">
-            <i class="fas fa-play me-1"></i>Povolit všechna publika
+            <i class="fas fa-play me-1"></i>Aktualizovat galerii
         </button>
     </form>
 </div>
@@ -362,6 +401,7 @@ renderAdminHeader('Galerie');
             <?php
             $ico = match($f['file_type']) { 'image' => 'fa-image text-success', 'video' => 'fa-video text-danger', default => 'fa-file-alt text-info' };
             $src = BASE_URL . '/uploads/gallery/admin/' . rawurlencode($f['file_path']);
+            $postTitle = trim((string)($f['title'] ?? '')) ?: (string)$f['original_name'];
             $selectedCoachIds = array_values(array_filter(array_map('intval', explode(',', (string)($f['coach_ids'] ?? '')))));
             $selectedAthleteIds = array_values(array_filter(array_map('intval', explode(',', (string)($f['athlete_ids'] ?? '')))));
             ?>
@@ -369,8 +409,9 @@ renderAdminHeader('Galerie');
                 <td class="text-center"><i class="fas <?= $ico ?> fa-lg"></i></td>
                 <td>
                     <a href="<?= $src ?>" target="_blank" class="fw-semibold text-decoration-none">
-                        <?= h($f['original_name']) ?>
+                        <?= h($postTitle) ?>
                     </a>
+                    <div class="small text-muted text-truncate"><?= h($f['original_name']) ?></div>
                 </td>
                 <td class="text-muted small"><?= h(mb_strimwidth($f['description'] ?? '', 0, 60, '…')) ?: '—' ?></td>
                 <td>
@@ -393,11 +434,13 @@ renderAdminHeader('Galerie');
                         <i class="fas fa-eye"></i>
                     </a>
                     <button type="button" class="btn btn-sm btn-outline-secondary me-1 js-edit-visibility"
-                            title="<?= $athleteAudienceEnabled ? 'Nastavit viditelnost' : 'Nejprve povolte všechna publika' ?>"
-                            <?= $athleteAudienceEnabled ? '' : 'disabled' ?>
+                            title="<?= $galleryUpgradeReady ? 'Upravit příspěvek' : 'Nejprve aktualizujte galerii' ?>"
+                            <?= $galleryUpgradeReady ? '' : 'disabled' ?>
                             data-bs-toggle="modal" data-bs-target="#modalVisibility"
                             data-file-id="<?= (int)$f['id'] ?>"
                             data-file-name="<?= h($f['original_name']) ?>"
+                            data-title="<?= h($postTitle) ?>"
+                            data-description="<?= h((string)($f['description'] ?? '')) ?>"
                             data-visibility="<?= h($f['visibility']) ?>"
                             data-coach-ids="<?= h(json_encode($selectedCoachIds)) ?>"
                             data-athlete-ids="<?= h(json_encode($selectedAthleteIds)) ?>">
@@ -438,8 +481,14 @@ renderAdminHeader('Galerie');
                            accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip,.rar,.7z,.ppt,.pptx">
                 </div>
                 <div class="mb-3">
+                    <label class="form-label fw-semibold">Název příspěvku</label>
+                    <input type="text" name="title" class="form-control" maxlength="180" required
+                           placeholder="Např. Regenerace svalů po tréninku">
+                </div>
+                <div class="mb-3">
                     <label class="form-label fw-semibold">Popis <small class="text-muted">(volitelný)</small></label>
-                    <textarea name="description" class="form-control" rows="2" maxlength="1000"></textarea>
+                    <textarea name="description" class="form-control" rows="5" maxlength="<?= $descriptionMaxLength ?>"></textarea>
+                    <div class="form-text">Maximálně <?= number_format($descriptionMaxLength, 0, ',', ' ') ?> znaků.</div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label fw-semibold">Viditelnost</label>
@@ -503,7 +552,7 @@ renderAdminHeader('Galerie');
     </div>
 </div>
 
-<!-- Modal: Změnit viditelnost existujícího souboru -->
+<!-- Modal: Upravit existující příspěvek -->
 <div class="modal fade" id="modalVisibility" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <form method="post" class="modal-content">
@@ -512,12 +561,21 @@ renderAdminHeader('Galerie');
             <input type="hidden" name="file_id" id="editVisibilityFileId">
             <div class="modal-header">
                 <div>
-                    <h5 class="modal-title"><i class="fas fa-users-gear me-2"></i>Nastavit viditelnost</h5>
+                    <h5 class="modal-title"><i class="fas fa-pen-to-square me-2"></i>Upravit příspěvek</h5>
                     <div class="small text-muted text-truncate" id="editVisibilityFileName"></div>
                 </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div class="mb-3">
+                    <label for="editPostTitle" class="form-label fw-semibold">Název příspěvku</label>
+                    <input type="text" name="title" id="editPostTitle" class="form-control" maxlength="180" required>
+                </div>
+                <div class="mb-3">
+                    <label for="editPostDescription" class="form-label fw-semibold">Popis <small class="text-muted">(volitelný)</small></label>
+                    <textarea name="description" id="editPostDescription" class="form-control" rows="8" maxlength="<?= $descriptionMaxLength ?>"></textarea>
+                    <div class="form-text">Maximálně <?= number_format($descriptionMaxLength, 0, ',', ' ') ?> znaků.</div>
+                </div>
                 <div class="mb-3">
                     <label for="editVisibilitySelect" class="form-label fw-semibold">Viditelnost</label>
                     <select name="visibility" class="form-select" id="editVisibilitySelect">
@@ -569,7 +627,7 @@ renderAdminHeader('Galerie');
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Zrušit</button>
                 <button type="submit" class="btn btn-primary fw-semibold">
-                    <i class="fas fa-save me-1"></i>Uložit viditelnost
+                    <i class="fas fa-save me-1"></i>Uložit změny
                 </button>
             </div>
         </form>
@@ -598,6 +656,8 @@ document.querySelectorAll('.js-edit-visibility').forEach((button) => {
 
         document.getElementById('editVisibilityFileId').value = button.dataset.fileId || '';
         document.getElementById('editVisibilityFileName').textContent = button.dataset.fileName || '';
+        document.getElementById('editPostTitle').value = button.dataset.title || '';
+        document.getElementById('editPostDescription').value = button.dataset.description || '';
         editVisibilitySelect.value = button.dataset.visibility || 'all_coaches';
         document.querySelectorAll('.edit-coach-checkbox').forEach((checkbox) => {
             checkbox.checked = coachIds.has(checkbox.value);

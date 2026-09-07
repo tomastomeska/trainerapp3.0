@@ -5488,12 +5488,22 @@ function sendAthleteCalendarNotificationEmailNow(string $toEmail, string $athlet
   }
 }
 
-function sendGalleryNotificationEmail(string $toEmail, string $recipientName, string $recipientRole): bool {
+function sendGalleryNotificationEmail(
+  string $toEmail,
+  string $recipientName,
+  string $recipientRole,
+  string $postTitle,
+  string $postExcerpt = ''
+): bool {
   if (!isEmailNotificationEnabled('gallery_notification')) {
     return true;
   }
 
-  $subject = 'Nový příspěvek v galerii TrainerApp';
+  $postTitle = trim($postTitle);
+  $postExcerpt = trim($postExcerpt);
+  $subject = $postTitle !== ''
+    ? 'TrainerApp galerie: ' . mb_substr($postTitle, 0, 140, 'UTF-8')
+    : 'Nový příspěvek v galerii TrainerApp';
   if (isEmailQueueEnabled() && emailNotificationQueueTableAvailable()) {
     return enqueueEmailNotificationJob(
       'gallery_notification',
@@ -5502,6 +5512,8 @@ function sendGalleryNotificationEmail(string $toEmail, string $recipientName, st
       [
         'recipient_name' => $recipientName,
         'recipient_role' => $recipientRole,
+        'post_title' => $postTitle,
+        'post_excerpt' => $postExcerpt,
       ]
     );
   }
@@ -5511,10 +5523,17 @@ function sendGalleryNotificationEmail(string $toEmail, string $recipientName, st
     return false;
   }
 
-  return sendGalleryNotificationEmailNow($toEmail, $recipientName, $recipientRole, $subject);
+  return sendGalleryNotificationEmailNow($toEmail, $recipientName, $recipientRole, $subject, $postTitle, $postExcerpt);
 }
 
-function sendGalleryNotificationEmailNow(string $toEmail, string $recipientName, string $recipientRole, string $subject): bool {
+function sendGalleryNotificationEmailNow(
+  string $toEmail,
+  string $recipientName,
+  string $recipientRole,
+  string $subject,
+  string $postTitle = '',
+  string $postExcerpt = ''
+): bool {
   $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
   if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
     return false;
@@ -5531,11 +5550,18 @@ function sendGalleryNotificationEmailNow(string $toEmail, string $recipientName,
   $link = $base . BASE_URL . $galleryPath;
   $safeName = htmlspecialchars($recipientName, ENT_QUOTES, 'UTF-8');
   $safeLink = htmlspecialchars($link, ENT_QUOTES, 'UTF-8');
+  $safeTitle = htmlspecialchars(trim($postTitle), ENT_QUOTES, 'UTF-8');
+  $safeExcerpt = nl2br(htmlspecialchars(trim($postExcerpt), ENT_QUOTES, 'UTF-8'));
   $htmlBody = "<p>Dobrý den, <strong>{$safeName}</strong>,</p>"
-    . '<p>v galerii TrainerApp je nový příspěvek od administrátora.</p>'
+    . '<p>v galerii TrainerApp je nový příspěvek.</p>'
+    . ($safeTitle !== '' ? "<h2 style=\"font-size:20px;margin:18px 0 8px\">{$safeTitle}</h2>" : '')
+    . ($safeExcerpt !== '' ? "<div style=\"margin:0 0 18px;color:#444;line-height:1.55\">{$safeExcerpt}</div>" : '')
     . "<p><a href=\"{$safeLink}\" style=\"background:#0d6efd;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none\">Otevřít galerii</a></p>"
     . '<hr><p style="color:#888;font-size:.85em">TrainerApp – automatické notifikace</p>';
-  $plainBody = "Dobrý den, {$recipientName},\n\nv galerii TrainerApp je nový příspěvek od administrátora.\n\nOtevřít galerii: {$link}\n\nTrainerApp";
+  $plainBody = "Dobrý den, {$recipientName},\n\nv galerii TrainerApp je nový příspěvek."
+    . ($postTitle !== '' ? "\n\n{$postTitle}" : '')
+    . ($postExcerpt !== '' ? "\n\n{$postExcerpt}" : '')
+    . "\n\nOtevřít galerii: {$link}\n\nTrainerApp";
 
   $mail = new PHPMailer\PHPMailer\PHPMailer(true);
   try {
@@ -5549,6 +5575,22 @@ function sendGalleryNotificationEmailNow(string $toEmail, string $recipientName,
     return true;
   } catch (\Exception $e) {
     error_log('sendGalleryNotificationEmail error: ' . $mail->ErrorInfo . ' | ' . $e->getMessage());
+  }
+
+  try {
+    $fallback = new PHPMailer\PHPMailer\PHPMailer(true);
+    $fallback->isMail();
+    $fallback->CharSet = 'UTF-8';
+    $fallback->setFrom(SMTP_FROM, SMTP_FROM_NAME);
+    $fallback->addAddress($toEmail);
+    $fallback->isHTML(true);
+    $fallback->Subject = $subject;
+    $fallback->Body = $htmlBody;
+    $fallback->AltBody = $plainBody;
+    $fallback->send();
+    return true;
+  } catch (\Exception $e) {
+    error_log('sendGalleryNotificationEmail fallback error: ' . $e->getMessage());
     return false;
   }
 }
@@ -6820,7 +6862,7 @@ function enqueueEmailNotificationJob(string $templateKey, string $recipientEmail
   }
 }
 
-function processEmailNotificationQueue(int $limit = 20): array {
+function processEmailNotificationQueue(int $limit = 20, ?string $templateKeyFilter = null): array {
   $results = [];
   $maxAttempts = 5;
 
@@ -6830,6 +6872,9 @@ function processEmailNotificationQueue(int $limit = 20): array {
 
   $pdo = getDB();
   $limit = max(1, min(200, $limit));
+  $templateKeyFilter = trim((string)$templateKeyFilter);
+  $templateFilterSql = $templateKeyFilter !== '' ? ' AND template_key = ?' : '';
+  $jobParams = $templateKeyFilter !== '' ? [$templateKeyFilter] : [];
 
   $resetStale = $pdo->prepare(
     'UPDATE email_notification_jobs
@@ -6848,10 +6893,11 @@ function processEmailNotificationQueue(int $limit = 20): array {
      WHERE status IN ("pending", "failed")
        AND attempt_count < ' . $maxAttempts . '
        AND next_attempt_at <= NOW()
+       ' . $templateFilterSql . '
      ORDER BY id ASC
      LIMIT ' . $limit
   );
-  $jobStmt->execute();
+  $jobStmt->execute($jobParams);
   $jobs = $jobStmt->fetchAll();
 
   foreach ($jobs as $job) {
@@ -6868,9 +6914,15 @@ function processEmailNotificationQueue(int $limit = 20): array {
     $markProcessing = $pdo->prepare(
       'UPDATE email_notification_jobs
        SET status = "processing", updated_at = NOW(), attempt_count = attempt_count + 1
-       WHERE id = ?'
+       WHERE id = ?
+         AND status IN ("pending", "failed")
+         AND attempt_count < ?
+         AND next_attempt_at <= NOW()'
     );
-    $markProcessing->execute([$jobId]);
+    $markProcessing->execute([$jobId, $maxAttempts]);
+    if ($markProcessing->rowCount() !== 1) {
+      continue;
+    }
 
     try {
       $payloadRaw = (string)($job['payload_json'] ?? '{}');
@@ -6891,7 +6943,9 @@ function processEmailNotificationQueue(int $limit = 20): array {
       } elseif ($templateKey === 'gallery_notification') {
         $recipientName = trim((string)($payload['recipient_name'] ?? 'uživateli'));
         $recipientRole = trim((string)($payload['recipient_role'] ?? 'coach'));
-        $sent = sendGalleryNotificationEmailNow($recipientEmail, $recipientName, $recipientRole, $subject);
+        $postTitle = trim((string)($payload['post_title'] ?? ''));
+        $postExcerpt = trim((string)($payload['post_excerpt'] ?? ''));
+        $sent = sendGalleryNotificationEmailNow($recipientEmail, $recipientName, $recipientRole, $subject, $postTitle, $postExcerpt);
       } else {
         throw new RuntimeException('Neznamy template email fronty: ' . $templateKey);
       }
@@ -6911,9 +6965,9 @@ function processEmailNotificationQueue(int $limit = 20): array {
     } catch (Throwable $e) {
       $nextAttemptCount = $attemptCount + 1;
       if ($nextAttemptCount >= $maxAttempts) {
-        $markDead = $pdo->prepare(
+          $markDead = $pdo->prepare(
           'UPDATE email_notification_jobs
-           SET status = "dead",
+            SET status = "failed",
                last_error = ?,
                updated_at = NOW()
            WHERE id = ?'

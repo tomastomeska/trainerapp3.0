@@ -158,26 +158,27 @@ renderHeader('Galerie', false, true);
 </div>
 
 <?php if ($adminFiles !== []): ?>
-<h5 class="fw-bold text-muted mb-3"><i class="fas fa-user-shield me-2"></i>Od administrátora</h5>
+<h5 class="fw-bold text-muted mb-3"><i class="fas fa-images me-2"></i>TrainerApp galerie</h5>
 <div class="row g-3 mb-4">
     <?php foreach ($adminFiles as $file): ?>
     <?php
     $fileUrl = BASE_URL . '/uploads/gallery/admin/' . rawurlencode((string)$file['file_path']);
     $fileIcon = match($file['file_type']) { 'image' => 'fa-image text-success', 'video' => 'fa-video text-danger', default => 'fa-file-alt text-info' };
+    $postTitle = trim((string)($file['title'] ?? '')) ?: (string)$file['original_name'];
     ?>
     <div class="col-6 col-md-4 col-lg-3 col-xl-2">
         <button type="button" class="btn p-0 border-0 bg-transparent text-start w-100 h-100"
-                onclick='openAdminGalleryPost(<?= json_encode($file['file_type'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($fileUrl, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($file['original_name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode((string)($file['description'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode(date('d.m.Y H:i', strtotime($file['created_at'])), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)'>
+                onclick='openAdminGalleryPost(<?= json_encode($file['file_type'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($fileUrl, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($postTitle, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode((string)($file['description'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode(date('d.m.Y H:i', strtotime($file['created_at'])), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)'>
             <div class="card border-0 shadow-sm h-100 gallery-folder-card overflow-hidden">
                 <?php if ($file['file_type'] === 'image'): ?>
-                <img src="<?= h($fileUrl) ?>" alt="<?= h($file['original_name']) ?>" style="width:100%;height:120px;object-fit:cover">
+                <img src="<?= h($fileUrl) ?>" alt="<?= h($postTitle) ?>" style="width:100%;height:120px;object-fit:cover">
                 <?php else: ?>
                 <div class="d-flex align-items-center justify-content-center bg-light" style="height:120px">
                     <i class="fas <?= $fileIcon ?>" style="font-size:2.5rem"></i>
                 </div>
                 <?php endif; ?>
                 <div class="card-body p-2">
-                    <div class="small fw-semibold text-dark text-truncate"><?= h($file['original_name']) ?></div>
+                    <div class="small fw-semibold text-dark text-truncate"><?= h($postTitle) ?></div>
                     <?php if (!empty($file['description'])): ?>
                     <div class="text-muted" style="font-size:.75rem"><?= h(mb_strimwidth($file['description'], 0, 60, '...')) ?></div>
                     <?php endif; ?>
@@ -195,7 +196,7 @@ renderHeader('Galerie', false, true);
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
                 <div class="min-w-0">
-                    <h5 class="modal-title text-break" id="adminGalleryPostTitle">Příspěvek od administrátora</h5>
+                    <h5 class="modal-title text-break" id="adminGalleryPostTitle">TrainerApp galerie</h5>
                     <div class="small text-muted" id="adminGalleryPostDate"></div>
                 </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
@@ -210,7 +211,7 @@ renderHeader('Galerie', false, true);
 
 <script>
 function openAdminGalleryPost(type, src, name, description, createdAt) {
-    document.getElementById('adminGalleryPostTitle').textContent = name || 'Příspěvek od administrátora';
+    document.getElementById('adminGalleryPostTitle').textContent = name || 'TrainerApp galerie';
     document.getElementById('adminGalleryPostDate').textContent = createdAt || '';
 
     const descriptionElement = document.getElementById('adminGalleryPostDescription');

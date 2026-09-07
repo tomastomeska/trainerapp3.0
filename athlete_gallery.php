@@ -97,6 +97,8 @@ function buildSharedSignature(array $files): string
             (string)($f['created_at'] ?? ''),
             (string)($f['visibility'] ?? ''),
             (string)($f['_source'] ?? ''),
+            (string)($f['title'] ?? ''),
+            (string)($f['description'] ?? ''),
         ]);
     }
     return sha1(implode(';', $parts));
@@ -125,10 +127,11 @@ function renderSharedFilesSection(array $sharedFiles, string $uploadBaseUrl, str
                 $ico = match($f['file_type']) { 'image' => 'fa-image', 'video' => 'fa-video', default => 'fa-file-alt' };
                 $icoColor = match($f['file_type']) { 'image' => 'text-success', 'video' => 'text-danger', default => 'text-info' };
                 $previewType = $f['file_type'] === 'document' ? 'document' : $f['file_type'];
+                $postTitle = trim((string)($f['title'] ?? '')) ?: (string)$f['original_name'];
                 $previewCall = 'openGalleryPreview(' . implode(', ', [
                     json_encode($previewType, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP),
                     json_encode($fileSrc, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP),
-                    json_encode($f['original_name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP),
+                    json_encode($postTitle, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP),
                     json_encode((string)($f['description'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP),
                     json_encode(date('d.m.Y H:i', strtotime($f['created_at'])), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP),
                 ]) . ')';
@@ -136,7 +139,7 @@ function renderSharedFilesSection(array $sharedFiles, string $uploadBaseUrl, str
                 <?php if ($f['file_type'] === 'image'): ?>
                 <button type="button" class="btn p-0 border-0 d-block w-100 text-start"
                     onclick="<?= h($previewCall) ?>">
-                    <img src="<?= $fileSrc ?>" alt="<?= h($f['original_name']) ?>"
+                    <img src="<?= $fileSrc ?>" alt="<?= h($postTitle) ?>"
                          style="width:100%;height:120px;object-fit:cover;border-radius:.375rem .375rem 0 0">
                 </button>
                 <?php elseif ($f['file_type'] === 'video'): ?>
@@ -155,7 +158,7 @@ function renderSharedFilesSection(array $sharedFiles, string $uploadBaseUrl, str
                 </div>
                 <?php endif; ?>
                 <div class="card-body p-2">
-                    <div class="small fw-semibold text-truncate"><?= h($f['original_name']) ?></div>
+                    <div class="small fw-semibold text-truncate"><?= h($postTitle) ?></div>
                     <?php if ($f['description']): ?>
                     <div class="text-muted" style="font-size:.75rem"><?= h(mb_strimwidth($f['description'], 0, 60, '...')) ?></div>
                     <?php endif; ?>
@@ -181,8 +184,8 @@ if ($adminFiles !== []) {
     $sharedHtml .= renderSharedFilesSection(
         $adminFiles,
         BASE_URL . '/uploads/gallery/admin',
-        'Od administrátora',
-        'fa-user-shield'
+        'TrainerApp galerie',
+        'fa-images'
     );
 }
 if ($sharedFiles !== []) {

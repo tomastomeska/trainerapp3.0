@@ -2898,6 +2898,7 @@ function ensureSchemaUpgrades(PDO $pdo): void {
             `id`                  INT AUTO_INCREMENT PRIMARY KEY,
             `file_path`           VARCHAR(500) NOT NULL,
             `original_name`       VARCHAR(255) NOT NULL,
+            `title`               VARCHAR(180) NULL,
             `file_size`           INT NOT NULL DEFAULT 0,
             `file_type`           ENUM('image','video','document') NOT NULL DEFAULT 'document',
             `mime_type`           VARCHAR(100) NULL,

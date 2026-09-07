@@ -23,6 +23,10 @@ try {
         "ALTER TABLE admin_gallery_files
          MODIFY visibility ENUM('all_coaches','specific_coaches','all_athletes','specific_athletes','all_users') NOT NULL DEFAULT 'all_coaches'"
     );
+    $titleColumn = $pdo->query("SHOW COLUMNS FROM admin_gallery_files LIKE 'title'")->fetch();
+    if (!$titleColumn) {
+        $pdo->exec('ALTER TABLE admin_gallery_files ADD COLUMN title VARCHAR(180) NULL AFTER original_name');
+    }
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS admin_gallery_file_athletes (
             id INT AUTO_INCREMENT PRIMARY KEY,
