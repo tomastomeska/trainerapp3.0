@@ -7,6 +7,21 @@ requireLogin();
 
 $coachId = (int)getCurrentCoachId();
 $pdo = getDB();
+$onlineBillingRows = [];
+try {
+    $onlineBillingStmt = $pdo->prepare(
+        'SELECT ob.*, a.first_name, a.last_name, ot.sequence_number
+         FROM online_training_billing ob
+         JOIN athletes a ON a.id = ob.athlete_id
+         LEFT JOIN online_trainings ot ON ot.id = ob.online_training_id
+         WHERE ob.trainer_id = ? AND DATE_FORMAT(ob.billing_date, "%Y-%m") = ?
+         ORDER BY ob.billing_date DESC, ob.id DESC'
+    );
+    $onlineBillingStmt->execute([$coachId, (string)($_GET['month'] ?? date('Y-m'))]);
+    $onlineBillingRows = $onlineBillingStmt->fetchAll();
+} catch (Throwable $e) {
+    $onlineBillingRows = [];
+}
 
 function parseBillingMonthValue(?string $raw): DateTimeImmutable
 {
@@ -1173,6 +1188,15 @@ foreach ($athletes as $athlete) {
 
 renderHeader('Platby', false, true);
 ?>
+
+<?php if (!empty($onlineBillingRows)): ?>
+<div class="card border-warning shadow-sm mb-4">
+    <div class="card-header bg-warning text-dark fw-bold"><i class="fas fa-laptop me-2"></i>Online tréninky v tomto vyúčtování</div>
+    <div class="table-responsive"><table class="table table-sm mb-0 align-middle"><thead><tr><th>Datum</th><th>Položka</th><th>Sportovec</th><th class="text-end">Částka</th></tr></thead><tbody>
+    <?php foreach ($onlineBillingRows as $row): ?><tr><td><?= h(formatDate((string)$row['billing_date'])) ?></td><td><span class="badge bg-warning text-dark">ONLINE</span> <?= h((string)$row['description']) ?></td><td><?= h($row['first_name'] . ' ' . $row['last_name']) ?></td><td class="text-end fw-semibold"><?= number_format((float)$row['amount'], 2, ',', ' ') ?> Kč</td></tr><?php endforeach; ?>
+    </tbody></table></div>
+</div>
+<?php endif; ?>
 
 <?php if (!empty($schemaWarnings)): ?>
 <div class="alert alert-warning">

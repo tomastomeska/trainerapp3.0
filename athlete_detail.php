@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/online_training.php';
 require_once __DIR__ . '/includes/header.php';
 require_once __DIR__ . '/includes/health_questionnaire.php';
 
@@ -41,6 +42,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $action = (string)($_POST['action'] ?? '');
+    if ($action === 'create_online_subscription') {
+        $total = (int)($_POST['total_trainings'] ?? 0);
+        $priceRaw = str_replace(',', '.', trim((string)($_POST['subscription_price'] ?? '')));
+        $price = is_numeric($priceRaw) ? (float)$priceRaw : -1;
+        if ($total < 1 || $price < 0) {
+            flash('danger', 'Zadejte platný počet online tréninků a cenu balíku.');
+        } else {
+            $pdo->prepare('INSERT INTO online_training_subscriptions (trainer_id, athlete_id, total_trainings, remaining_trainings, price, purchased_at) VALUES (?, ?, ?, ?, ?, NOW())')->execute([$coachId, $athleteId, $total, $total, $price]);
+            $subscriptionId = (int)$pdo->lastInsertId();
+            $pdo->prepare("INSERT INTO online_training_billing (subscription_id, trainer_id, athlete_id, billing_type, description, amount, billing_date) VALUES (?, ?, ?, 'subscription', ?, ?, CURDATE())")
+                ->execute([$subscriptionId, $coachId, $athleteId, 'Online tréninky - balík ' . $total . ' tréninků', $price]);
+            flash('success', 'Online předplatné bylo vytvořeno.');
+        }
+        redirect(BASE_URL . '/athlete_detail.php?id=' . $athleteId);
+    }
     if ($action === 'save_weight' || $action === 'update_weight') {
         $weightInput = str_replace(',', '.', trim((string)($_POST['weight_kg'] ?? '')));
         $measuredAt = preg_replace('/[^0-9\-]/', '', (string)($_POST['measured_at'] ?? date('Y-m-d')));
@@ -323,6 +339,14 @@ $activeTrainingStmt = $pdo->prepare(
 );
 $activeTrainingStmt->execute([$athleteId]);
 $activeTraining = $activeTrainingStmt->fetch() ?: null;
+$onlineSubscriptions = [];
+try {
+    $onlineSubscriptionStmt = $pdo->prepare('SELECT * FROM online_training_subscriptions WHERE trainer_id = ? AND athlete_id = ? ORDER BY purchased_at DESC, id DESC');
+    $onlineSubscriptionStmt->execute([$coachId, $athleteId]);
+    $onlineSubscriptions = $onlineSubscriptionStmt->fetchAll();
+} catch (Throwable $e) {
+    $onlineSubscriptions = [];
+}
 
 renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']), true, true);
 ?>
@@ -365,6 +389,17 @@ renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']), true, true
                 <i class="fas fa-trash"></i>
             </button>
         </form>
+    </div>
+</div>
+
+<div class="card border-warning shadow-sm mb-4">
+    <div class="card-header bg-warning text-dark fw-bold"><i class="fas fa-laptop me-2"></i>Online tréninky sportovce</div>
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-4"><div class="small text-muted">Sazba za jeden online trénink</div><strong><?= $athlete['online_training_rate'] !== null ? number_format((float)$athlete['online_training_rate'], 2, ',', ' ') . ' Kč' : 'Zdarma / nenastavena' ?></strong><div class="mt-2"><a class="btn btn-sm btn-outline-dark" href="<?= BASE_URL ?>/athlete_edit.php?id=<?= $athleteId ?>&return_to=<?= urlencode(BASE_URL . '/athlete_detail.php?id=' . $athleteId) ?>"><i class="fas fa-edit me-1"></i>Upravit sazbu</a></div></div>
+            <div class="col-md-8"><form method="post" class="row g-2"><input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>"><input type="hidden" name="action" value="create_online_subscription"><div class="col-sm-4"><label class="form-label small">Počet tréninků</label><input name="total_trainings" type="number" min="1" class="form-control" required></div><div class="col-sm-5"><label class="form-label small">Cena balíku</label><div class="input-group"><input name="subscription_price" type="number" min="0" step="0.01" class="form-control" required><span class="input-group-text">Kč</span></div></div><div class="col-sm-3"><button class="btn btn-warning w-100 mt-sm-4"><i class="fas fa-plus me-1"></i>Vytvořit balík</button></div></form></div>
+        </div>
+        <?php if ($onlineSubscriptions): ?><hr><div class="small fw-bold mb-2">Předplatné</div><div class="d-flex flex-wrap gap-2"><?php foreach ($onlineSubscriptions as $subscription): ?><span class="badge <?= $subscription['status'] === 'active' ? 'bg-success' : 'bg-secondary' ?> p-2"><?= (int)$subscription['total_trainings'] ?> tréninků · využito <?= (int)$subscription['used_trainings'] ?> · zbývá <?= (int)$subscription['remaining_trainings'] ?></span><?php endforeach; ?></div><?php endif; ?>
     </div>
 </div>
 

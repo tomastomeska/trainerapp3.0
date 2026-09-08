@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/online_training.php';
 require_once __DIR__ . '/includes/header.php';
 
 requireLogin();
@@ -26,6 +27,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
         $error = 'Neplatný bezpečnostní token.';
     } else {
+        if (($_POST['action'] ?? '') === 'add_set_attachment') {
+            $exerciseId = (int)($_POST['attachment_exercise_id'] ?? 0);
+            if ($exerciseId > 0) {
+                $validExercise = $pdo->prepare('SELECT id FROM workout_set_exercises WHERE workout_set_id = ? AND exercise_id = ?');
+                $validExercise->execute([$setId, $exerciseId]);
+                if (!$validExercise->fetch()) $exerciseId = 0;
+            }
+            $url = trim((string)($_POST['external_url'] ?? ''));
+            if ($url !== '' && !filter_var($url, FILTER_VALIDATE_URL)) $error = 'Odkaz není platný.';
+            $attachment = null;
+            if (!$error && !empty($_FILES['set_attachment'])) $attachment = onlineTrainingSaveUpload($_FILES['set_attachment'], 'trainer');
+            if (!$error && !$attachment && $url === '') $error = 'Vyberte soubor nebo zadejte URL.';
+            if (!$error) {
+                $pdo->prepare('INSERT INTO workout_set_attachments (workout_set_id, exercise_id, attachment_type, file_path, original_name, external_url) VALUES (?, ?, ?, ?, ?, ?)')->execute([$setId, $exerciseId ?: null, $attachment['type'] ?? 'url', $attachment['path'] ?? null, $attachment['name'] ?? null, $url !== '' ? $url : null]);
+                flash('success', 'Ukázková příloha byla přidána k sadě.');
+                redirect(BASE_URL . '/sada_edit.php?id=' . $setId);
+            }
+        }
         $name      = trim($_POST['name'] ?? '');
         $exercises = array_filter(array_map('intval', $_POST['exercises'] ?? []));
         if ($name === '') {
@@ -84,6 +103,14 @@ $currentExercises = $stmtItems->fetchAll();
 $stmtEx = $pdo->prepare('SELECT * FROM exercises WHERE (coach_id = ? OR is_global = 1) ORDER BY name');
 $stmtEx->execute([$coachId]);
 $exercises = $stmtEx->fetchAll();
+$setAttachments = [];
+try {
+    $attachmentStmt = $pdo->prepare('SELECT wsa.*, e.name AS exercise_name FROM workout_set_attachments wsa LEFT JOIN exercises e ON e.id = wsa.exercise_id WHERE wsa.workout_set_id = ? ORDER BY wsa.id DESC');
+    $attachmentStmt->execute([$setId]);
+    $setAttachments = $attachmentStmt->fetchAll();
+} catch (Throwable $e) {
+    $setAttachments = [];
+}
 
 $exerciseOptionsHtml = '';
 foreach ($exercises as $ex) {
@@ -105,6 +132,21 @@ renderHeader('Upravit sadu');
         <i class="fas fa-arrow-left me-1"></i>Zpět
     </a>
     <h2 class="mb-0"><i class="fas fa-edit me-2 text-warning"></i>Upravit sadu</h2>
+</div>
+
+<div class="card border-warning shadow-sm mt-4">
+    <div class="card-header bg-warning text-dark fw-bold"><i class="fas fa-photo-film me-2"></i>Ukázky k sadě a cvikům</div>
+    <div class="card-body">
+        <p class="small text-muted">Příloha bez cviku se přiřadí k celé sadě. Vybraný cvik ji zobrazí pouze u tohoto cviku. Při vytvoření online tréninku se přílohy zkopírují.</p>
+        <form method="post" enctype="multipart/form-data" class="row g-2 align-items-end">
+            <?= csrfField() ?><input type="hidden" name="action" value="add_set_attachment">
+            <div class="col-md-3"><label class="form-label small">Vazba</label><select name="attachment_exercise_id" class="form-select"><option value="0">Celá sada</option><?php foreach ($currentExercises as $currentExercise): ?><option value="<?= (int)$currentExercise['exercise_id'] ?>"><?php foreach ($exercises as $availableExercise) { if ((int)$availableExercise['id'] === (int)$currentExercise['exercise_id']) { echo h($availableExercise['name']); break; } } ?></option><?php endforeach; ?></select></div>
+            <div class="col-md-3"><input type="file" name="set_attachment" class="form-control" accept="image/*,video/*"></div>
+            <div class="col-md-4"><input type="url" name="external_url" class="form-control" placeholder="Odkaz na video"></div>
+            <div class="col-md-2"><button class="btn btn-warning w-100">Přidat</button></div>
+        </form>
+        <?php if ($setAttachments): ?><div class="mt-3 d-flex flex-wrap gap-2"><?php foreach ($setAttachments as $attachment): ?><span class="badge bg-light text-dark border p-2"><?= $attachment['exercise_name'] ? 'Cvik: ' . h($attachment['exercise_name']) : 'Celá sada' ?> · <?= h($attachment['attachment_type']) ?></span><?php endforeach; ?></div><?php endif; ?>
+    </div>
 </div>
 
 <?php if ($error): ?>

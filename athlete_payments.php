@@ -718,6 +718,15 @@ foreach ($rowsByMonth as $month => $stats) {
     ];
 }
 
+$onlineBillingRows = [];
+try {
+    $onlineBillingStmt = $pdo->prepare('SELECT description, amount, billing_date FROM online_training_billing WHERE athlete_id = ? ORDER BY billing_date DESC, id DESC LIMIT 120');
+    $onlineBillingStmt->execute([$athleteId]);
+    $onlineBillingRows = $onlineBillingStmt->fetchAll();
+} catch (Throwable $e) {
+    $onlineBillingRows = [];
+}
+
 renderAthleteHeader('Platby');
 ?>
 
@@ -735,6 +744,15 @@ renderAthleteHeader('Platby');
         </a>
     </div>
 </div>
+
+<?php if (!empty($onlineBillingRows)): ?>
+<div class="card border-warning shadow-sm mb-4">
+    <div class="card-header bg-warning text-dark fw-bold"><i class="fas fa-laptop me-2"></i>Online tréninky a předplatné</div>
+    <div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Datum</th><th>Položka</th><th class="text-end">Částka</th></tr></thead><tbody>
+    <?php foreach ($onlineBillingRows as $row): ?><tr><td><?= h(formatDate((string)$row['billing_date'])) ?></td><td><span class="badge bg-warning text-dark">ONLINE</span> <?= h((string)$row['description']) ?></td><td class="text-end"><?= number_format((float)$row['amount'], 2, ',', ' ') ?> Kč</td></tr><?php endforeach; ?>
+    </tbody></table></div>
+</div>
+<?php endif; ?>
 
 <div class="row g-3 mb-4">
     <div class="col-md-4">

@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/online_training.php';
 require_once __DIR__ . '/includes/athlete_header.php';
 require_once __DIR__ . '/includes/health_questionnaire.php';
 
@@ -169,6 +170,14 @@ if (!$athlete) {
 
 $athleteSpecialTrainingEnabled = ((int)($athlete['special_training_enabled'] ?? 0)) === 1;
 $athleteMyCoachEnabled = mycoachAccessEnabledForAthlete($pdo, $athleteId);
+$onlineTrainingCount = 0;
+try {
+    $onlineCountStmt = $pdo->prepare("SELECT COUNT(*) FROM online_trainings WHERE athlete_id = ? AND status IN ('sent', 'in_progress')");
+    $onlineCountStmt->execute([$athleteId]);
+    $onlineTrainingCount = (int)$onlineCountStmt->fetchColumn();
+} catch (Throwable $e) {
+    $onlineTrainingCount = 0;
+}
 $mycoachAppIsLive = mycoachAppIsLive();
 $mycoachAppUserCanAccess = $mycoachAppIsLive || mycoachAppCanAccess($pdo, 'athlete', $athleteId);
 
@@ -275,6 +284,14 @@ $sessionsStmt = $pdo->prepare(
 );
 $sessionsStmt->execute([$athleteId]);
 $sessions = $sessionsStmt->fetchAll();
+$onlineHistory = [];
+try {
+    $onlineHistoryStmt = $pdo->prepare("SELECT id, sequence_number, title, sent_at, started_at, completed_at, status FROM online_trainings WHERE athlete_id = ? AND status IN ('sent', 'in_progress', 'completed') ORDER BY COALESCE(completed_at, sent_at) DESC, id DESC LIMIT 120");
+    $onlineHistoryStmt->execute([$athleteId]);
+    $onlineHistory = $onlineHistoryStmt->fetchAll();
+} catch (Throwable $e) {
+    $onlineHistory = [];
+}
 
 $weightHistory = getAthleteWeightHistory($athleteId, 200);
 usort($weightHistory, static function (array $a, array $b): int {
@@ -1056,6 +1073,10 @@ renderAthleteHeader('Profil sportovce', false, true);
         <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
     </div>
     <?php endif; ?>
+    <a href="<?= BASE_URL ?>/online_training.php" class="quick-tile quick-tile-warning">
+        <span class="quick-tile__label"><i class="fas fa-laptop me-1"></i>Online tréninky</span>
+        <span class="quick-tile__value"><?= (int)$onlineTrainingCount ?></span>
+    </a>
     <?php if ($mycoachAppUserCanAccess): ?>
     <a href="<?= BASE_URL ?>/athlete_mycoach_app.php" class="quick-tile quick-tile-warning">
     <?php else: ?>
@@ -1642,6 +1663,15 @@ renderAthleteHeader('Profil sportovce', false, true);
         <?php endif; ?>
     </div>
 </div>
+
+<?php if (!empty($onlineHistory)): ?>
+<div class="card border-warning shadow-sm athlete-desktop-only mb-4">
+    <div class="card-header bg-warning text-dark fw-bold"><i class="fas fa-laptop me-2"></i>Historie online tréninků</div>
+    <div class="table-responsive"><table class="table table-hover mb-0 align-middle"><thead><tr><th>Číslo</th><th>Název</th><th>Odesláno</th><th>Stav</th><th></th></tr></thead><tbody>
+    <?php foreach ($onlineHistory as $onlineRow): ?><tr><td><strong>ONLINE #<?= str_pad((string)$onlineRow['sequence_number'], 3, '0', STR_PAD_LEFT) ?></strong></td><td><?= h($onlineRow['title']) ?></td><td><?= h(formatDateTime($onlineRow['sent_at'])) ?></td><td><span class="badge bg-<?= h(onlineTrainingStatusClass($onlineRow['status'])) ?>"><?= h(onlineTrainingStatusLabel($onlineRow['status'])) ?></span></td><td><a class="btn btn-sm btn-outline-dark" href="<?= BASE_URL ?>/online_training.php?id=<?= (int)$onlineRow['id'] ?>">Detail</a></td></tr><?php endforeach; ?>
+    </tbody></table></div>
+</div>
+<?php endif; ?>
 
 <div class="card border-0 shadow-sm athlete-desktop-only">
     <div class="card-header bg-dark text-white"><i class="fas fa-history me-2"></i>Historie tréninků</div>

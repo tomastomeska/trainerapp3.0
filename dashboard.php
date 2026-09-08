@@ -58,6 +58,14 @@ try {
 
 $coachMyCoachEnabled = mycoachAccessEnabledForCoach($pdo, (int)$coachId);
 $mycoachAppIsLive = mycoachAppIsLive();
+$onlineTrainingCount = 0;
+try {
+    $onlineCountStmt = $pdo->prepare('SELECT COUNT(*) FROM online_trainings WHERE trainer_id = ? AND status IN (\'sent\', \'in_progress\')');
+    $onlineCountStmt->execute([(int)$coachId]);
+    $onlineTrainingCount = (int)$onlineCountStmt->fetchColumn();
+} catch (Throwable $e) {
+    $onlineTrainingCount = 0;
+}
 
 if ($mustChangePassword && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
@@ -686,6 +694,10 @@ renderHeader('Dashboard', false, true);
                 <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
             </div>
             <?php endif; ?>
+            <a href="<?= BASE_URL ?>/online_training.php" class="quick-tile quick-tile-warning">
+                <span class="quick-tile__label"><i class="fas fa-laptop me-1"></i>Online tréninky</span>
+                <span class="quick-tile__value"><?= (int)$onlineTrainingCount ?></span>
+            </a>
             <?php if ($mycoachAppIsLive): ?>
             <a href="<?= BASE_URL ?>/mycoach_app.php" class="quick-tile quick-tile-warning">
             <?php else: ?>
@@ -726,6 +738,10 @@ renderHeader('Dashboard', false, true);
         <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
     </div>
     <?php endif; ?>
+    <a href="<?= BASE_URL ?>/online_training.php" class="quick-tile quick-tile-warning">
+        <span class="quick-tile__label"><i class="fas fa-laptop me-1"></i>Online tréninky</span>
+        <span class="quick-tile__value"><?= (int)$onlineTrainingCount ?></span>
+    </a>
     <?php if ($mycoachAppIsLive): ?>
     <a href="<?= BASE_URL ?>/mycoach_app.php" class="quick-tile quick-tile-warning">
     <?php else: ?>

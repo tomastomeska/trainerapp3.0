@@ -8,6 +8,7 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
     $unread = 0;
     $unreadInfo = 0;
     $unreadGallery = 0;
+    $onlineTrainingCount = 0;
     $hasPendingAgreement = false;
 
     if ($athlete) {
@@ -29,6 +30,10 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
             $infoUnreadStmt->execute([(int)$athlete['id']]);
             $unreadInfo = (int)$infoUnreadStmt->fetchColumn();
 
+            $onlineTrainingStmt = $pdo->prepare("SELECT COUNT(*) FROM online_trainings WHERE athlete_id = ? AND status IN ('sent', 'in_progress')");
+            $onlineTrainingStmt->execute([(int)$athlete['id']]);
+            $onlineTrainingCount = (int)$onlineTrainingStmt->fetchColumn();
+
             $agreementAlertStmt = $pdo->prepare(
                 "SELECT COUNT(*)
                  FROM coach_athlete_agreements ca
@@ -45,6 +50,7 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
             $unread = 0;
             $unreadInfo = 0;
             $unreadGallery = 0;
+            $onlineTrainingCount = 0;
             $hasPendingAgreement = false;
         }
     }
@@ -81,6 +87,9 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
             <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_dashboard.php"><i class="fas fa-user me-1"></i>Profil</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_calendar.php"><i class="fas fa-calendar-alt me-1"></i>Kalendář</a></li>
+                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_special_training.php"><i class="fas fa-flag-checkered me-1"></i>Events</a></li>
+                <li class="nav-item"><a class="nav-link d-inline-flex align-items-center" href="<?= BASE_URL ?>/online_training.php"><i class="fas fa-laptop me-1"></i>Online tréninky<?php if ($onlineTrainingCount > 0): ?><span class="badge rounded-pill bg-danger ms-1" style="font-size:.65rem"><?= $onlineTrainingCount ?></span><?php endif; ?></a></li>
+                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_mycoach.php"><i class="fas fa-brain me-1"></i>MYCoach</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_payments.php"><i class="fas fa-wallet me-1"></i>Platby</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_mealplans.php"><i class="fas fa-utensils me-1"></i>Jídelníčky</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_food_diary.php"><i class="fas fa-bowl-food me-1"></i>Strava</a></li>

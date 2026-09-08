@@ -55,6 +55,35 @@ function renderHeader(string $title = '', bool $withCharts = false, bool $compac
             vertical-align: bottom;
         }
 
+        @media (min-width: 1600px) {
+            .coach-navbar .navbar-collapse {
+                display: flex !important;
+                align-items: center;
+                min-width: 0;
+            }
+
+            .coach-navbar .navbar-collapse > .navbar-nav:first-child {
+                flex: 0 1 auto;
+                min-width: max-content;
+                margin-right: 0 !important;
+                margin-bottom: 0 !important;
+                justify-content: center;
+                overflow: visible;
+            }
+
+            .coach-navbar .navbar-collapse > .navbar-nav:last-child {
+                flex: 0 0 auto;
+                margin-left: .5rem;
+                margin-bottom: 0 !important;
+            }
+
+            .coach-navbar .navbar-collapse > .navbar-nav:first-child .nav-link {
+                padding-left: .38rem;
+                padding-right: .38rem;
+                font-size: .82rem;
+            }
+        }
+
         @media (max-width: 1399.98px) {
             .coach-navbar .nav-link {
                 padding-left: .45rem;
@@ -110,6 +139,7 @@ $unreadMsgCount = 0;
 $pendingCalendarCount = 0;
 $unreadInfoCount = 0;
 $unreadGalleryCount = 0;
+$onlineTrainingCount = 0;
 if ($coach) {
     try {
         $pdo = getDB();
@@ -144,11 +174,16 @@ if ($coach) {
         $infoUnreadStmt = $pdo->prepare("\n            SELECT COUNT(*)\n            FROM info_articles ia\n            JOIN info_categories ic ON ic.id = ia.category_id\n            LEFT JOIN info_article_reads_coach ir ON ir.article_id = ia.id AND ir.coach_id = ?\n            WHERE ia.is_active = 1\n              AND ia.published_at <= NOW()\n              AND ia.target_audience IN ('all', 'coach')\n              AND ic.is_active = 1\n              AND ic.audience IN ('all', 'coach')\n              AND ir.article_id IS NULL\n        ");
         $infoUnreadStmt->execute([(int)$coach['id']]);
         $unreadInfoCount = (int)$infoUnreadStmt->fetchColumn();
+
+        $onlineTrainingStmt = $pdo->prepare("SELECT COUNT(*) FROM online_trainings WHERE trainer_id = ? AND status = 'completed'");
+        $onlineTrainingStmt->execute([(int)$coach['id']]);
+        $onlineTrainingCount = (int)$onlineTrainingStmt->fetchColumn();
     } catch (Throwable $e) {
         $unreadMsgCount = 0;
         $pendingCalendarCount = 0;
         $unreadInfoCount = 0;
         $unreadGalleryCount = 0;
+        $onlineTrainingCount = 0;
     }
 }
 ?>
@@ -188,6 +223,9 @@ if ($coach) {
                         <?php endif; ?>
                     </a>
                 </li>
+                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/special_training.php"><i class="fas fa-flag-checkered me-1"></i>Events</a></li>
+                <li class="nav-item"><a class="nav-link d-inline-flex align-items-center" href="<?= BASE_URL ?>/online_training.php"><i class="fas fa-laptop me-1"></i>Online tréninky<?php if ($onlineTrainingCount > 0): ?><span class="badge rounded-pill bg-warning text-dark ms-1 top-badge"><?= $onlineTrainingCount ?></span><?php endif; ?></a></li>
+                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/mycoach.php"><i class="fas fa-brain me-1"></i>MYCoach</a></li>
                 <li class="nav-item">
                     <a class="nav-link" href="<?= BASE_URL ?>/payments.php">
                         <i class="fas fa-wallet me-1"></i>Platby

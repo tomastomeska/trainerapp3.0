@@ -295,6 +295,9 @@ body {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 0.55rem;
+    width: min(100%, 1180px);
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .quick-tile {
@@ -308,6 +311,7 @@ body {
     background: #ffffff;
     color: #1f2937;
     min-height: 44px;
+    min-width: 0;
 }
 
 .quick-tile:hover {
