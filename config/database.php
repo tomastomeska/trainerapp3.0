@@ -146,6 +146,11 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         $pdo->exec('ALTER TABLE athletes ADD COLUMN birth_date DATE NULL AFTER last_name');
     }
 
+    $stmtAthleteGender = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'gender'");
+    if (!$stmtAthleteGender->fetch()) {
+        $pdo->exec("ALTER TABLE athletes ADD COLUMN gender ENUM('unknown','female','male','other','prefer_not_say') NOT NULL DEFAULT 'unknown' AFTER birth_date");
+    }
+
     // Foto sloupec pro cviky
     $stmt2 = $pdo->query("SHOW COLUMNS FROM exercises LIKE 'photo'");
     if (!$stmt2->fetch()) {
@@ -515,7 +520,7 @@ function ensureSchemaUpgrades(PDO $pdo): void {
     // Tel. kontakt pro sportovce
     $stmtPhone = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'phone_contact'");
     if (!$stmtPhone->fetch()) {
-        $pdo->exec('ALTER TABLE athletes ADD COLUMN phone_contact VARCHAR(20) NULL AFTER birth_date');
+        $pdo->exec('ALTER TABLE athletes ADD COLUMN phone_contact VARCHAR(20) NULL AFTER gender');
     }
 
     // Prihlasovaci udaje sportovce (email jako login)

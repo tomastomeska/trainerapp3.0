@@ -8,9 +8,10 @@ requireAthleteLogin();
 
 $pdo = getDB();
 $athleteId = (int)getCurrentAthleteId();
+healthQuestionnaireEnsureSchema($pdo);
 
 $athleteStmt = $pdo->prepare(
-    'SELECT a.id, a.coach_id, a.first_name, a.last_name, c.name AS coach_name, c.username AS coach_username
+    'SELECT a.id, a.coach_id, a.first_name, a.last_name, a.gender, c.name AS coach_name, c.username AS coach_username
      FROM athletes a
      JOIN coaches c ON c.id = a.coach_id
      WHERE a.id = ?
@@ -50,7 +51,7 @@ try {
     $latestWeightKg = null;
 }
 
-$questions = healthQuestionnaireFetchQuestions($pdo, true);
+$questions = healthQuestionnaireFetchQuestionsForAthlete($pdo, $athleteId, true);
 $steps = healthQuestionnaireGroupBySteps($questions);
 $latestSubmission = healthQuestionnaireFetchLatestSubmission($pdo, $athleteId);
 $status = healthQuestionnaireFetchStatus($pdo, $athleteId);

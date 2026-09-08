@@ -8,6 +8,15 @@ if (!function_exists('healthQuestionnaireEnsureSchema')) {
             return;
         }
 
+        try {
+            $athleteGenderCol = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'gender'")->fetch();
+            if (!$athleteGenderCol) {
+                $pdo->exec("ALTER TABLE athletes ADD COLUMN gender ENUM('unknown','female','male','other','prefer_not_say') NOT NULL DEFAULT 'unknown' AFTER birth_date");
+            }
+        } catch (Throwable $e) {
+            // Ignore runtime schema change errors.
+        }
+
         $pdo->exec(" 
             CREATE TABLE IF NOT EXISTS `athlete_health_questionnaire_questions` (
                 `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -26,6 +35,7 @@ if (!function_exists('healthQuestionnaireEnsureSchema')) {
                 `alert_text` VARCHAR(255) NULL,
                 `ignore_no_issue_options` TINYINT(1) NOT NULL DEFAULT 1,
                 `no_issue_values_json` JSON NULL,
+                `target_gender` ENUM('all','female','male','other') NOT NULL DEFAULT 'all',
                 `sort_order` INT NOT NULL DEFAULT 100,
                 `is_active` TINYINT(1) NOT NULL DEFAULT 1,
                 `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -89,7 +99,18 @@ if (!function_exists('healthQuestionnaireEnsureSchema')) {
             // Ignore runtime schema change errors.
         }
 
+        try {
+            $targetGenderCol = $pdo->query("SHOW COLUMNS FROM athlete_health_questionnaire_questions LIKE 'target_gender'")->fetch();
+            if (!$targetGenderCol) {
+                $pdo->exec("ALTER TABLE athlete_health_questionnaire_questions ADD COLUMN target_gender ENUM('all','female','male','other') NOT NULL DEFAULT 'all' AFTER no_issue_values_json");
+            }
+        } catch (Throwable $e) {
+            // Ignore runtime schema change errors.
+        }
+
         healthQuestionnaireSeedDefaults($pdo);
+        healthQuestionnaireSeedFemaleQuestions($pdo);
+        healthQuestionnaireEnsureConsentLast($pdo);
         $ready = true;
     }
 }
@@ -198,7 +219,7 @@ if (!function_exists('healthQuestionnaireDefaultQuestions')) {
             ], null, 1, null, null, 'none', null, null, 10],
             [7, 'Cíl spolupráce', 'main_goal_other', 'Pokud Jiný, doplňte cíl', 'text', null, 'Vlastní cíl', 0, 'main_goal', 'Jiný', 'none', null, null, 20],
 
-            [8, 'Souhlas', 'consent_truth', 'Potvrzuji, že uvedené informace jsou pravdivé a budu trenéra informovat o změnách zdravotního stavu.', 'consent', null, null, 1, null, null, 'none', null, null, 10],
+            [10, 'Souhlas', 'consent_truth', 'Potvrzuji, že uvedené informace jsou pravdivé a budu trenéra informovat o změnách zdravotního stavu.', 'consent', null, null, 1, null, null, 'none', null, null, 999],
         ];
     }
 }
@@ -244,6 +265,117 @@ if (!function_exists('healthQuestionnaireSeedDefaults')) {
     }
 }
 
+if (!function_exists('healthQuestionnaireSeedFemaleQuestions')) {
+    function healthQuestionnaireSeedFemaleQuestions(PDO $pdo): void
+    {
+        $questions = [
+            [9, 'Specifické otázky pro ženy', 'female_pregnancy_birth', 'Byla jste těhotná nebo jste rodila?', 'yes_no', null, null, 1, null, null, 'none', null, null, 10],
+            [9, 'Specifické otázky pro ženy', 'female_postpartum_complications', 'Měla jste po porodu nějaké komplikace (např. diastáza)?', 'yes_no', null, null, 1, null, null, 'when_yes', null, 'Sportovkyně uvedla komplikace po porodu.', 20],
+            [9, 'Specifické otázky pro ženy', 'female_postpartum_complications_details', 'Pokud ano, jaké komplikace?', 'textarea', null, 'Např. diastáza, bolesti, jizva po císařském řezu...', 1, 'female_postpartum_complications', 'ano', 'when_nonempty', null, 'Sportovkyně doplnila komplikace po porodu.', 30],
+            [9, 'Specifické otázky pro ženy', 'female_pelvic_floor_issues', 'Máte potíže s pánevním dnem nebo únikem moči?', 'yes_no', null, null, 1, null, null, 'when_yes', null, 'Sportovkyně uvedla potíže s pánevním dnem nebo únikem moči.', 40],
+            [9, 'Specifické otázky pro ženy', 'female_menstrual_cycle_issues', 'Máte výrazné problémy během menstruace nebo hormonálního cyklu?', 'yes_no', null, null, 1, null, null, 'when_yes', null, 'Sportovkyně uvedla výrazné problémy během menstruace nebo hormonálního cyklu.', 50],
+            [9, 'Specifické otázky pro ženy', 'female_digestion_hunger_swings', 'Máte časté problémy s trávením nebo výrazné výkyvy hladu?', 'yes_no', null, null, 1, null, null, 'when_yes', null, 'Sportovkyně uvedla časté problémy s trávením nebo výrazné výkyvy hladu.', 60],
+            [9, 'Specifické otázky pro ženy', 'female_health_other_info', 'Je něco dalšího, co by měl trenér o vašem zdraví vědět?', 'textarea', null, 'Volitelně doplňte další informace pro trenéra', 0, null, null, 'none', null, null, 70],
+        ];
+
+        $existsStmt = $pdo->prepare('SELECT COUNT(*) FROM athlete_health_questionnaire_questions WHERE question_key = ?');
+        $insertStmt = $pdo->prepare(
+            'INSERT INTO athlete_health_questionnaire_questions
+            (step_index, section_title, question_key, question_label, input_type, options_json, placeholder, is_required, show_when_question_key, show_when_value, alert_mode, alert_values_json, alert_text, target_gender, sort_order, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)'
+        );
+
+        foreach ($questions as $question) {
+            $existsStmt->execute([(string)$question[2]]);
+            if ((int)$existsStmt->fetchColumn() > 0) {
+                continue;
+            }
+
+            $insertStmt->execute([
+                (int)$question[0],
+                (string)$question[1],
+                (string)$question[2],
+                (string)$question[3],
+                (string)$question[4],
+                $question[5] !== null ? json_encode($question[5], JSON_UNESCAPED_UNICODE) : null,
+                $question[6],
+                (int)$question[7],
+                $question[8],
+                $question[9],
+                (string)$question[10],
+                $question[11] !== null ? json_encode($question[11], JSON_UNESCAPED_UNICODE) : null,
+                $question[12],
+                'female',
+                (int)$question[13],
+            ]);
+        }
+    }
+}
+
+if (!function_exists('healthQuestionnaireEnsureConsentLast')) {
+    function healthQuestionnaireEnsureConsentLast(PDO $pdo): void
+    {
+        try {
+            $baseMaxStmt = $pdo->query(
+                "SELECT COALESCE(MAX(step_index), 0)
+                 FROM athlete_health_questionnaire_questions
+                                 WHERE NOT (question_key = 'consent_truth' OR input_type = 'consent' OR question_label LIKE 'Potvrzuji,%')
+                   AND question_key NOT LIKE 'female\\_%'"
+            );
+            $baseMaxStep = $baseMaxStmt ? (int)$baseMaxStmt->fetchColumn() : 0;
+            $femaleStep = max(1, $baseMaxStep + 1);
+            $consentStep = $femaleStep + 1;
+
+            $consentExistsStmt = $pdo->prepare(
+                "SELECT COUNT(*)
+                 FROM athlete_health_questionnaire_questions
+                 WHERE question_key = ? OR input_type = ? OR question_label LIKE ?"
+            );
+            $consentExistsStmt->execute(['consent_truth', 'consent', 'Potvrzuji,%']);
+            if ((int)$consentExistsStmt->fetchColumn() === 0) {
+                $insertConsentStmt = $pdo->prepare(
+                    'INSERT INTO athlete_health_questionnaire_questions
+                    (step_index, section_title, question_key, question_label, input_type, options_json, placeholder, is_required, show_when_question_key, show_when_value, alert_mode, alert_values_json, alert_text, target_gender, sort_order, is_active)
+                    VALUES (?, ?, ?, ?, ?, NULL, NULL, 1, NULL, NULL, ?, NULL, NULL, ?, 999, 1)'
+                );
+                $insertConsentStmt->execute([
+                    $consentStep,
+                    'Souhlas',
+                    'consent_truth',
+                    'Potvrzuji, že uvedené informace jsou pravdivé a budu trenéra informovat o změnách zdravotního stavu.',
+                    'consent',
+                    'none',
+                    'all',
+                ]);
+            }
+
+            $femaleStmt = $pdo->prepare(
+                "UPDATE athlete_health_questionnaire_questions
+                 SET step_index = ?,
+                     section_title = 'Specifické otázky pro ženy',
+                     updated_at = updated_at
+                 WHERE question_key LIKE 'female\\_%'
+                   AND target_gender = 'female'
+                   AND (step_index <> ? OR section_title <> 'Specifické otázky pro ženy')"
+            );
+            $femaleStmt->execute([$femaleStep, $femaleStep]);
+
+            $consentStmt = $pdo->prepare(
+                "UPDATE athlete_health_questionnaire_questions
+                 SET step_index = ?,
+                                         sort_order = 999,
+                     section_title = 'Souhlas',
+                     updated_at = updated_at
+                                 WHERE (question_key = 'consent_truth' OR input_type = 'consent' OR question_label LIKE 'Potvrzuji,%')
+                                     AND (step_index <> ? OR sort_order <> 999 OR section_title <> 'Souhlas')"
+            );
+            $consentStmt->execute([$consentStep, $consentStep]);
+        } catch (Throwable $e) {
+            // Ignore runtime ordering repair errors.
+        }
+    }
+}
+
 if (!function_exists('healthQuestionnaireNormalizeYesNo')) {
     function healthQuestionnaireNormalizeYesNo(string $value): string
     {
@@ -263,6 +395,42 @@ if (!function_exists('healthQuestionnaireIsOtherOptionValue')) {
     {
         $normalized = mb_strtolower(trim($value), 'UTF-8');
         return in_array($normalized, ['jiné', 'jine', 'jiný', 'jiny', 'other'], true);
+    }
+}
+
+if (!function_exists('healthQuestionnaireTargetGenderOptions')) {
+    function healthQuestionnaireTargetGenderOptions(): array
+    {
+        return [
+            'all' => 'Všichni',
+            'female' => 'Pouze ženy',
+            'male' => 'Pouze muži',
+            'other' => 'Jiné / neuvedeno',
+        ];
+    }
+}
+
+if (!function_exists('healthQuestionnaireNormalizeAthleteGender')) {
+    function healthQuestionnaireNormalizeAthleteGender(?string $gender): string
+    {
+        $gender = trim((string)$gender);
+        return in_array($gender, ['female', 'male', 'other'], true) ? $gender : 'other';
+    }
+}
+
+if (!function_exists('healthQuestionnaireFetchAthleteGender')) {
+    function healthQuestionnaireFetchAthleteGender(PDO $pdo, int $athleteId): string
+    {
+        healthQuestionnaireEnsureSchema($pdo);
+
+        try {
+            $stmt = $pdo->prepare('SELECT gender FROM athletes WHERE id = ? LIMIT 1');
+            $stmt->execute([$athleteId]);
+            $raw = $stmt->fetchColumn();
+            return healthQuestionnaireNormalizeAthleteGender($raw !== false ? (string)$raw : null);
+        } catch (Throwable $e) {
+            return 'other';
+        }
     }
 }
 
@@ -383,22 +551,42 @@ if (!function_exists('healthQuestionnaireQuestionHasOtherOption')) {
 }
 
 if (!function_exists('healthQuestionnaireFetchQuestions')) {
-    function healthQuestionnaireFetchQuestions(PDO $pdo, bool $activeOnly = true): array
+    function healthQuestionnaireFetchQuestions(PDO $pdo, bool $activeOnly = true, ?string $targetGender = null): array
     {
         healthQuestionnaireEnsureSchema($pdo);
 
         $sql = 'SELECT * FROM athlete_health_questionnaire_questions';
+        $where = [];
+        $params = [];
         if ($activeOnly) {
-            $sql .= ' WHERE is_active = 1';
+            $where[] = 'is_active = 1';
+        }
+        if ($targetGender !== null) {
+            $normalizedTargetGender = healthQuestionnaireNormalizeAthleteGender($targetGender);
+            $where[] = '(target_gender = ? OR target_gender = ?)';
+            $params[] = 'all';
+            $params[] = $normalizedTargetGender;
+        }
+        if (!empty($where)) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
         }
         $sql .= ' ORDER BY step_index ASC, sort_order ASC, id ASC';
 
-        $rows = $pdo->query($sql)->fetchAll();
+        if (!empty($params)) {
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            $rows = $stmt->fetchAll();
+        } else {
+            $rows = $pdo->query($sql)->fetchAll();
+        }
         foreach ($rows as &$row) {
             $row['options'] = [];
             $row['alert_values'] = [];
             $row['no_issue_values'] = [];
             $row['ignore_no_issue_options'] = (int)($row['ignore_no_issue_options'] ?? 1);
+            $row['target_gender'] = array_key_exists((string)($row['target_gender'] ?? 'all'), healthQuestionnaireTargetGenderOptions())
+                ? (string)$row['target_gender']
+                : 'all';
 
             $optionsRaw = trim((string)($row['options_json'] ?? ''));
             if ($optionsRaw !== '') {
@@ -427,6 +615,13 @@ if (!function_exists('healthQuestionnaireFetchQuestions')) {
         unset($row);
 
         return $rows;
+    }
+}
+
+if (!function_exists('healthQuestionnaireFetchQuestionsForAthlete')) {
+    function healthQuestionnaireFetchQuestionsForAthlete(PDO $pdo, int $athleteId, bool $activeOnly = true): array
+    {
+        return healthQuestionnaireFetchQuestions($pdo, $activeOnly, healthQuestionnaireFetchAthleteGender($pdo, $athleteId));
     }
 }
 
@@ -712,7 +907,7 @@ if (!function_exists('healthQuestionnaireFetchLatestSubmission')) {
 
         // Recompute alert summary from current rules so neutral choices (e.g. "žádné") do not create false warnings.
         try {
-            $activeQuestions = healthQuestionnaireFetchQuestions($pdo, true);
+            $activeQuestions = healthQuestionnaireFetchQuestionsForAthlete($pdo, $athleteId, true);
             if (!empty($activeQuestions)) {
                 $evaluation = healthQuestionnaireEvaluateAlerts($activeQuestions, $row['answers']);
                 $row['alerts'] = is_array($evaluation['alerts'] ?? null) ? $evaluation['alerts'] : [];
@@ -862,14 +1057,17 @@ if (!function_exists('healthQuestionnaireFetchStatus')) {
         healthQuestionnaireEnsureSchema($pdo);
 
         $latest = healthQuestionnaireFetchLatestSubmission($pdo, $athleteId);
+        $athleteGender = healthQuestionnaireFetchAthleteGender($pdo, $athleteId);
         $activeQuestionsUpdatedAt = null;
 
         try {
-            $questionsUpdatedStmt = $pdo->query(
+            $questionsUpdatedStmt = $pdo->prepare(
                 'SELECT MAX(updated_at)
                  FROM athlete_health_questionnaire_questions
-                 WHERE is_active = 1'
+                 WHERE is_active = 1
+                   AND (target_gender = ? OR target_gender = ?)'
             );
+            $questionsUpdatedStmt->execute(['all', $athleteGender]);
             $activeQuestionsUpdatedAtRaw = $questionsUpdatedStmt ? $questionsUpdatedStmt->fetchColumn() : null;
             if ($activeQuestionsUpdatedAtRaw !== false && $activeQuestionsUpdatedAtRaw !== null && trim((string)$activeQuestionsUpdatedAtRaw) !== '') {
                 $activeQuestionsUpdatedAt = (string)$activeQuestionsUpdatedAtRaw;

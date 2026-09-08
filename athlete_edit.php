@@ -8,6 +8,13 @@ requireLogin();
 $coachId   = getCurrentCoachId();
 $athleteId = intParam($_GET, 'id');
 $error     = null;
+$athleteGenderOptions = [
+    'unknown' => 'Neuvedeno',
+    'female' => 'Žena',
+    'male' => 'Muž',
+    'other' => 'Jiné',
+    'prefer_not_say' => 'Nechce uvádět',
+];
 
 $defaultReturnUrl = BASE_URL . '/athlete_detail.php?id=' . $athleteId;
 $returnToRaw = trim((string)($_GET['return_to'] ?? $_POST['return_to'] ?? ''));
@@ -17,6 +24,14 @@ if ($returnToRaw !== '' && str_starts_with($returnToRaw, BASE_URL . '/')) {
 }
 
 $pdo  = getDB();
+try {
+    $stmtGenderCol = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'gender'");
+    if ($stmtGenderCol === false || !$stmtGenderCol->fetch()) {
+        $pdo->exec("ALTER TABLE athletes ADD COLUMN gender ENUM('unknown','female','male','other','prefer_not_say') NOT NULL DEFAULT 'unknown' AFTER birth_date");
+    }
+} catch (Throwable $e) {
+    // Central schema upgrade will handle this on installations that disallow runtime ALTERs here.
+}
 $stmt = $pdo->prepare('SELECT * FROM athletes WHERE id = ? AND coach_id = ?');
 $stmt->execute([$athleteId, $coachId]);
 $athlete = $stmt->fetch();
@@ -33,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $firstName = trim($_POST['first_name'] ?? '');
         $lastName  = trim($_POST['last_name']  ?? '');
         $birthDate = trim($_POST['birth_date'] ?? '');
+        $gender    = trim((string)($_POST['gender'] ?? 'unknown'));
         $phone     = trim($_POST['phone_contact'] ?? '');
         $email     = trim($_POST['email'] ?? '');
         $trainingRateRaw = trim($_POST['training_rate'] ?? '');
@@ -59,6 +75,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        if (!array_key_exists($gender, $athleteGenderOptions)) {
+            $gender = 'unknown';
+        }
+
         if ($error === null && ($firstName === '' || $lastName === '')) {
             $error = 'Vyplňte jméno a příjmení.';
         } elseif ($error === null && $birthDate === '') {
@@ -72,20 +92,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($newPhoto !== null) {
                 deleteUploadedPhoto($athlete['photo'] ?? null, 'athletes');
                 $stmt = $pdo->prepare(
-                    'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, phone_contact=?, email=?, training_rate=?, paired_training_rate=?, notes=?, photo=?
+                    'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, gender=?, phone_contact=?, email=?, training_rate=?, paired_training_rate=?, notes=?, photo=?
                      WHERE id=? AND coach_id=?'
                 );
                 $stmt->execute([
-                    $firstName, $lastName, $birthDate, $phone ?: null, $email ?: null, $trainingRate, $pairedTrainingRate, $notes ?: null,
+                    $firstName, $lastName, $birthDate, $gender, $phone ?: null, $email ?: null, $trainingRate, $pairedTrainingRate, $notes ?: null,
                     $newPhoto, $athleteId, $coachId,
                 ]);
             } else {
                 $stmt = $pdo->prepare(
-                    'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, phone_contact=?, email=?, training_rate=?, paired_training_rate=?, notes=?
+                    'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, gender=?, phone_contact=?, email=?, training_rate=?, paired_training_rate=?, notes=?
                      WHERE id=? AND coach_id=?'
                 );
                 $stmt->execute([
-                    $firstName, $lastName, $birthDate, $phone ?: null, $email ?: null, $trainingRate, $pairedTrainingRate, $notes ?: null,
+                    $firstName, $lastName, $birthDate, $gender, $phone ?: null, $email ?: null, $trainingRate, $pairedTrainingRate, $notes ?: null,
                     $athleteId, $coachId,
                 ]);
             }
@@ -142,11 +162,19 @@ renderHeader('Upravit sportovce');
                                    value="<?= h($d['birth_date'] ?? '') ?>" max="<?= date('Y-m-d') ?>" required>
                         </div>
                         <div class="col-sm-4">
+                            <label class="form-label fw-semibold">Pohlaví</label>
+                            <select name="gender" class="form-select">
+                                <?php foreach ($athleteGenderOptions as $genderKey => $genderLabel): ?>
+                                <option value="<?= h($genderKey) ?>" <?= (string)($d['gender'] ?? 'unknown') === $genderKey ? 'selected' : '' ?>><?= h($genderLabel) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-sm-4">
                             <label class="form-label fw-semibold">Tel. kontakt</label>
                             <input type="tel" name="phone_contact" class="form-control"
                                    value="<?= h($d['phone_contact'] ?? '') ?>">
                         </div>
-                        <div class="col-sm-4">
+                        <div class="col-sm-12">
                             <label class="form-label fw-semibold">E-mail</label>
                             <input type="email" name="email" class="form-control"
                                    value="<?= h($d['email'] ?? '') ?>">

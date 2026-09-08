@@ -7,8 +7,25 @@ requireAdminLogin();
 
 $athleteId = intParam($_GET, 'id');
 $error     = null;
+$athleteGenderOptions = [
+    'unknown' => 'Neuvedeno',
+    'female' => 'Žena',
+    'male' => 'Muž',
+    'other' => 'Jiné',
+    'prefer_not_say' => 'Nechce uvádět',
+];
 
 $pdo  = getDB();
+$stmtGenderCol = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'gender'");
+$hasGenderColumn = $stmtGenderCol !== false && (bool)$stmtGenderCol->fetch();
+if (!$hasGenderColumn) {
+    try {
+        $pdo->exec("ALTER TABLE athletes ADD COLUMN gender ENUM('unknown','female','male','other','prefer_not_say') NOT NULL DEFAULT 'unknown' AFTER birth_date");
+        $hasGenderColumn = true;
+    } catch (Throwable $e) {
+        $hasGenderColumn = false;
+    }
+}
 $stmtSpecialTrainingCol = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'special_training_enabled'");
 $hasSpecialTrainingColumn = $stmtSpecialTrainingCol !== false && (bool)$stmtSpecialTrainingCol->fetch();
 if (!$hasSpecialTrainingColumn) {
@@ -52,11 +69,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $firstName = trim($_POST['first_name'] ?? '');
         $lastName  = trim($_POST['last_name']  ?? '');
         $birthDate = trim($_POST['birth_date'] ?? '');
+        $gender    = trim((string)($_POST['gender'] ?? 'unknown'));
         $phone     = trim($_POST['phone_contact'] ?? '');
         $email     = trim($_POST['email'] ?? '');
         $notes     = trim($_POST['notes'] ?? '');
         $specialTrainingEnabled = isset($_POST['special_training_enabled']) ? 1 : 0;
         $myCoachEnabled = isset($_POST['mycoach_enabled']) ? 1 : 0;
+
+        if (!array_key_exists($gender, $athleteGenderOptions)) {
+            $gender = 'unknown';
+        }
 
         if ($firstName === '' || $lastName === '') {
             $error = 'Vyplňte jméno a příjmení.';
@@ -116,6 +138,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ->execute([$myCoachEnabled, $athleteId]);
             }
 
+            if ($hasGenderColumn) {
+                $pdo->prepare('UPDATE athletes SET gender = ? WHERE id = ?')
+                    ->execute([$gender, $athleteId]);
+            }
+
             flash('success', 'Údaje sportovce byly aktualizovány.');
             redirect(BASE_URL . '/admin/athletes.php');
         }
@@ -172,11 +199,19 @@ renderAdminHeader('Upravit sportovce');
                                    value="<?= h($d['birth_date'] ?? '') ?>" max="<?= date('Y-m-d') ?>" required>
                         </div>
                         <div class="col-sm-4">
+                            <label class="form-label fw-semibold">Pohlaví</label>
+                            <select name="gender" class="form-select">
+                                <?php foreach ($athleteGenderOptions as $genderKey => $genderLabel): ?>
+                                <option value="<?= h($genderKey) ?>" <?= (string)($d['gender'] ?? 'unknown') === $genderKey ? 'selected' : '' ?>><?= h($genderLabel) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-sm-4">
                             <label class="form-label fw-semibold">Tel. kontakt</label>
                             <input type="tel" name="phone_contact" class="form-control"
                                    value="<?= h($d['phone_contact'] ?? '') ?>">
                         </div>
-                        <div class="col-sm-4">
+                        <div class="col-sm-12">
                             <label class="form-label fw-semibold">E-mail</label>
                             <input type="email" name="email" class="form-control"
                                    value="<?= h($d['email'] ?? '') ?>">

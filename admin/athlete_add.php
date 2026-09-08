@@ -7,8 +7,23 @@ requireAdminLogin();
 
 $pdo = getDB();
 ensurePasswordAuditColumns($pdo);
+try {
+    $stmtGenderCol = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'gender'");
+    if ($stmtGenderCol === false || !$stmtGenderCol->fetch()) {
+        $pdo->exec("ALTER TABLE athletes ADD COLUMN gender ENUM('unknown','female','male','other','prefer_not_say') NOT NULL DEFAULT 'unknown' AFTER birth_date");
+    }
+} catch (Throwable $e) {
+    // Central schema upgrade will handle this on installations that disallow runtime ALTERs here.
+}
 
 $error = null;
+$athleteGenderOptions = [
+    'unknown' => 'Neuvedeno',
+    'female' => 'Žena',
+    'male' => 'Muž',
+    'other' => 'Jiné',
+    'prefer_not_say' => 'Nechce uvádět',
+];
 $coaches = $pdo->query('SELECT id, name, username, is_active FROM coaches ORDER BY is_active DESC, name ASC, username ASC')->fetchAll();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -19,9 +34,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $firstName = trim($_POST['first_name'] ?? '');
         $lastName  = trim($_POST['last_name']  ?? '');
         $birthDate = trim($_POST['birth_date'] ?? '');
+        $gender    = trim((string)($_POST['gender'] ?? 'unknown'));
         $phone     = trim($_POST['phone_contact'] ?? '');
         $email     = trim($_POST['email'] ?? '');
         $notes     = trim($_POST['notes'] ?? '');
+
+        if (!array_key_exists($gender, $athleteGenderOptions)) {
+            $gender = 'unknown';
+        }
 
         $coachStmt = $pdo->prepare('SELECT id FROM coaches WHERE id = ? LIMIT 1');
         $coachStmt->execute([$coachId]);
@@ -40,14 +60,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo  = getDB();
             $photo = saveUploadedPhoto('photo', 'athletes');
             $stmt = $pdo->prepare(
-                'INSERT INTO athletes (coach_id, first_name, last_name, birth_date, phone_contact, email, notes, photo)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+                'INSERT INTO athletes (coach_id, first_name, last_name, birth_date, gender, phone_contact, email, notes, photo)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
             );
             $stmt->execute([
                 $coachId,
                 $firstName,
                 $lastName,
                 $birthDate,
+                $gender,
                 $phone ?: null,
                 $email ?: null,
                 $notes ?: null,
@@ -123,12 +144,20 @@ renderAdminHeader('Přidat sportovce');
                                    max="<?= date('Y-m-d') ?>" required>
                         </div>
                         <div class="col-sm-4">
+                            <label class="form-label fw-semibold">Pohlaví</label>
+                            <select name="gender" class="form-select">
+                                <?php foreach ($athleteGenderOptions as $genderKey => $genderLabel): ?>
+                                <option value="<?= h($genderKey) ?>" <?= (string)($_POST['gender'] ?? 'unknown') === $genderKey ? 'selected' : '' ?>><?= h($genderLabel) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-sm-4">
                             <label class="form-label fw-semibold">Tel. kontakt</label>
                             <input type="tel" name="phone_contact" class="form-control"
                                    value="<?= h($_POST['phone_contact'] ?? '') ?>"
                                    placeholder="+420 123 456 789">
                         </div>
-                        <div class="col-sm-4">
+                        <div class="col-sm-12">
                             <label class="form-label fw-semibold">E-mail</label>
                             <input type="email" name="email" class="form-control"
                                    value="<?= h($_POST['email'] ?? '') ?>"

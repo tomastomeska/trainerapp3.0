@@ -176,6 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $showWhenValue = trim((string)($_POST['show_when_value'] ?? ''));
         $alertMode = trim((string)($_POST['alert_mode'] ?? 'none'));
         $alertText = trim((string)($_POST['alert_text'] ?? ''));
+        $targetGender = trim((string)($_POST['target_gender'] ?? 'all'));
         $sortOrderRaw = (int)($_POST['sort_order_custom'] ?? ($_POST['sort_order'] ?? 100));
         $sortOrder = $sortOrderRaw;
         $isActive = isset($_POST['is_active']) ? 1 : 0;
@@ -194,6 +195,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $allowedInputTypes = array_keys(healthQuestionnaireInputTypeOptions());
         $allowedAlertModes = array_keys(healthQuestionnaireAlertModeOptions());
+        $allowedTargetGenders = array_keys(healthQuestionnaireTargetGenderOptions());
 
         if ($questionKey === '') {
             $questionKey = adminHealthQuestionnaireSlug($questionLabel);
@@ -223,6 +225,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect(BASE_URL . '/admin/health_questionnaire.php');
         }
 
+           if (!in_array($targetGender, $allowedTargetGenders, true)) {
+               $targetGender = 'all';
+           }
+
         $optionsJson = !empty($options) ? json_encode($options, JSON_UNESCAPED_UNICODE) : null;
         $alertValuesJson = !empty($alertValues) ? json_encode($alertValues, JSON_UNESCAPED_UNICODE) : null;
         $noIssueValuesJson = !empty($noIssueValues) ? json_encode($noIssueValues, JSON_UNESCAPED_UNICODE) : null;
@@ -232,8 +238,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $questionKey = adminHealthQuestionnaireResolveUniqueKey($pdo, $questionKey);
                 $insertStmt = $pdo->prepare(
                     'INSERT INTO athlete_health_questionnaire_questions
-                    (step_index, section_title, question_key, question_label, input_type, options_json, placeholder, is_required, show_when_question_key, show_when_value, alert_mode, alert_values_json, alert_text, ignore_no_issue_options, no_issue_values_json, sort_order, is_active)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                       (step_index, section_title, question_key, question_label, input_type, options_json, placeholder, is_required, show_when_question_key, show_when_value, alert_mode, alert_values_json, alert_text, ignore_no_issue_options, no_issue_values_json, target_gender, sort_order, is_active)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
                 );
                 $insertStmt->execute([
                     $stepIndex,
@@ -251,6 +257,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $alertText !== '' ? $alertText : null,
                     $ignoreNoIssueOptions,
                     $noIssueValuesJson,
+                       $targetGender,
                     $sortOrder,
                     $isActive,
                 ]);
@@ -280,6 +287,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      alert_text = ?,
                      ignore_no_issue_options = ?,
                      no_issue_values_json = ?,
+                    target_gender = ?,
                      sort_order = ?,
                      is_active = ?
                  WHERE id = ?'
@@ -300,6 +308,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $alertText !== '' ? $alertText : null,
                 $ignoreNoIssueOptions,
                 $noIssueValuesJson,
+                   $targetGender,
                 $sortOrder,
                 $isActive,
                 $questionId,
@@ -335,6 +344,7 @@ $inputTypeOptions = healthQuestionnaireInputTypeOptions();
 $inputTypeOptionsForAdmin = $inputTypeOptions;
 $inputTypeOptionsForAdmin['multi'] = 'Checkboxy (více možností)';
 $alertModeOptions = healthQuestionnaireAlertModeOptions();
+$targetGenderOptions = healthQuestionnaireTargetGenderOptions();
 
 $questionsByStep = [];
 $statsTotal = count($questions);
@@ -595,6 +605,14 @@ Bedra"></textarea>
                                     <input type="text" class="form-control form-control-sm" name="question_key" placeholder="Např. health_limitation">
                                     <div class="form-text">Když necháte prázdné, klíč se vytvoří automaticky.</div>
                                 </div>
+                                   <div class="col-12">
+                                       <label class="form-label small fw-semibold">Zobrazit pro</label>
+                                       <select class="form-select form-select-sm" name="target_gender">
+                                           <?php foreach ($targetGenderOptions as $genderKey => $genderLabel): ?>
+                                           <option value="<?= h($genderKey) ?>"><?= h($genderLabel) ?></option>
+                                           <?php endforeach; ?>
+                                       </select>
+                                   </div>
                                 <div class="col-12">
                                     <label class="form-label small fw-semibold">Placeholder</label>
                                     <input type="text" class="form-control form-control-sm" name="placeholder">
@@ -677,6 +695,7 @@ nemám"></textarea>
                                     <div class="hq-question-meta">
                                         <span class="badge bg-light text-dark border">Klíč: <?= h((string)$question['question_key']) ?></span>
                                         <span class="badge bg-light text-dark border">Typ: <?= h((string)($inputTypeOptionsForAdmin[(string)$question['input_type']] ?? (string)$question['input_type'])) ?></span>
+                                           <span class="badge bg-light text-dark border">Pro: <?= h((string)($targetGenderOptions[(string)($question['target_gender'] ?? 'all')] ?? 'Všichni')) ?></span>
                                         <span class="badge bg-light text-dark border">Pořadí: <?= (int)$question['sort_order'] ?></span>
                                         <?php if ((int)$question['is_required'] === 1): ?>
                                         <span class="badge bg-primary">Povinné</span>
@@ -733,6 +752,14 @@ nemám"></textarea>
                                             <input type="number" class="form-control form-control-sm" name="sort_order" value="<?= (int)$question['sort_order'] ?>" required>
                                         </div>
 
+                                           <div class="col-md-4">
+                                               <label class="form-label small fw-semibold">Zobrazit pro</label>
+                                               <select class="form-select form-select-sm" name="target_gender">
+                                                   <?php foreach ($targetGenderOptions as $genderKey => $genderLabel): ?>
+                                                   <option value="<?= h($genderKey) ?>" <?= (string)($question['target_gender'] ?? 'all') === $genderKey ? 'selected' : '' ?>><?= h($genderLabel) ?></option>
+                                                   <?php endforeach; ?>
+                                               </select>
+                                           </div>
                                         <div class="col-12">
                                             <label class="form-label small fw-semibold">Otázka</label>
                                             <input type="text" class="form-control form-control-sm" name="question_label" value="<?= h((string)$question['question_label']) ?>" required>
