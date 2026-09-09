@@ -62,8 +62,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $pdo->prepare('INSERT INTO online_training_subscriptions (trainer_id, athlete_id, total_trainings, remaining_trainings, price, purchased_at) VALUES (?, ?, ?, ?, ?, NOW())')->execute([$coachId, $athleteId, $total, $total, $price]);
             $subscriptionId = (int)$pdo->lastInsertId();
-            $pdo->prepare("INSERT INTO online_training_billing (subscription_id, trainer_id, athlete_id, billing_type, description, amount, billing_date) VALUES (?, ?, ?, 'subscription', ?, ?, CURDATE())")
-                ->execute([$subscriptionId, $coachId, $athleteId, 'Online tréninky - balík ' . $total . ' tréninků', $price]);
+            $billingMonth = onlineTrainingResolveBillingMonth($pdo, $coachId, $athleteId);
+            $billingSql = onlineTrainingBillingMonthAvailable($pdo)
+                ? "INSERT INTO online_training_billing (subscription_id, trainer_id, athlete_id, billing_type, description, amount, billing_date, billing_month) VALUES (?, ?, ?, 'subscription', ?, ?, CURDATE(), ?)"
+                : "INSERT INTO online_training_billing (subscription_id, trainer_id, athlete_id, billing_type, description, amount, billing_date) VALUES (?, ?, ?, 'subscription', ?, ?, CURDATE())";
+            $billingParams = [$subscriptionId, $coachId, $athleteId, 'Online tréninky - balík ' . $total . ' tréninků', $price];
+            if (onlineTrainingBillingMonthAvailable($pdo)) $billingParams[] = $billingMonth;
+            $pdo->prepare($billingSql)->execute($billingParams);
             flash('success', 'Online předplatné bylo vytvořeno.');
         }
         redirect(BASE_URL . '/athlete_detail.php?id=' . $athleteId);
@@ -73,6 +78,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $cancelStmt = $pdo->prepare("UPDATE online_training_subscriptions SET status = 'cancelled' WHERE id = ? AND trainer_id = ? AND athlete_id = ? AND status = 'active'");
         $cancelStmt->execute([$subscriptionId, $coachId, $athleteId]);
         flash($cancelStmt->rowCount() === 1 ? 'success' : 'warning', $cancelStmt->rowCount() === 1 ? 'Čerpání předplatného bylo ukončeno. Účetní historie zůstala zachována.' : 'Aktivní předplatné nebylo nalezeno.');
+        redirect(BASE_URL . '/athlete_detail.php?id=' . $athleteId);
+    }
+    if ($action === 'delete_online_subscription') {
+        $subscriptionId = (int)($_POST['subscription_id'] ?? 0);
+        if (empty($_POST['refund_confirmed'])) {
+            flash('danger', 'Trvalé smazání předplatného vyžaduje potvrzení vrácení peněz sportovci.');
+            redirect(BASE_URL . '/athlete_detail.php?id=' . $athleteId);
+        }
+        try {
+            $pdo->beginTransaction();
+            $subscriptionStmt = $pdo->prepare('SELECT * FROM online_training_subscriptions WHERE id = ? AND trainer_id = ? AND athlete_id = ? FOR UPDATE');
+            $subscriptionStmt->execute([$subscriptionId, $coachId, $athleteId]);
+            $subscription = $subscriptionStmt->fetch();
+            if (!$subscription) throw new RuntimeException('Předplatné nebylo nalezeno.');
+            if ((int)$subscription['used_trainings'] > 0 || (int)$subscription['remaining_trainings'] !== (int)$subscription['total_trainings']) {
+                throw new RuntimeException('Předplatné již bylo alespoň částečně vyčerpáno. Nelze jej trvale smazat; použijte pouze Ukončit čerpání.');
+            }
+            $linkedTrainingStmt = $pdo->prepare('SELECT COUNT(*) FROM online_trainings WHERE subscription_id = ?');
+            $linkedTrainingStmt->execute([$subscriptionId]);
+            if ((int)$linkedTrainingStmt->fetchColumn() > 0) throw new RuntimeException('Předplatné už je navázáno na odeslaný online trénink. Nelze jej trvale smazat.');
+            $pdo->prepare('DELETE FROM online_training_billing WHERE subscription_id = ?')->execute([$subscriptionId]);
+            $pdo->prepare('DELETE FROM online_training_subscriptions WHERE id = ?')->execute([$subscriptionId]);
+            $pdo->commit();
+            flash('success', 'Nevyužité předplatné a jeho účetní položka byly trvale smazány po potvrzení vrácení peněz.');
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            flash('danger', $e->getMessage());
+        }
         redirect(BASE_URL . '/athlete_detail.php?id=' . $athleteId);
     }
     if ($action === 'save_weight' || $action === 'update_weight') {
@@ -427,7 +460,7 @@ renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']), true, true
         </div>
         <hr>
         <h6 class="mb-3">Historie předplatných</h6>
-        <?php if (!$onlineSubscriptions): ?><div class="text-muted small">Sportovec zatím nemá žádné online předplatné.</div><?php else: ?><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead class="table-light"><tr><th>Zakoupeno</th><th>Balík</th><th>Využito</th><th>Zbývá</th><th>Cena</th><th>Stav</th><th></th></tr></thead><tbody><?php foreach ($onlineSubscriptions as $subscription): ?><tr><td><?= h(formatDateTime((string)$subscription['purchased_at'])) ?></td><td><?= (int)$subscription['total_trainings'] ?> tréninků</td><td><?= (int)$subscription['used_trainings'] ?></td><td class="fw-semibold"><?= (int)$subscription['remaining_trainings'] ?></td><td><?= number_format((float)$subscription['price'], 2, ',', ' ') ?> Kč</td><td><span class="badge <?= $subscription['status'] === 'active' ? 'bg-success' : 'bg-secondary' ?>"><?= $subscription['status'] === 'active' ? 'Aktivní' : ($subscription['status'] === 'exhausted' ? 'Vyčerpáno' : 'Ukončeno') ?></span></td><td><?php if ($subscription['status'] === 'active'): ?><form method="post" onsubmit="return confirm('Ukončit čerpání tohoto předplatného? Již odeslané tréninky ani účetní položka se nezmění.');"><input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>"><input type="hidden" name="action" value="cancel_online_subscription"><input type="hidden" name="subscription_id" value="<?= (int)$subscription['id'] ?>"><button class="btn btn-sm btn-outline-danger">Ukončit</button></form><?php endif; ?></td></tr><?php endforeach; ?></tbody></table></div><?php endif; ?>
+        <?php if (!$onlineSubscriptions): ?><div class="text-muted small">Sportovec zatím nemá žádné online předplatné.</div><?php else: ?><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead class="table-light"><tr><th>Zakoupeno</th><th>Balík</th><th>Využito</th><th>Zbývá</th><th>Cena</th><th>Stav</th><th>Akce</th></tr></thead><tbody><?php foreach ($onlineSubscriptions as $subscription): ?><?php $canDeleteSubscription = (int)$subscription['used_trainings'] === 0 && (int)$subscription['remaining_trainings'] === (int)$subscription['total_trainings']; ?><tr><td><?= h(formatDateTime((string)$subscription['purchased_at'])) ?></td><td><?= (int)$subscription['total_trainings'] ?> tréninků</td><td><?= (int)$subscription['used_trainings'] ?></td><td class="fw-semibold"><?= (int)$subscription['remaining_trainings'] ?></td><td><?= number_format((float)$subscription['price'], 2, ',', ' ') ?> Kč</td><td><span class="badge <?= $subscription['status'] === 'active' ? 'bg-success' : 'bg-secondary' ?>"><?= $subscription['status'] === 'active' ? 'Aktivní' : ($subscription['status'] === 'exhausted' ? 'Vyčerpáno' : 'Ukončeno') ?></span></td><td><div class="d-flex flex-wrap gap-1"><?php if ($subscription['status'] === 'active'): ?><form method="post" onsubmit="return confirm('Ukončit čerpání tohoto předplatného? Již odeslané tréninky ani účetní položka se nezmění.');"><input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>"><input type="hidden" name="action" value="cancel_online_subscription"><input type="hidden" name="subscription_id" value="<?= (int)$subscription['id'] ?>"><button class="btn btn-sm btn-outline-danger">Ukončit</button></form><?php endif; ?><?php if ($canDeleteSubscription): ?><form method="post" onsubmit="return confirm('Potvrzujete, že sportovci byly vráceny peníze? Teprve poté bude nevyužité předplatné včetně účetní položky trvale smazáno.');"><input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>"><input type="hidden" name="action" value="delete_online_subscription"><input type="hidden" name="subscription_id" value="<?= (int)$subscription['id'] ?>"><input type="hidden" name="refund_confirmed" value="1"><button class="btn btn-sm btn-outline-secondary">Smazat po vrácení peněz</button></form><?php elseif ((int)$subscription['remaining_trainings'] > 0): ?><span class="small text-muted">Nevyčerpaný balík nelze smazat.</span><?php endif; ?></div></td></tr><?php endforeach; ?></tbody></table></div><?php endif; ?>
     </div>
 </div>
 

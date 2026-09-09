@@ -93,6 +93,7 @@ renderAthleteHeader('Návod pro sportovce', false, true);
             <a href="#athlete-profile" class="btn btn-outline-dark btn-sm">Profil</a>
             <a href="#athlete-health" class="btn btn-outline-dark btn-sm">Z. dotazník</a>
             <a href="#athlete-calendar" class="btn btn-outline-dark btn-sm">Kalendář</a>
+            <a href="#athlete-online-training" class="btn btn-outline-dark btn-sm">Online tréninky</a>
             <a href="#athlete-food" class="btn btn-outline-dark btn-sm">Jídelníčky</a>
             <a href="#athlete-food-diary" class="btn btn-outline-dark btn-sm">Strava</a>
             <a href="#athlete-payments" class="btn btn-outline-dark btn-sm">Platby</a>
@@ -109,6 +110,7 @@ renderAthleteHeader('Návod pro sportovce', false, true);
     <div class="card-body">
         <div class="row g-2 small">
             <div class="col-12 col-md-6"><i class="fas fa-calendar-alt me-2 text-muted"></i><strong>Kalendář:</strong> termíny, stavy schválení, změny termínů</div>
+            <div class="col-12 col-md-6"><i class="fas fa-laptop me-2 text-muted"></i><strong>Online tréninky:</strong> samostatně odcvičené tréninky od trenéra</div>
             <div class="col-12 col-md-6"><i class="fas fa-heart-pulse me-2 text-muted"></i><strong>Z. dotazník:</strong> vstupní zdravotní informace a průběžné hlášení změn</div>
             <div class="col-12 col-md-6"><i class="fas fa-wallet me-2 text-muted"></i><strong>Platby:</strong> přehled období, stavy plateb, QR platby</div>
             <div class="col-12 col-md-6"><i class="fas fa-utensils me-2 text-muted"></i><strong>Jídelníčky:</strong> aktuální plán od trenéra</div>
@@ -219,6 +221,21 @@ renderAthleteHeader('Návod pro sportovce', false, true);
             <li>Změnu uložte; trenér dostane informaci automaticky.</li>
             <li>Odeslané hlášení můžete později upravit nebo smazat.</li>
         </ol>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4" id="athlete-online-training">
+    <div class="card-header fw-semibold"><i class="fas fa-laptop me-2 text-warning"></i>Online tréninky</div>
+    <div class="card-body">
+        <ol>
+            <li>Na dashboardu nebo v Online trénincích otevřete nový trénink od trenéra.</li>
+            <li>Nejdříve klikněte na Zahájit online trénink. Teprve potom můžete zapisovat váhu a opakování.</li>
+            <li>U každé série zapisujte skutečně odcvičenou váhu a počet opakování. Hodnoty se průběžně ukládají.</li>
+            <li>Prohlédněte si instrukce, fotografie, video a odkazy připojené k tréninku nebo cviku.</li>
+            <li>V průběhu můžete přidat vlastní poznámku a fotografie.</li>
+            <li>Po dokončení klikněte na Dokončit online trénink. Poté už výsledky nelze měnit.</li>
+        </ol>
+        <p class="mb-0">Online trénink probíhá samostatně. Nevyžaduje místo, GPS ani potvrzení přítomnosti trenéra.</p>
     </div>
 </div>
 

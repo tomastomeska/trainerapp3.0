@@ -93,6 +93,7 @@ renderHeader('Návod pro trenéry', false, true);
             <a href="#coach-athletes" class="btn btn-outline-dark btn-sm">Sportovci</a>
             <a href="#coach-health" class="btn btn-outline-dark btn-sm">Z. dotazník</a>
             <a href="#coach-training" class="btn btn-outline-dark btn-sm">Trénink</a>
+            <a href="#coach-online-training" class="btn btn-outline-dark btn-sm">Online tréninky</a>
             <a href="#coach-calendar" class="btn btn-outline-dark btn-sm">Kalendář</a>
             <a href="#coach-food-diary" class="btn btn-outline-dark btn-sm">Strava</a>
             <a href="#coach-payments" class="btn btn-outline-dark btn-sm">Platby</a>
@@ -112,6 +113,7 @@ renderHeader('Návod pro trenéry', false, true);
             <div class="col-12 col-md-6"><i class="fas fa-heart-pulse me-2 text-muted"></i><strong>Z. dotazník:</strong> zdravotní stav sportovce, upozornění a nové změny</div>
             <div class="col-12 col-md-6"><i class="fas fa-list me-2 text-muted"></i><strong>Cviky:</strong> vlastní knihovna cviků</div>
             <div class="col-12 col-md-6"><i class="fas fa-layer-group me-2 text-muted"></i><strong>Sady:</strong> aktivní/archiv/vše, editace struktury</div>
+            <div class="col-12 col-md-6"><i class="fas fa-laptop me-2 text-muted"></i><strong>Online tréninky:</strong> samostatné tréninky, média, výsledky a účtování</div>
             <div class="col-12 col-md-6"><i class="fas fa-calendar-alt me-2 text-muted"></i><strong>Kalendář:</strong> plánování, schvalování, Apple sync</div>
             <div class="col-12 col-md-6"><i class="fas fa-wallet me-2 text-muted"></i><strong>Platby:</strong> výzvy, stav úhrad, účtenky</div>
             <div class="col-12 col-md-6"><i class="fas fa-utensils me-2 text-muted"></i><strong>Jídelníčky:</strong> tvorba a přiřazení plánů</div>
@@ -293,6 +295,24 @@ renderHeader('Návod pro trenéry', false, true);
             <li>Zapisujte průběh tréninku a dokončete párovou session.</li>
             <li>Zkontrolujte výsledek v detailu obou sportovců.</li>
         </ol>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4" id="coach-online-training">
+    <div class="card-header fw-semibold"><i class="fas fa-laptop me-2 text-warning"></i>Online tréninky</div>
+    <div class="card-body">
+        <p>Online trénink je samostatně odcvičený trénink sportovce. Je oddělený od klasického tréninku s trenérem a jeho výsledky se nepoužijí jako poslední výkon pro klasickou session.</p>
+        <h6 class="fw-bold">Příprava a odeslání</h6>
+        <ol>
+            <li>V detailu sportovce nastavte cenu jednorázového online tréninku nebo vytvořte předplatný balík.</li>
+            <li>Otevřete Online tréninky a klikněte na Nový online trénink.</li>
+            <li>Vyberte sportovce a sadu. Aplikace ukáže automatické čerpání předplatného, jednorázovou sazbu nebo nutnost výslovně zvolit bezplatný trénink.</li>
+            <li>V draftu nastavte počet sérií a předepsané váhy a opakování. Hodnoty se průběžně ukládají.</li>
+            <li>Přidejte fotografie, videa nebo odkazy k celému tréninku či konkrétnímu cviku.</li>
+            <li>Po odeslání sportovec dostane interní zprávu a e-mail se seznamem cviků.</li>
+        </ol>
+        <h6 class="fw-bold mt-3">Účtování</h6>
+        <ul class="mb-0"><li>Aktivní předplatné má automaticky přednost a odečte se při odeslání tréninku.</li><li>Bez předplatného se použije jednorázová sazba sportovce.</li><li>Online položky patří do aktuální výzvy, pokud ještě není odeslaná; jinak do následujícího měsíce.</li></ul>
     </div>
 </div>
 

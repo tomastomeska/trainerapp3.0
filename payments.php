@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/online_training.php';
 require_once __DIR__ . '/includes/header.php';
 
 requireLogin();
@@ -14,7 +15,7 @@ try {
          FROM online_training_billing ob
          JOIN athletes a ON a.id = ob.athlete_id
          LEFT JOIN online_trainings ot ON ot.id = ob.online_training_id
-         WHERE ob.trainer_id = ? AND DATE_FORMAT(ob.billing_date, "%Y-%m") = ?
+         WHERE ob.trainer_id = ? AND DATE_FORMAT(COALESCE(ob.billing_month, ob.billing_date), "%Y-%m") = ?
          ORDER BY ob.billing_date DESC, ob.id DESC'
     );
     $onlineBillingStmt->execute([$coachId, (string)($_GET['month'] ?? date('Y-m'))]);
@@ -670,6 +671,7 @@ function computeOutstandingCarryoverByAthlete(array $paidHistoryRows, array $act
 function upsertAthleteMonthlyPayment(PDO $pdo, int $coachId, int $athleteId, string $billingMonthSql, ?float $sessionRate, int $plannedSessions, int $carryoverUsed, float $billedAmount, string $status): void
 {
     $safeStatus = $status === 'paid' ? 'paid' : 'pending';
+    $billedAmount += onlineTrainingBillingAmount($pdo, $coachId, $athleteId, $billingMonthSql);
     $sql = "INSERT INTO athlete_monthly_payments (coach_id, athlete_id, billing_month, session_rate, planned_sessions, carryover_used_sessions, billed_amount, status, paid_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, " . ($safeStatus === 'paid' ? 'NOW()' : 'NULL') . ")
             ON DUPLICATE KEY UPDATE
@@ -1320,6 +1322,12 @@ renderHeader('Platby', false, true);
                         $billable = computeBillableBreakdown($stats, $carryoverUsedNow, $rate, $pairedRate);
                         $currentSessions = (int)$billable['billable_sessions'];
                         $currentAmount = $billable['amount'];
+                        $onlineBillingAmount = onlineTrainingBillingAmount($pdo, $coachId, $athleteId, $selectedMonthSql);
+                        if ($currentAmount !== null) {
+                            $currentAmount = (float)$currentAmount + $onlineBillingAmount;
+                        } elseif ($onlineBillingAmount > 0) {
+                            $currentAmount = $onlineBillingAmount;
+                        }
                         $isPaid = $payment && (($payment['status'] ?? '') === 'paid');
                         $isSnapshotLocked = $payment && in_array(($payment['status'] ?? ''), ['pending', 'paid'], true);
                         $displaySessions = $isSnapshotLocked ? (int)($payment['planned_sessions'] ?? $currentSessions) : $currentSessions;

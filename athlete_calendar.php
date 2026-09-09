@@ -417,22 +417,43 @@ $venues = array_values(array_filter(getTrainingVenues(), fn($row) => !empty($row
 renderAthleteHeader('Můj kalendář', false, true);
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-    <h2 class="mb-0"><i class="fas fa-calendar-alt me-2 text-warning"></i>Můj kalendář</h2>
-    <div class="d-flex gap-2 flex-wrap">
-        <a href="<?= BASE_URL ?>/athlete_dashboard.php" class="btn btn-outline-secondary btn-sm">
-            <i class="fas fa-house me-1"></i>Domů
-        </a>
-        <a href="<?= BASE_URL ?>/logout.php" class="btn btn-outline-danger btn-sm">
-            <i class="fas fa-sign-out-alt me-1"></i>Odhlásit
-        </a>
-    </div>
-</div>
-
 <style>
 .calendar-shell {
     overflow-x: auto;
     border-radius: 12px;
+}
+
+.training-month-filter {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: .35rem;
+}
+
+.training-month-filter .btn {
+    border-radius: .5rem !important;
+    white-space: nowrap;
+}
+
+.training-filter-select {
+    height: 30px;
+    min-height: 30px;
+    padding: .2rem 1.9rem .2rem .5rem;
+    font-size: .78rem;
+    line-height: 1.2;
+}
+
+#athleteTrainingYearFilter {
+    width: 82px;
+}
+
+#athleteTrainingStatusFilter {
+    width: 170px;
+}
+
+@media (min-width: 992px) {
+    .training-month-filter {
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+    }
 }
 
 .calendar-grid {
@@ -689,7 +710,8 @@ renderAthleteHeader('Můj kalendář', false, true);
 <div class="tab-pane fade <?= $activeTab === 'trainings' ? 'show active' : '' ?>" id="athlete-training-pane" role="tabpanel" aria-labelledby="athlete-training-tab" tabindex="0">
     <div class="card border-0 shadow-sm">
         <div class="card-body">
-            <div class="mb-3"><h5 class="mb-1"><i class="fas fa-dumbbell me-2 text-warning"></i>Moje schválené tréninky</h5><div class="small text-muted">Přehled od dneška vzestupně.</div></div>
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"><div><h5 class="mb-1"><i class="fas fa-dumbbell me-2 text-warning"></i>Moje tréninky</h5><div class="small text-muted">Kompletní přehled zvoleného měsíce.</div></div><div class="d-flex gap-2"><select class="form-select form-select-sm training-filter-select" id="athleteTrainingYearFilter"><?php for ($trainingYear = (int)date('Y') - 2; $trainingYear <= (int)date('Y') + 1; $trainingYear++): ?><option value="<?= $trainingYear ?>" <?= $trainingYear === (int)date('Y') ? 'selected' : '' ?>><?= $trainingYear ?></option><?php endfor; ?></select><select class="form-select form-select-sm training-filter-select" id="athleteTrainingStatusFilter"><option value="approved" selected>Schválené a proběhlé</option><option value="planned">Naplánované</option><option value="completed">Proběhlé</option><option value="change_pending">Čeká na změnu</option></select><button type="button" class="btn btn-outline-secondary btn-sm" id="athleteShowCancelledBtn"><i class="fas fa-ban me-1"></i>Ukázat zrušené</button></div></div>
+            <div class="training-month-filter mb-3" role="group" aria-label="Měsíc tréninků" id="athleteTrainingMonthFilter"><?php foreach (['01'=>'Leden','02'=>'Únor','03'=>'Březen','04'=>'Duben','05'=>'Květen','06'=>'Červen','07'=>'Červenec','08'=>'Srpen','09'=>'Září','10'=>'Říjen','11'=>'Listopad','12'=>'Prosinec'] as $monthValue => $monthLabel): ?><button type="button" class="btn btn-outline-secondary btn-sm" data-month="<?= $monthValue ?>"><?= $monthLabel ?></button><?php endforeach; ?></div>
             <div id="athleteTrainingTiles" class="row g-3"><div class="col-12 text-muted">Načítám tréninky...</div></div>
         </div>
     </div>
@@ -1119,6 +1141,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const athleteMonthListBody = document.getElementById('athleteMonthListBody');
     const athleteMonthListEmpty = document.getElementById('athleteMonthListEmpty');
     const athleteTrainingTiles = document.getElementById('athleteTrainingTiles');
+    const athleteTrainingYearFilter = document.getElementById('athleteTrainingYearFilter');
+    const athleteTrainingStatusFilter = document.getElementById('athleteTrainingStatusFilter');
+    const athleteShowCancelledBtn = document.getElementById('athleteShowCancelledBtn');
+    const athleteTrainingMonthFilter = document.getElementById('athleteTrainingMonthFilter');
+    let athleteTrainingMonth = String(new Date().getMonth() + 1).padStart(2, '0');
+    let athleteShowingCancelled = false;
     const athleteWeekMonthJumpInput = document.getElementById('athleteWeekMonthJumpInput');
     const athleteWeekRangeJumpSelect = document.getElementById('athleteWeekRangeJumpSelect');
     const athleteAppleCaldavForm = document.getElementById('athleteAppleCaldavForm');
@@ -2142,6 +2170,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const col = document.createElement('div');
             col.className = 'col-12 col-lg-6';
             const isPendingChange = item.status === 'change_pending';
+            const isCancelled = item.status === 'cancelled';
+            const isCompleted = item.status === 'approved' && new Date(item.starts_at.replace(' ', 'T')) < new Date();
             const requestedChangeHtml = item.requested_change
                 ? `<div class="alert alert-warning border mt-2 mb-0 py-2 small"><i class="fas fa-calendar-day me-1"></i>Požádáno o změnu na <strong>${escapeHtml(item.requested_change.date_label)} ${escapeHtml(item.requested_change.time_label)}</strong></div>`
                 : '';
@@ -2149,7 +2179,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const sourceHtml = isPendingChange && item.source
                 ? `<div class="small mt-2 p-2 bg-light rounded"><span class="badge text-bg-secondary me-1">Původní termín</span>${escapeHtml(item.source.date_label)} ${escapeHtml(item.source.time_label)}${item.source.location ? ` · ${escapeHtml(item.source.location)}` : ''}</div>`
                 : '';
-            col.innerHTML = `<article class="card h-100 border-2 ${isPendingChange ? 'border-warning' : 'border-success'} shadow-sm"><div class="card-body"><div class="d-flex justify-content-between gap-2"><div><div class="fw-bold">${escapeHtml(item.date_label)} · ${escapeHtml(item.time_label)}</div><div class="mt-1">${escapeHtml(item.title)}</div></div><span class="badge ${isPendingChange ? 'text-bg-warning' : 'text-bg-success'}">${isPendingChange ? 'Čeká na potvrzení změny' : 'Schváleno'}</span></div><div class="small text-muted mt-2">${item.location ? `<i class="fas fa-location-dot me-1"></i>${escapeHtml(item.location)}` : 'Místo není uvedeno'}</div>${requestedChangeHtml}${sourceHtml}${actionHtml ? `<div class="d-flex gap-2 flex-wrap mt-3" data-event-id="${Number(item.id || 0)}">${actionHtml}</div>` : ''}</div></article>`;
+            col.innerHTML = `<article class="card h-100 border-2 ${isCancelled || isCompleted ? 'border-secondary' : (isPendingChange ? 'border-warning' : 'border-success')} shadow-sm"><div class="card-body"><div class="d-flex justify-content-between gap-2"><div><div class="fw-bold">${escapeHtml(item.date_label)} · ${escapeHtml(item.time_label)}</div><div class="mt-1">${escapeHtml(item.title)}</div></div><span class="badge ${isCancelled || isCompleted ? 'text-bg-secondary' : (isPendingChange ? 'text-bg-warning' : 'text-bg-success')}">${isCancelled ? 'Zrušeno' : (isPendingChange ? 'Čeká na potvrzení změny' : (isCompleted ? 'Proběhlo' : 'Naplánováno'))}</span></div><div class="small text-muted mt-2">${item.location ? `<i class="fas fa-location-dot me-1"></i>${escapeHtml(item.location)}` : 'Místo není uvedeno'}</div>${requestedChangeHtml}${sourceHtml}${isCancelled ? '' : (actionHtml ? `<div class="d-flex gap-2 flex-wrap mt-3" data-event-id="${Number(item.id || 0)}">${actionHtml}</div>` : '')}</div></article>`;
             const actionWrap = col.querySelector('[data-event-id]');
             if (actionWrap) {
                 actionWrap.dataset.event = JSON.stringify(item);
@@ -2159,7 +2189,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadAthleteTrainingTiles() {
-        const response = await fetch('<?= BASE_URL ?>/api/athlete_calendar_training_list.php', { credentials: 'same-origin' });
+        const query = new URLSearchParams({
+            month: `${athleteTrainingYearFilter ? athleteTrainingYearFilter.value : new Date().getFullYear()}-${athleteTrainingMonth}`,
+            status: athleteShowingCancelled ? 'cancelled' : (athleteTrainingStatusFilter ? athleteTrainingStatusFilter.value : 'approved'),
+        });
+        const response = await fetch(`<?= BASE_URL ?>/api/athlete_calendar_training_list.php?${query.toString()}`, { credentials: 'same-origin' });
         const payload = await response.json();
         if (!payload.success) {
             athleteTrainingTiles.innerHTML = `<div class="col-12 text-danger">${escapeHtml(payload.error || 'Načtení tréninků selhalo.')}</div>`;
@@ -2185,6 +2219,28 @@ document.addEventListener('DOMContentLoaded', () => {
             await loadAthleteTrainingTiles();
         }
     });
+    if (athleteTrainingYearFilter) athleteTrainingYearFilter.addEventListener('change', loadAthleteTrainingTiles);
+    if (athleteTrainingStatusFilter) athleteTrainingStatusFilter.addEventListener('change', () => {
+        athleteShowingCancelled = false;
+        if (athleteShowCancelledBtn) athleteShowCancelledBtn.innerHTML = '<i class="fas fa-ban me-1"></i>Ukázat zrušené';
+        loadAthleteTrainingTiles();
+    });
+    if (athleteShowCancelledBtn) athleteShowCancelledBtn.addEventListener('click', () => {
+        athleteShowingCancelled = !athleteShowingCancelled;
+        athleteShowCancelledBtn.innerHTML = athleteShowingCancelled ? '<i class="fas fa-eye-slash me-1"></i>Skrýt zrušené' : '<i class="fas fa-ban me-1"></i>Ukázat zrušené';
+        loadAthleteTrainingTiles();
+    });
+    if (athleteTrainingMonthFilter) athleteTrainingMonthFilter.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-month]');
+        if (!button) return;
+        athleteTrainingMonth = button.dataset.month;
+        athleteTrainingMonthFilter.querySelectorAll('[data-month]').forEach((item) => item.classList.toggle('active', item === button));
+        loadAthleteTrainingTiles();
+    });
+    if (athleteTrainingMonthFilter) {
+        const currentMonthButton = athleteTrainingMonthFilter.querySelector(`[data-month="${athleteTrainingMonth}"]`);
+        if (currentMonthButton) currentMonthButton.classList.add('active');
+    }
 
     async function loadAthleteMonthList() {
         if (!athleteMonthInput || !athleteMonthInput.value) {

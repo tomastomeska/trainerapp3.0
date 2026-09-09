@@ -34,7 +34,7 @@ function onlineTrainingNextSequence(PDO $pdo, int $athleteId): int {
 }
 
 function onlineTrainingLoadForCoach(PDO $pdo, int $id, int $coachId): ?array {
-    $stmt = $pdo->prepare('SELECT ot.*, a.first_name, a.last_name, a.email AS athlete_email, a.online_training_rate, c.name AS coach_name, ws.name AS set_name,
+    $stmt = $pdo->prepare('SELECT ot.*, a.first_name, a.last_name, a.email AS athlete_email, a.online_training_rate AS athlete_online_rate, c.name AS coach_name, ws.name AS set_name,
         ots.total_trainings, ots.used_trainings, ots.remaining_trainings
         FROM online_trainings ot
         JOIN athletes a ON a.id = ot.athlete_id
@@ -138,23 +138,68 @@ function onlineTrainingSaveUpload(array $file, string $uploadedBy): ?array {
     return ['type' => $type, 'path' => 'online_trainings/' . $name, 'name' => (string)$file['name'], 'uploaded_by' => $uploadedBy];
 }
 
+function onlineTrainingResolveBillingMonth(PDO $pdo, int $coachId, int $athleteId): string {
+    $month = new DateTimeImmutable('first day of this month 00:00:00');
+    $monthSql = $month->format('Y-m-01');
+    $releasedStmt = $pdo->prepare("SELECT status FROM coach_billing_month_athletes WHERE coach_id = ? AND athlete_id = ? AND billing_month = ? LIMIT 1");
+    $releasedStmt->execute([$coachId, $athleteId, $monthSql]);
+    $athleteReleased = $releasedStmt->fetchColumn() === 'released';
+    $monthReleasedStmt = $pdo->prepare("SELECT status FROM coach_billing_months WHERE coach_id = ? AND billing_month = ? LIMIT 1");
+    $monthReleasedStmt->execute([$coachId, $monthSql]);
+    $monthReleased = $monthReleasedStmt->fetchColumn() === 'released';
+    return ($athleteReleased || $monthReleased) ? $month->modify('+1 month')->format('Y-m-01') : $monthSql;
+}
+
+function onlineTrainingBillingMonthAvailable(PDO $pdo): bool {
+    static $available = null;
+    if ($available !== null) return $available;
+    try {
+        $column = $pdo->query("SHOW COLUMNS FROM online_training_billing LIKE 'billing_month'");
+        $available = $column !== false && (bool)$column->fetch();
+    } catch (Throwable $e) {
+        $available = false;
+    }
+    return $available;
+}
+
+function onlineTrainingBillingAmount(PDO $pdo, int $coachId, int $athleteId, string $billingMonth): float {
+    try {
+        $stmt = $pdo->prepare('SELECT COALESCE(SUM(amount), 0) FROM online_training_billing WHERE trainer_id = ? AND athlete_id = ? AND billing_month = ?');
+        $stmt->execute([$coachId, $athleteId, $billingMonth]);
+        return (float)$stmt->fetchColumn();
+    } catch (Throwable $e) {
+        return 0.0;
+    }
+}
+
 function onlineTrainingSend(PDO $pdo, int $trainingId, int $coachId, string $billingType, ?int $subscriptionId = null, ?int $subscriptionTotal = null, ?float $subscriptionPrice = null): void {
     $training = onlineTrainingLoadForCoach($pdo, $trainingId, $coachId);
     if (!$training || $training['status'] !== 'created') throw new RuntimeException('Online trénink nelze odeslat.');
-    $billingType = in_array($billingType, ['free', 'single', 'subscription'], true) ? $billingType : 'free';
+    $billingType = in_array($billingType, ['auto', 'free', 'single', 'subscription'], true) ? $billingType : '';
+    if ($billingType === '') throw new RuntimeException('Vyberte způsob účtování online tréninku.');
     $price = 0.0;
     $pdo->beginTransaction();
     try {
-        if ($billingType === 'single') $price = max(0, (float)($training['athlete_online_rate'] ?? 0));
-        if ($billingType === 'subscription') {
-            if (!$subscriptionId && $subscriptionTotal && $subscriptionPrice !== null) {
-                $sub = $pdo->prepare('INSERT INTO online_training_subscriptions (trainer_id, athlete_id, total_trainings, remaining_trainings, price, purchased_at) VALUES (?, ?, ?, ?, ?, NOW())');
-                $sub->execute([$coachId, (int)$training['athlete_id'], $subscriptionTotal, $subscriptionTotal, max(0, $subscriptionPrice)]);
-                $subscriptionId = (int)$pdo->lastInsertId();
-                $pdo->prepare('INSERT INTO online_training_billing (subscription_id, trainer_id, athlete_id, billing_type, description, amount, billing_date) VALUES (?, ?, ?, \'subscription\', ?, ?, CURDATE())')
-                    ->execute([$subscriptionId, $coachId, (int)$training['athlete_id'], 'Online tréninky - balík ' . $subscriptionTotal . ' tréninků', max(0, $subscriptionPrice)]);
+        $activeSubscriptionStmt = $pdo->prepare('SELECT * FROM online_training_subscriptions WHERE trainer_id = ? AND athlete_id = ? AND status = \'active\' AND remaining_trainings > 0 ORDER BY purchased_at ASC, id ASC LIMIT 1 FOR UPDATE');
+        $activeSubscriptionStmt->execute([$coachId, (int)$training['athlete_id']]);
+        $activeSubscription = $activeSubscriptionStmt->fetch() ?: null;
+        if ($billingType === 'auto') {
+            if ($activeSubscription) {
+                $billingType = 'subscription';
+                $subscriptionId = (int)$activeSubscription['id'];
+            } elseif ($training['athlete_online_rate'] !== null && (float)$training['athlete_online_rate'] > 0) {
+                $billingType = 'single';
+            } else {
+                throw new RuntimeException('Sportovec nemá aktivní předplatné ani sazbu. Zvolte výslovně možnost Zdarma.');
             }
-            if (!$subscriptionId) throw new RuntimeException('Vyberte aktivní předplatné nebo zadejte nový balík.');
+        }
+        if ($billingType === 'single') {
+            $price = max(0, (float)($training['athlete_online_rate'] ?? 0));
+            if ($price <= 0) throw new RuntimeException('Sportovec nemá nastavenou jednorázovou online sazbu. Zvolte Zdarma nebo vytvořte předplatné v detailu sportovce.');
+        }
+        if ($billingType === 'subscription') {
+            if (!$subscriptionId) $subscriptionId = $activeSubscription ? (int)$activeSubscription['id'] : null;
+            if (!$subscriptionId) throw new RuntimeException('Sportovec nemá aktivní předplatné.');
             $subStmt = $pdo->prepare('SELECT * FROM online_training_subscriptions WHERE id = ? AND trainer_id = ? AND athlete_id = ? AND status = \'active\' AND remaining_trainings > 0 FOR UPDATE');
             $subStmt->execute([$subscriptionId, $coachId, (int)$training['athlete_id']]);
             $sub = $subStmt->fetch();
@@ -164,8 +209,13 @@ function onlineTrainingSend(PDO $pdo, int $trainingId, int $coachId, string $bil
         $pdo->prepare('UPDATE online_trainings SET status = \'sent\', sent_at = NOW(), billing_type = ?, price = ?, subscription_id = ? WHERE id = ?')
             ->execute([$billingType, $price, $subscriptionId, $trainingId]);
         if ($billingType === 'single' && $price > 0) {
-            $pdo->prepare('INSERT INTO online_training_billing (online_training_id, trainer_id, athlete_id, billing_type, description, amount, billing_date) VALUES (?, ?, ?, \'single\', ?, ?, CURDATE())')
-                ->execute([$trainingId, $coachId, (int)$training['athlete_id'], 'Online trénink #' . str_pad((string)$training['sequence_number'], 3, '0', STR_PAD_LEFT), $price]);
+            $billingMonth = onlineTrainingResolveBillingMonth($pdo, $coachId, (int)$training['athlete_id']);
+            $billingSql = onlineTrainingBillingMonthAvailable($pdo)
+                ? 'INSERT INTO online_training_billing (online_training_id, trainer_id, athlete_id, billing_type, description, amount, billing_date, billing_month) VALUES (?, ?, ?, \'single\', ?, ?, CURDATE(), ?)'
+                : 'INSERT INTO online_training_billing (online_training_id, trainer_id, athlete_id, billing_type, description, amount, billing_date) VALUES (?, ?, ?, \'single\', ?, ?, CURDATE())';
+            $billingParams = [$trainingId, $coachId, (int)$training['athlete_id'], 'Online trénink #' . str_pad((string)$training['sequence_number'], 3, '0', STR_PAD_LEFT), $price];
+            if (onlineTrainingBillingMonthAvailable($pdo)) $billingParams[] = $billingMonth;
+            $pdo->prepare($billingSql)->execute($billingParams);
         }
         $pdo->commit();
     } catch (Throwable $e) {
@@ -186,6 +236,8 @@ function onlineTrainingSend(PDO $pdo, int $trainingId, int $coachId, string $bil
         if ($exerciseLines) $message .= "\n\nCviky:\n" . implode("\n", $exerciseLines);
         $message .= "\n\nOtevřete trénink v aplikaci: " . $url;
         sendAthleteCalendarNotificationEmail((string)$athlete['email'], trim($athlete['first_name'] . ' ' . $athlete['last_name']), 'Nový online trénink', $message);
+        // Online trénink má sportovec obdržet hned; cron zůstává zálohou pro nezpracované joby.
+        processEmailNotificationQueue(10, 'athlete_calendar_notification');
     }
 }
 
@@ -194,4 +246,6 @@ function onlineTrainingNotifyCompleted(PDO $pdo, array $training): void {
     $subject = 'Dokončený online trénink #' . $number;
     $body = 'Sportovec ' . trim($training['first_name'] . ' ' . $training['last_name']) . ' dokončil online trénink #' . $number . '. Otevřít: ' . BASE_URL . '/online_training.php?id=' . (int)$training['id'];
     createCoachSystemMessage((int)$training['trainer_id'], $subject, $body, true);
+    // Dokončení online tréninku má trenéra upozornit bez čekání na cron.
+    processEmailNotificationQueue(10, 'coach_message_notification');
 }

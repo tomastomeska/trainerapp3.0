@@ -214,6 +214,19 @@ renderAdminHeader('Návod pro SuperAdmin');
     </div>
 </div>
 
+<div class="card border-0 shadow-sm mb-4" id="online-trainings">
+    <div class="card-header fw-semibold"><i class="fas fa-laptop me-2 text-warning"></i>Online tréninky</div>
+    <div class="card-body">
+        <ol class="mb-0">
+            <li>V Online trénincích kontrolujte stav databázového schématu a spusťte migraci po nasazení nové verze modulu.</li>
+            <li>Servisní přehled umožňuje filtrovat online tréninky podle trenéra, sportovce a stavu.</li>
+            <li>Trvalé smazání používejte pouze pro testovací nebo chybně vytvořená data; smaže výsledky, přílohy, soubory i účetní položky navázané na konkrétní trénink.</li>
+            <li>Před zásahem do produkčního účtování ověřte, zda sportovci nebo trenérovi již neodešla měsíční výzva.</li>
+            <li>Pro oznámení funkce trenérům použijte tlačítko Připravit zprávu trenérům v administraci Online tréninků.</li>
+        </ol>
+    </div>
+</div>
+
 <div class="card border-0 shadow-sm mb-4" id="ops">
     <div class="card-header fw-semibold"><i class="fas fa-server me-2 text-warning"></i>8) Provoz a stabilita <span class="manual-priority manual-priority-high">Kritické</span></div>
     <div class="card-body">

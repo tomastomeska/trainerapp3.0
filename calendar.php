@@ -415,6 +415,36 @@ renderHeader('Kalendář', false, true);
     overflow-x: auto;
     border-radius: 12px;
 }
+.training-month-filter {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: .35rem;
+}
+.training-month-filter .btn {
+    border-radius: .5rem !important;
+    white-space: nowrap;
+}
+
+.training-filter-select {
+    height: 30px;
+    min-height: 30px;
+    padding: .2rem 1.9rem .2rem .5rem;
+    font-size: .78rem;
+    line-height: 1.2;
+}
+
+#trainingYearFilter {
+    width: 82px;
+}
+
+#trainingStatusFilter {
+    width: 170px;
+}
+@media (min-width: 992px) {
+    .training-month-filter {
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+    }
+}
 
 .calendar-grid {
     width: 100%;
@@ -837,12 +867,18 @@ renderHeader('Kalendář', false, true);
                     <h5 class="mb-1"><i class="fas fa-dumbbell me-2 text-warning"></i>Tréninky</h5>
                     <div class="small text-muted">Od dneška vzestupně. Oranžové položky čekají na vyřízení.</div>
                 </div>
-                <div class="d-flex gap-2 flex-wrap">
-                <select class="form-select form-select-sm" id="trainingStatusFilter" style="max-width: 210px">
-                    <option value="actionable" selected>Akce k vyřízení</option>
+                <div class="d-flex gap-2 flex-wrap align-items-center">
+                <select class="form-select form-select-sm training-filter-select" id="trainingYearFilter">
+                    <?php for ($trainingYear = (int)date('Y') - 2; $trainingYear <= (int)date('Y') + 1; $trainingYear++): ?><option value="<?= $trainingYear ?>" <?= $trainingYear === (int)date('Y') ? 'selected' : '' ?>><?= $trainingYear ?></option><?php endfor; ?>
+                </select>
+                <select class="form-select form-select-sm training-filter-select" id="trainingStatusFilter">
+                    <option value="all" selected>Všechny stavy</option>
                     <option value="pending">Čeká na schválení</option>
                     <option value="change">Potvrzení změny</option>
                     <option value="approved">Schválené</option>
+                    <option value="planned">Naplánované</option>
+                    <option value="completed">Proběhlé</option>
+                    <option value="cancelled">Zrušené</option>
                     <option value="all">Vše</option>
                 </select>
                 <select class="form-select form-select-sm" id="trainingAthleteFilter" style="max-width: 240px">
@@ -852,6 +888,9 @@ renderHeader('Kalendář', false, true);
                     <?php endforeach; ?>
                 </select>
                 </div>
+            </div>
+            <div class="training-month-filter mb-3" role="group" aria-label="Měsíc tréninků" id="trainingMonthFilter">
+                <?php foreach (['01'=>'Leden','02'=>'Únor','03'=>'Březen','04'=>'Duben','05'=>'Květen','06'=>'Červen','07'=>'Červenec','08'=>'Srpen','09'=>'Září','10'=>'Říjen','11'=>'Listopad','12'=>'Prosinec'] as $monthValue => $monthLabel): ?><button type="button" class="btn btn-outline-secondary btn-sm" data-month="<?= $monthValue ?>"><?= $monthLabel ?></button><?php endforeach; ?>
             </div>
             <div id="trainingTiles" class="row g-3"><div class="col-12 text-muted">Načítám tréninky...</div></div>
         </div>
@@ -1453,8 +1492,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const monthListEmpty = document.getElementById('monthListEmpty');
     const trainingStatusFilter = document.getElementById('trainingStatusFilter');
     const trainingAthleteFilter = document.getElementById('trainingAthleteFilter');
+    const trainingYearFilter = document.getElementById('trainingYearFilter');
+    const trainingMonthFilter = document.getElementById('trainingMonthFilter');
     const trainingAlertBadge = document.getElementById('trainingAlertBadge');
     const trainingTiles = document.getElementById('trainingTiles');
+    let trainingMonth = String(new Date().getMonth() + 1).padStart(2, '0');
     const weekMonthJumpInput = document.getElementById('weekMonthJumpInput');
     const weekRangeJumpSelect = document.getElementById('weekRangeJumpSelect');
     const eventAddToIosBtn = document.getElementById('eventAddToIosBtn');
@@ -2812,8 +2854,10 @@ document.addEventListener('DOMContentLoaded', () => {
         items.forEach((item) => {
             const isApproved = item.status === 'approved';
             const isChange = item.status === 'change';
-            const statusLabel = isApproved ? 'Schválený' : (isChange ? 'Čeká na změnu' : 'Čeká na schválení');
-            const statusClass = isApproved ? 'border-success' : 'border-warning';
+            const isCancelled = item.status === 'cancelled';
+            const isCompleted = isApproved && new Date(item.starts_at.replace(' ', 'T')) < new Date();
+            const statusLabel = isCancelled ? 'Zrušený' : (isCompleted ? 'Proběhlý' : (isApproved ? 'Naplánovaný' : (isChange ? 'Čeká na změnu' : 'Čeká na schválení')));
+            const statusClass = isCancelled || isCompleted ? 'border-secondary' : (isApproved ? 'border-success' : 'border-warning');
             const actionHtml = item.can_approve
                 ? `<button type="button" class="btn btn-sm btn-success js-training-approve" data-event-id="${Number(item.id || 0)}"><i class="fas fa-check me-1"></i>Schválit</button><button type="button" class="btn btn-sm btn-outline-danger js-training-cancel" data-event-id="${Number(item.id || 0)}"><i class="fas fa-ban me-1"></i>Zrušit</button>`
                 : `<button type="button" class="btn btn-sm btn-outline-danger js-training-cancel" data-event-id="${Number(item.id || 0)}"><i class="fas fa-ban me-1"></i>Zrušit</button>`;
@@ -2822,7 +2866,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 : '';
             const col = document.createElement('div');
             col.className = 'col-12 col-lg-6';
-            col.innerHTML = `<article class="card h-100 border-2 ${statusClass} shadow-sm"><div class="card-body"><div class="d-flex justify-content-between gap-2"><div><div class="fw-bold">${escapeHtml(item.date_label)} · ${escapeHtml(item.time_label)}</div><div class="mt-1">${escapeHtml(item.title)}</div></div><span class="badge ${isApproved ? 'text-bg-success' : 'text-bg-warning'}">${statusLabel}</span></div><div class="small text-muted mt-2"><i class="fas fa-user me-1"></i>${escapeHtml(item.athlete_label || 'Bez sportovce')}${item.location ? ` · <i class="fas fa-location-dot ms-2 me-1"></i>${escapeHtml(item.location)}` : ''}</div>${sourceHtml}<div class="d-flex gap-2 mt-3">${actionHtml}</div></div></article>`;
+            col.innerHTML = `<article class="card h-100 border-2 ${statusClass} shadow-sm"><div class="card-body"><div class="d-flex justify-content-between gap-2"><div><div class="fw-bold">${escapeHtml(item.date_label)} · ${escapeHtml(item.time_label)}</div><div class="mt-1">${escapeHtml(item.title)}</div></div><span class="badge ${isCancelled || isCompleted ? 'text-bg-secondary' : (isApproved ? 'text-bg-success' : 'text-bg-warning')}">${statusLabel}</span></div><div class="small text-muted mt-2"><i class="fas fa-user me-1"></i>${escapeHtml(item.athlete_label || 'Bez sportovce')}${item.location ? ` · <i class="fas fa-location-dot ms-2 me-1"></i>${escapeHtml(item.location)}` : ''}</div>${sourceHtml}${isCancelled ? '' : `<div class="d-flex gap-2 mt-3">${actionHtml}</div>`}</div></article>`;
             trainingTiles.appendChild(col);
         });
     }
@@ -2832,7 +2876,8 @@ document.addEventListener('DOMContentLoaded', () => {
         trainingTiles.innerHTML = '<div class="col-12 text-muted">Načítám tréninky...</div>';
         const query = new URLSearchParams({
             athlete_id: trainingAthleteFilter ? trainingAthleteFilter.value : '0',
-            status: trainingStatusFilter ? trainingStatusFilter.value : 'actionable',
+            status: trainingStatusFilter ? trainingStatusFilter.value : 'all',
+            month: `${trainingYearFilter ? trainingYearFilter.value : new Date().getFullYear()}-${trainingMonth}`,
         });
         const payload = await fetchJson(`<?= BASE_URL ?>/api/calendar_training_list.php?${query.toString()}`);
         const actionCount = Number(payload.action_count || 0);
@@ -3316,6 +3361,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (trainingStatusFilter) {
         trainingStatusFilter.addEventListener('change', loadTrainingTiles);
+    }
+    if (trainingYearFilter) trainingYearFilter.addEventListener('change', loadTrainingTiles);
+    if (trainingMonthFilter) trainingMonthFilter.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-month]');
+        if (!button) return;
+        trainingMonth = button.dataset.month;
+        trainingMonthFilter.querySelectorAll('[data-month]').forEach((item) => item.classList.toggle('active', item === button));
+        loadTrainingTiles();
+    });
+    if (trainingMonthFilter) {
+        const currentMonthButton = trainingMonthFilter.querySelector(`[data-month="${trainingMonth}"]`);
+        if (currentMonthButton) currentMonthButton.classList.add('active');
     }
 
     deleteEventBtn.addEventListener('click', async () => {

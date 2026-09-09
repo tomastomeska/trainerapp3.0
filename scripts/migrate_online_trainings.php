@@ -148,6 +148,7 @@ try {
         description VARCHAR(255) NOT NULL,
         amount DECIMAL(10,2) NOT NULL DEFAULT 0,
         billing_date DATE NOT NULL,
+        billing_month DATE NULL,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         KEY idx_online_billing_date (trainer_id, athlete_id, billing_date),
         CONSTRAINT fk_online_billing_training FOREIGN KEY (online_training_id) REFERENCES online_trainings(id) ON DELETE SET NULL,
@@ -155,6 +156,11 @@ try {
         CONSTRAINT fk_online_billing_trainer FOREIGN KEY (trainer_id) REFERENCES coaches(id) ON DELETE CASCADE,
         CONSTRAINT fk_online_billing_athlete FOREIGN KEY (athlete_id) REFERENCES athletes(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $billingMonthColumn = $pdo->query("SHOW COLUMNS FROM online_training_billing LIKE 'billing_month'");
+    if (!$billingMonthColumn || !$billingMonthColumn->fetch()) {
+        $pdo->exec("ALTER TABLE online_training_billing ADD COLUMN billing_month DATE NULL AFTER billing_date");
+        $pdo->exec("UPDATE online_training_billing SET billing_month = DATE_FORMAT(billing_date, '%Y-%m-01') WHERE billing_month IS NULL");
+    }
 
     $pdo->commit();
     echo json_encode(['success' => true, 'message' => 'Online training schema migration completed.']);

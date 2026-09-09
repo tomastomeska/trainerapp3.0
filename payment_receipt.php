@@ -390,6 +390,15 @@ $carryoverForMonth = receiptResolveCarryoverUsage(
     $singleSessions + $pairedSessions
 );
 $breakdown = receiptBuildBillable($singleSessions, $pairedSessions, $carryoverForMonth, $singleRate, $pairedRate);
+$onlineBillingRows = [];
+try {
+    $onlineBillingStmt = $pdo->prepare('SELECT description, amount, billing_date FROM online_training_billing WHERE trainer_id = ? AND athlete_id = ? AND billing_month = ? ORDER BY billing_date, id');
+    $onlineBillingStmt->execute([$coachId, $athleteId, $monthSql]);
+    $onlineBillingRows = $onlineBillingStmt->fetchAll();
+} catch (Throwable $e) {
+    $onlineBillingRows = [];
+}
+$onlineBillingAmount = array_sum(array_map(static fn(array $row): float => (float)$row['amount'], $onlineBillingRows));
 
 $paymentRow = null;
 if ($hasPaymentsTable) {
@@ -494,6 +503,11 @@ foreach ($eventRows as $eventRow) {
 }
 
 $displayAmount = $breakdown['computed_amount'];
+if ($displayAmount !== null) {
+    $displayAmount += $onlineBillingAmount;
+} elseif ($onlineBillingAmount > 0) {
+    $displayAmount = $onlineBillingAmount;
+}
 if ($paymentRow && ($paymentRow['status'] ?? '') === 'paid' && isset($paymentRow['billed_amount'])) {
     $displayAmount = (float)$paymentRow['billed_amount'];
 }
@@ -770,6 +784,13 @@ if ($coachMode) {
 </div>
 
 <div class="receipt-paper">
+<?php if (!empty($onlineBillingRows)): ?>
+<div class="card border-warning shadow-sm mb-3">
+    <div class="card-header bg-warning text-dark fw-semibold"><i class="fas fa-laptop me-2"></i>Online tréninky</div>
+    <div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead class="table-light"><tr><th>Datum</th><th>Položka</th><th class="text-end">Částka</th></tr></thead><tbody><?php foreach ($onlineBillingRows as $onlineRow): ?><tr><td><?= h(formatDate((string)$onlineRow['billing_date'])) ?></td><td><?= h((string)$onlineRow['description']) ?></td><td class="text-end fw-semibold"><?= number_format((float)$onlineRow['amount'], 0, ',', ' ') ?> Kč</td></tr><?php endforeach; ?></tbody></table></div>
+</div>
+<?php endif; ?>
+
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-body">
         <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">

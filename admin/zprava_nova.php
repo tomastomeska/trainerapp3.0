@@ -10,6 +10,12 @@ $pdo = getDB();
 $coaches = $pdo->query("SELECT id, name, username, email FROM coaches WHERE is_active = 1 ORDER BY name")->fetchAll();
 
 $errors = [];
+$onlineTrainingAnnouncement = ($_GET['template'] ?? '') === 'online_trainings';
+$defaultOnlineSubject = 'Novinka v TrainerApp: Online tréninky';
+$defaultOnlineBody = "Dobrý den,\n\nv TrainerApp je nyní dostupná nová funkce Online tréninky. Umožní vám připravit tréninkovou sadu, přidat instrukce a média a odeslat ji sportovci k samostatnému odcvičení.\n\nJak začít:\n1. V detailu sportovce nastavte sazbu za jednorázový online trénink nebo vytvořte předplatný balík.\n2. Otevřete Online tréninky a vytvořte nový online trénink ze své sady.\n3. Upravte počet sérií, předepsané váhy/opakování a případně přidejte fotografie, video nebo odkaz.\n4. Po odeslání sportovec dostane interní zprávu a e-mail.\n\nÚčtování funguje automaticky: nejdříve se čerpá aktivní předplatné, pokud žádné není, použije se sazba sportovce. Bezplatný trénink vybíráte výslovně.\n\nSportovec výsledky zapisuje průběžně a po dokončení uvidíte skutečně odcvičené hodnoty, poznámky i jeho přílohy.\n\nPodrobný postup najdete v Návodu pro trenéry.\n\nTrainerApp";
+$formSubject = $_POST['subject'] ?? ($onlineTrainingAnnouncement ? $defaultOnlineSubject : '');
+$formBody = $_POST['body'] ?? ($onlineTrainingAnnouncement ? $defaultOnlineBody : '');
+$formRecipients = $_POST['recipients'] ?? ($onlineTrainingAnnouncement ? ['all'] : []);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
@@ -146,12 +152,12 @@ renderAdminHeader('Nová zpráva');
 				<div class="mb-3">
 					<label class="form-label fw-semibold">Předmět *</label>
 					<input type="text" name="subject" class="form-control"
-					       value="<?= h($_POST['subject'] ?? '') ?>" required maxlength="255">
+					       value="<?= h($formSubject) ?>" required maxlength="255">
 				</div>
 				<div class="mb-3">
 					<label class="form-label fw-semibold">Text zprávy *</label>
 					<textarea name="body" class="form-control" rows="10" required
-					          style="resize:vertical"><?= h($_POST['body'] ?? '') ?></textarea>
+					          style="resize:vertical"><?= h($formBody) ?></textarea>
 				</div>
 				<div class="mb-3">
 					<label class="form-label fw-semibold">Příloha <small class="text-muted">(max 50 MB – PDF, Word, Excel, obrázky, ZIP, video…)</small></label>
@@ -198,7 +204,7 @@ renderAdminHeader('Nová zpráva');
 				<div class="form-check mb-2">
 					<input class="form-check-input" type="checkbox" name="recipients[]"
 					       value="all" id="chk_all"
-					       <?= in_array('all', (array)($_POST['recipients'] ?? []), true) ? 'checked' : '' ?>>
+					       <?= in_array('all', (array)$formRecipients, true) ? 'checked' : '' ?>>
 					<label class="form-check-label fw-semibold text-primary" for="chk_all">
 						Všichni aktivní trenéři (<?= count($coaches) ?>)
 					</label>
@@ -209,7 +215,7 @@ renderAdminHeader('Nová zpráva');
 				<div class="form-check">
 					<input class="form-check-input coach-chk" type="checkbox" name="recipients[]"
 					       value="<?= $c['id'] ?>" id="chk_<?= $c['id'] ?>"
-					       <?= in_array((string)$c['id'], (array)($_POST['recipients'] ?? []), true) ? 'checked' : '' ?>>
+					       <?= in_array((string)$c['id'], (array)$formRecipients, true) ? 'checked' : '' ?>>
 					<label class="form-check-label" for="chk_<?= $c['id'] ?>">
 						<?= h($c['name'] ?: $c['username']) ?>
 						<?php if ($c['email']): ?>

@@ -74,8 +74,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 try {
                     $pdo->prepare('INSERT INTO online_training_subscriptions (trainer_id, athlete_id, total_trainings, remaining_trainings, price, purchased_at) VALUES (?, ?, ?, ?, ?, NOW())')->execute([$coachId, $athleteId, $total, $total, $price]);
                     $subscriptionId = (int)$pdo->lastInsertId();
-                    $pdo->prepare("INSERT INTO online_training_billing (subscription_id, trainer_id, athlete_id, billing_type, description, amount, billing_date) VALUES (?, ?, ?, 'subscription', ?, ?, CURDATE())")
-                        ->execute([$subscriptionId, $coachId, $athleteId, 'Online tréninky - balík ' . $total . ' tréninků', $price]);
+                    $billingMonth = onlineTrainingResolveBillingMonth($pdo, $coachId, $athleteId);
+                    $billingSql = onlineTrainingBillingMonthAvailable($pdo)
+                        ? "INSERT INTO online_training_billing (subscription_id, trainer_id, athlete_id, billing_type, description, amount, billing_date, billing_month) VALUES (?, ?, ?, 'subscription', ?, ?, CURDATE(), ?)"
+                        : "INSERT INTO online_training_billing (subscription_id, trainer_id, athlete_id, billing_type, description, amount, billing_date) VALUES (?, ?, ?, 'subscription', ?, ?, CURDATE())";
+                    $billingParams = [$subscriptionId, $coachId, $athleteId, 'Online tréninky - balík ' . $total . ' tréninků', $price];
+                    if (onlineTrainingBillingMonthAvailable($pdo)) $billingParams[] = $billingMonth;
+                    $pdo->prepare($billingSql)->execute($billingParams);
                     $pdo->commit();
                     flash('success', 'Online předplatné bylo vytvořeno.');
                     redirect($returnTo);
