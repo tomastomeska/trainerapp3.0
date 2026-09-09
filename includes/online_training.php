@@ -19,6 +19,14 @@ function onlineTrainingStatusClass(string $status): string {
     ][$status] ?? 'secondary';
 }
 
+function onlineTrainingAthleteStatusLabel(string $status): string {
+    return $status === 'sent' ? 'Nový' : onlineTrainingStatusLabel($status);
+}
+
+function onlineTrainingAthleteStatusClass(string $status): string {
+    return $status === 'sent' ? 'warning text-dark' : onlineTrainingStatusClass($status);
+}
+
 function onlineTrainingNextSequence(PDO $pdo, int $athleteId): int {
     $stmt = $pdo->prepare('SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM online_trainings WHERE athlete_id = ?');
     $stmt->execute([$athleteId]);
@@ -170,7 +178,14 @@ function onlineTrainingSend(PDO $pdo, int $trainingId, int $coachId, string $bil
     $athleteStmt->execute([(int)$training['athlete_id']]);
     $athlete = $athleteStmt->fetch();
     if ($athlete && !empty($athlete['email'])) {
-        sendAthleteCalendarNotificationEmail((string)$athlete['email'], trim($athlete['first_name'] . ' ' . $athlete['last_name']), 'Nový online trénink', 'Trenér vám odeslal nový online trénink. Otevřete jej v aplikaci: ' . $url);
+        $exerciseStmt = $pdo->prepare('SELECT exercise_order, exercise_name FROM online_training_exercises WHERE online_training_id = ? ORDER BY exercise_order, id');
+        $exerciseStmt->execute([$trainingId]);
+        $exerciseRows = $exerciseStmt->fetchAll();
+        $exerciseLines = array_map(static fn(array $row): string => ((int)$row['exercise_order']) . '. ' . (string)$row['exercise_name'], $exerciseRows);
+        $message = 'Trenér vám odeslal nový online trénink: ' . (string)$training['title'] . '.';
+        if ($exerciseLines) $message .= "\n\nCviky:\n" . implode("\n", $exerciseLines);
+        $message .= "\n\nOtevřete trénink v aplikaci: " . $url;
+        sendAthleteCalendarNotificationEmail((string)$athlete['email'], trim($athlete['first_name'] . ' ' . $athlete['last_name']), 'Nový online trénink', $message);
     }
 }
 

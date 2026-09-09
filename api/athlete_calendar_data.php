@@ -39,6 +39,9 @@ $eventsStmt = $pdo->prepare(
                         e.location,
                         e.starts_at,
                         e.ends_at,
+                                reschedule_request.id AS reschedule_request_id,
+                                reschedule_request.starts_at AS reschedule_request_starts_at,
+                                reschedule_request.ends_at AS reschedule_request_ends_at,
                            CASE WHEN ael.event_id IS NULL THEN 0 ELSE 1 END AS is_caldav_synced,
                         p.status AS payment_status,
                         p.paid_at AS payment_paid_at,
@@ -55,6 +58,11 @@ $eventsStmt = $pdo->prepare(
                 ON p.coach_id = e.coach_id
                AND p.athlete_id = ?
                AND p.billing_month = COALESCE(e.billing_month, DATE_FORMAT(e.starts_at, '%Y-%m-01'))
+          LEFT JOIN coach_calendar_events reschedule_request
+              ON reschedule_request.coach_id = e.coach_id
+             AND reschedule_request.approval_status = 'pending'
+             AND reschedule_request.requested_by_athlete_id = ?
+             AND reschedule_request.series_id = CONCAT('reschedule:', e.id)
          WHERE e.coach_id = ?
              AND e.starts_at < ?
              AND e.ends_at > ?
@@ -64,6 +72,7 @@ $eventsStmt = $pdo->prepare(
 $eventsStmt->execute([
     $athleteId,
     $athleteId,
+    $athleteId,
     (int)$athlete['coach_id'],
     $weekEnd->format('Y-m-d H:i:s'),
     $weekStart->format('Y-m-d H:i:s'),
@@ -71,19 +80,6 @@ $eventsStmt->execute([
     $athleteId,
 ]);
 $events = $eventsStmt->fetchAll();
-
-$hiddenOriginalEventIds = [];
-foreach ($events as $candidateEvent) {
-    $isPendingCandidate = ((string)($candidateEvent['approval_status'] ?? 'approved') === 'pending');
-    if (!$isPendingCandidate || (int)($candidateEvent['requested_by_athlete_id'] ?? 0) !== $athleteId) {
-        continue;
-    }
-
-    $seriesId = trim((string)($candidateEvent['series_id'] ?? ''));
-    if (preg_match('/^reschedule:(\d+)$/', $seriesId, $matches)) {
-        $hiddenOriginalEventIds[(int)$matches[1]] = true;
-    }
-}
 
 foreach ($events as &$event) {
     $isPending = (($event['approval_status'] ?? 'approved') === 'pending');
@@ -98,6 +94,7 @@ foreach ($events as &$event) {
     $event['can_request_change'] = (!$isPending && $canCancelOwnership && $canCancelByTime);
     $event['is_pending'] = $isPending;
     $event['was_modified_by_coach'] = !empty($event['coach_modified_at']);
+    $event['has_reschedule_request'] = (int)($event['reschedule_request_id'] ?? 0) > 0;
 
     if ($event['is_foreign']) {
         $event['athlete_id'] = null;
@@ -120,24 +117,6 @@ foreach ($events as &$event) {
     }
 }
 unset($event);
-
-if (!empty($hiddenOriginalEventIds)) {
-    $events = array_values(array_filter($events, static function (array $eventRow) use ($hiddenOriginalEventIds, $athleteId): bool {
-        $eventId = (int)($eventRow['id'] ?? 0);
-        if ($eventId <= 0 || !isset($hiddenOriginalEventIds[$eventId])) {
-            return true;
-        }
-
-        $isPending = ((string)($eventRow['approval_status'] ?? 'approved') === 'pending');
-        if ($isPending) {
-            return true;
-        }
-
-        $isMine = ((int)($eventRow['athlete_id'] ?? 0) === $athleteId)
-            || ((int)($eventRow['second_athlete_id'] ?? 0) === $athleteId);
-        return !$isMine;
-    }));
-}
 
 $locksStmt = $pdo->prepare(
     'SELECT id, note, starts_at, ends_at

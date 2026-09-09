@@ -583,6 +583,10 @@ if ($eventId > 0) {
             exit;
         }
 
+        $billingMonthSql = !empty($sourceEvent['billing_month'])
+            ? (string)$sourceEvent['billing_month']
+            : date('Y-m-01', strtotime((string)($sourceEvent['starts_at'] ?? $startSql)));
+
         $sourceOldStart = (string)($sourceEvent['starts_at'] ?? '');
         $sourceOldEnd = (string)($sourceEvent['ends_at'] ?? '');
         $sourceOldTitleType = (string)($sourceEvent['title_type'] ?? 'training');

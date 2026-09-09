@@ -36,6 +36,9 @@ $eventsStmt = $pdo->prepare(
             e.location,
             e.starts_at,
             e.ends_at,
+            reschedule_request.id AS reschedule_request_id,
+            reschedule_request.starts_at AS reschedule_request_starts_at,
+            reschedule_request.ends_at AS reschedule_request_ends_at,
                 CASE WHEN cel.event_id IS NULL THEN 0 ELSE 1 END AS is_caldav_synced,
         p.status AS payment_status,
         p.paid_at AS payment_paid_at,
@@ -52,15 +55,34 @@ $eventsStmt = $pdo->prepare(
         ON p.coach_id = e.coach_id
        AND p.athlete_id = e.athlete_id
        AND p.billing_month = COALESCE(e.billing_month, DATE_FORMAT(e.starts_at, "%Y-%m-01"))
+                         LEFT JOIN coach_calendar_events reschedule_request
+                             ON reschedule_request.coach_id = e.coach_id
+                            AND reschedule_request.approval_status = "pending"
+                            AND reschedule_request.series_id = CONCAT("reschedule:", e.id)
      WHERE e.coach_id = ?
-       AND e.starts_at < ?
-       AND e.ends_at > ?
+             AND (
+                     (e.starts_at < ? AND e.ends_at > ?)
+                     OR (
+                               e.approval_status = "pending"
+                               AND e.series_id LIKE "reschedule:%"
+                             AND EXISTS (
+                                     SELECT 1
+                                     FROM coach_calendar_events source_event
+                                       WHERE source_event.id = CAST(SUBSTRING(e.series_id, 12) AS UNSIGNED)
+                                         AND source_event.coach_id = e.coach_id
+                                         AND source_event.starts_at < ?
+                                         AND source_event.ends_at > ?
+                             )
+                     )
+             )
      ORDER BY e.starts_at ASC, e.id ASC'
 );
 $eventsStmt->execute([
     $coachId,
     $weekEnd->format('Y-m-d H:i:s'),
     $weekStart->format('Y-m-d H:i:s'),
+        $weekEnd->format('Y-m-d H:i:s'),
+        $weekStart->format('Y-m-d H:i:s'),
 ]);
 $events = $eventsStmt->fetchAll();
 

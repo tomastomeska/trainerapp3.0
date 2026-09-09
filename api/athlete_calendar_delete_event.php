@@ -47,6 +47,7 @@ $eventStmt = $pdo->prepare(
             e.athlete_id,
                         e.second_athlete_id,
             e.requested_by_athlete_id,
+            e.series_id,
             e.approval_status,
             e.is_makeup_session,
             e.custom_title,
@@ -73,6 +74,33 @@ $event = $eventStmt->fetch();
 
 if (!$event) {
     echo json_encode(['success' => false, 'error' => 'Termín nebyl nalezen.']);
+    exit;
+}
+
+$isRescheduleRequest = ((string)($event['approval_status'] ?? 'approved') === 'pending')
+    && ((int)($event['requested_by_athlete_id'] ?? 0) === $athleteId)
+    && preg_match('/^reschedule:\d+$/', (string)($event['series_id'] ?? ''));
+
+if ($isRescheduleRequest) {
+    $deleteRequestStmt = $pdo->prepare(
+        'DELETE FROM coach_calendar_events
+         WHERE id = ?
+           AND athlete_id = ?
+           AND requested_by_athlete_id = ?
+           AND approval_status = "pending"
+         LIMIT 1'
+    );
+    $deleteRequestStmt->execute([$eventId, $athleteId, $athleteId]);
+    if ($deleteRequestStmt->rowCount() !== 1) {
+        echo json_encode(['success' => false, 'error' => 'Žádost o změnu se nepodařilo zrušit.']);
+        exit;
+    }
+
+    echo json_encode([
+        'success' => true,
+        'message' => 'Žádost o změnu termínu byla zrušena. Původní termín zůstává zachovaný.',
+        'request_cancelled' => true,
+    ]);
     exit;
 }
 

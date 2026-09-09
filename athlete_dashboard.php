@@ -317,6 +317,9 @@ $weightShouldExpandAll = $editingWeightLog !== null;
 $trainingPreviewLimit = 5;
 $trainingVisibleRows = array_slice($sessions, 0, $trainingPreviewLimit);
 $trainingCollapsedRows = array_slice($sessions, $trainingPreviewLimit);
+$onlineTrainingPreviewLimit = 5;
+$onlineHistoryVisibleRows = array_slice($onlineHistory, 0, $onlineTrainingPreviewLimit);
+$onlineHistoryCollapsedRows = array_slice($onlineHistory, $onlineTrainingPreviewLimit);
 $trainingMobileRows = array_slice($sessions, 0, 4);
 $trainingMobileCollapsedRows = array_slice($sessions, 4);
 
@@ -399,13 +402,13 @@ try {
     $isPairedExpr = $hasSecondAthlete ? 'CASE WHEN e.second_athlete_id IS NOT NULL THEN 1 ELSE 0 END' : '0';
 
     if ($hasRequestedByAthlete) {
-        $pendingFilter = 'e.requested_by_athlete_id = ?';
+        $pendingFilter = 'e.requested_by_athlete_id = ? AND (e.series_id IS NULL OR e.series_id NOT LIKE "reschedule:%")';
         $pendingParams = [$athleteId, (int)$athlete['coach_id']];
     } elseif ($hasSecondAthlete) {
-        $pendingFilter = '(e.athlete_id = ? OR e.second_athlete_id = ?)';
+        $pendingFilter = '(e.athlete_id = ? OR e.second_athlete_id = ?) AND (e.series_id IS NULL OR e.series_id NOT LIKE "reschedule:%")';
         $pendingParams = [$athleteId, $athleteId, (int)$athlete['coach_id']];
     } else {
-        $pendingFilter = 'e.athlete_id = ?';
+        $pendingFilter = 'e.athlete_id = ? AND (e.series_id IS NULL OR e.series_id NOT LIKE "reschedule:%")';
         $pendingParams = [$athleteId, (int)$athlete['coach_id']];
     }
 
@@ -1668,8 +1671,9 @@ renderAthleteHeader('Profil sportovce', false, true);
 <div class="card border-warning shadow-sm athlete-desktop-only mb-4">
     <div class="card-header bg-warning text-dark fw-bold"><i class="fas fa-laptop me-2"></i>Historie online tréninků</div>
     <div class="table-responsive"><table class="table table-hover mb-0 align-middle"><thead><tr><th>Číslo</th><th>Název</th><th>Odesláno</th><th>Stav</th><th></th></tr></thead><tbody>
-    <?php foreach ($onlineHistory as $onlineRow): ?><tr><td><strong>ONLINE #<?= str_pad((string)$onlineRow['sequence_number'], 3, '0', STR_PAD_LEFT) ?></strong></td><td><?= h($onlineRow['title']) ?></td><td><?= h(formatDateTime($onlineRow['sent_at'])) ?></td><td><span class="badge bg-<?= h(onlineTrainingStatusClass($onlineRow['status'])) ?>"><?= h(onlineTrainingStatusLabel($onlineRow['status'])) ?></span></td><td><a class="btn btn-sm btn-outline-dark" href="<?= BASE_URL ?>/online_training.php?id=<?= (int)$onlineRow['id'] ?>">Detail</a></td></tr><?php endforeach; ?>
-    </tbody></table></div>
+    <?php foreach ($onlineHistoryVisibleRows as $onlineRow): ?><tr><td><strong>ONLINE #<?= str_pad((string)$onlineRow['sequence_number'], 3, '0', STR_PAD_LEFT) ?></strong></td><td><?= h($onlineRow['title']) ?></td><td><?= h(formatDateTime($onlineRow['sent_at'])) ?></td><td><span class="badge bg-<?= h(onlineTrainingAthleteStatusClass($onlineRow['status'])) ?>"><?= h(onlineTrainingAthleteStatusLabel($onlineRow['status'])) ?></span></td><td><a class="btn btn-sm btn-outline-dark" href="<?= BASE_URL ?>/online_training.php?id=<?= (int)$onlineRow['id'] ?>">Detail</a></td></tr><?php endforeach; ?>
+    </tbody><?php if ($onlineHistoryCollapsedRows): ?><tbody id="athleteOnlineTrainingHistoryCollapse" class="collapse"><?php foreach ($onlineHistoryCollapsedRows as $onlineRow): ?><tr><td><strong>ONLINE #<?= str_pad((string)$onlineRow['sequence_number'], 3, '0', STR_PAD_LEFT) ?></strong></td><td><?= h($onlineRow['title']) ?></td><td><?= h(formatDateTime($onlineRow['sent_at'])) ?></td><td><span class="badge bg-<?= h(onlineTrainingAthleteStatusClass($onlineRow['status'])) ?>"><?= h(onlineTrainingAthleteStatusLabel($onlineRow['status'])) ?></span></td><td><a class="btn btn-sm btn-outline-dark" href="<?= BASE_URL ?>/online_training.php?id=<?= (int)$onlineRow['id'] ?>">Detail</a></td></tr><?php endforeach; ?></tbody><?php endif; ?></table></div>
+    <?php if ($onlineHistoryCollapsedRows): ?><div class="border-top p-3 text-center bg-light"><button class="btn btn-outline-dark btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#athleteOnlineTrainingHistoryCollapse" aria-expanded="false"><i class="fas fa-chevron-down me-1"></i>Zobrazit starší online tréninky (<?= count($onlineHistoryCollapsedRows) ?>)</button></div><?php endif; ?>
 </div>
 <?php endif; ?>
 

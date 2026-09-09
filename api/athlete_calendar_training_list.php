@@ -28,30 +28,29 @@ $stmt = $pdo->prepare(
                         a2.last_name AS second_last_name,
                         source.starts_at AS source_starts_at,
                         source.ends_at AS source_ends_at,
-                        source.location AS source_location
+                        source.location AS source_location,
+                        pending_change.starts_at AS requested_change_starts_at
      FROM coach_calendar_events e
      LEFT JOIN athletes a ON a.id = e.athlete_id
      LEFT JOIN athletes a2 ON a2.id = e.second_athlete_id
          LEFT JOIN coach_calendar_events source
              ON source.coach_id = e.coach_id
             AND source.id = CAST(SUBSTRING(e.series_id, 12) AS UNSIGNED)
+         LEFT JOIN coach_calendar_events pending_change
+             ON pending_change.coach_id = e.coach_id
+            AND pending_change.approval_status = "pending"
+            AND pending_change.requested_by_athlete_id = ?
+            AND pending_change.series_id = CONCAT("reschedule:", e.id)
          WHERE e.starts_at >= CURDATE()
              AND (
                         (e.approval_status = "approved"
                          AND (e.athlete_id = ? OR e.second_athlete_id = ?)
-                         AND NOT EXISTS (
-                                 SELECT 1
-                                 FROM coach_calendar_events pending_change
-                                 WHERE pending_change.coach_id = e.coach_id
-                                     AND pending_change.approval_status = "pending"
-                                     AND pending_change.requested_by_athlete_id = ?
-                                     AND pending_change.series_id = CONCAT("reschedule:", e.id)
-                         ))
+                         )
                         OR (e.approval_status = "pending"
                             AND e.requested_by_athlete_id = ?
                             AND (e.athlete_id = ? OR e.second_athlete_id = ?))
              )
-     ORDER BY e.starts_at ASC, e.id ASC
+    ORDER BY e.starts_at ASC, e.id ASC
      LIMIT 500'
 );
 $stmt->execute([$athleteId, $athleteId, $athleteId, $athleteId, $athleteId, $athleteId]);
@@ -69,6 +68,7 @@ foreach ($rows as $row) {
     $seriesId = trim((string)($row['series_id'] ?? ''));
     $isPendingChange = (string)($row['approval_status'] ?? 'approved') === 'pending'
         && preg_match('/^reschedule:\d+$/', $seriesId);
+    $requestedChangeStartTs = strtotime((string)($row['requested_change_starts_at'] ?? ''));
     $sourceStartTs = strtotime((string)($row['source_starts_at'] ?? ''));
     $sourceEndTs = strtotime((string)($row['source_ends_at'] ?? ''));
 
@@ -86,6 +86,10 @@ foreach ($rows as $row) {
             'date_label' => date('d.m.Y', $sourceStartTs),
             'time_label' => $sourceEndTs !== false ? date('H:i', $sourceStartTs) . ' - ' . date('H:i', $sourceEndTs) : '-',
             'location' => trim((string)($row['source_location'] ?? '')),
+        ] : null,
+        'requested_change' => !$isPendingChange && $requestedChangeStartTs !== false ? [
+            'date_label' => date('d.m.Y', $requestedChangeStartTs),
+            'time_label' => date('H:i', $requestedChangeStartTs),
         ] : null,
     ];
 }

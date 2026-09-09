@@ -40,6 +40,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
             }
         }
+        if ($isCoach && $action === 'save_prescription_row') {
+            if ((string)$training['status'] !== 'created') throw new RuntimeException('Předepsané hodnoty lze měnit jen před odesláním.');
+            $seriesId = (int)($_POST['series_id'] ?? 0);
+            $seriesCheck = $pdo->prepare('SELECT s.id FROM online_training_series s JOIN online_training_exercises e ON e.id = s.online_training_exercise_id WHERE s.id = ? AND e.online_training_id = ?');
+            $seriesCheck->execute([$seriesId, $id]);
+            if (!$seriesCheck->fetch()) throw new RuntimeException('Série nebyla nalezena.');
+            $weight = ($_POST['weight'] ?? '') === '' ? null : (float)$_POST['weight'];
+            $reps = ($_POST['reps'] ?? '') === '' ? null : (int)$_POST['reps'];
+            $duration = ($_POST['duration'] ?? '') === '' ? null : (int)$_POST['duration'];
+            $savePrescription = $pdo->prepare('UPDATE online_training_series SET prescribed_weight = ?, prescribed_reps = ?, prescribed_duration_seconds = ? WHERE id = ?');
+            $savePrescription->execute([$weight, $reps, $duration, $seriesId]);
+        }
         if ($isCoach && in_array($action, ['add_series', 'delete_series'], true)) {
             if ((string)$training['status'] !== 'created') throw new RuntimeException('Série lze měnit jen před odesláním.');
             $exerciseId = (int)($_POST['online_exercise_id'] ?? 0);
@@ -206,6 +218,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             echo json_encode(['success' => true], JSON_UNESCAPED_UNICODE);
             exit;
         }
+        if ($isCoach && $action === 'save_prescription_row' && ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest') {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['success' => true], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
     } catch (Throwable $e) { $error = $e->getMessage(); }
 }
 $exercises = onlineTrainingLoadExercises($pdo, $id);
@@ -215,7 +232,7 @@ if ($isCoach && $training['status'] === 'created') {
     $availableStmt->execute([$coachId]);
     $availableExercises = $availableStmt->fetchAll();
 }
-$attachmentStmt = $pdo->prepare('SELECT * FROM online_training_attachments WHERE online_training_id = ? ORDER BY created_at, id');
+$attachmentStmt = $pdo->prepare('SELECT ota.*, ote.exercise_name FROM online_training_attachments ota LEFT JOIN online_training_exercises ote ON ote.id = ota.online_training_exercise_id WHERE ota.online_training_id = ? ORDER BY ota.created_at, ota.id');
 $attachmentStmt->execute([$id]);
 $attachments = $attachmentStmt->fetchAll();
 $subscriptions = [];
@@ -225,6 +242,7 @@ if ($isCoach) { require_once __DIR__ . '/includes/header.php'; renderHeader('Onl
 <?php if ($error): ?><div class="alert alert-danger"><?= h($error) ?></div><?php endif; ?>
 <div class="row g-3 mb-4"><div class="col-md-8"><div class="card shadow-sm"><div class="card-body"><h4><?= h($training['title']) ?></h4><p class="mb-1"><strong><?= $isCoach ? 'Sportovec' : 'Trenér' ?>:</strong> <?= h($isCoach ? $training['first_name'] . ' ' . $training['last_name'] : $training['coach_name']) ?></p><p class="mb-1"><strong>Odesláno:</strong> <?= h(formatDateTime($training['sent_at'])) ?></p><?php if ($training['started_at']): ?><p class="mb-1"><strong>Začátek:</strong> <?= h(formatDateTime($training['started_at'])) ?></p><?php endif; ?><?php if ($training['completed_at']): ?><p class="mb-1"><strong>Konec:</strong> <?= h(formatDateTime($training['completed_at'])) ?> · <?= formatSeriesDuration((int)$training['duration_seconds']) ?></p><?php endif; ?></div></div></div><div class="col-md-4"><div class="card shadow-sm"><div class="card-body"><strong>Účtování</strong><div><?= $training['billing_type'] === 'subscription' ? 'Čerpání z předplatného' : ($training['billing_type'] === 'single' ? number_format((float)$training['price'], 2, ',', ' ') . ' Kč' : 'Zdarma') ?></div></div></div></div></div>
 <?php if (!$isCoach && $training['status'] === 'sent'): ?><form method="post" class="mb-3"><input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>"><input type="hidden" name="training_id" value="<?= $id ?>"><input type="hidden" name="action" value="start"><button class="btn btn-warning btn-lg fw-bold">Zahájit online trénink</button></form><?php endif; ?>
+<?php if (!$isCoach && $training['status'] === 'sent'): ?><div class="alert alert-warning text-center py-3 mb-4"><i class="fas fa-lock me-2"></i><strong>Pro zápis váhy a opakování nejdříve zahajte online trénink.</strong><div class="small mt-1">Po zahájení se zpřístupní všechny série.</div></div><?php endif; ?>
 <?php if (!empty($training['coach_note'])): ?><div class="alert alert-info"><strong>Poznámka trenéra:</strong><div style="white-space:pre-wrap"><?= h((string)$training['coach_note']) ?></div></div><?php endif; ?>
 <?php if ($isCoach && !empty($training['athlete_note'])): ?><div class="alert alert-secondary"><strong>Poznámka sportovce:</strong><div style="white-space:pre-wrap"><?= h((string)$training['athlete_note']) ?></div></div><?php endif; ?>
 <?php if ($isCoach && $training['status'] === 'created'): ?><form method="post" class="card shadow-sm mb-4"><div class="card-body"><input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>"><input type="hidden" name="training_id" value="<?= $id ?>"><input type="hidden" name="action" value="send"><h5>Způsob účtování</h5><select name="billing_type" class="form-select mb-3"><option value="free">Zdarma</option><option value="single">Jednorázově - sazba sportovce</option><?php foreach ($subscriptions as $sub): ?><option value="subscription:<?= (int)$sub['id'] ?>">Čerpání předplatného - zbývá <?= (int)$sub['remaining_trainings'] ?>/<?= (int)$sub['total_trainings'] ?></option><?php endforeach; ?></select><div class="row g-2"><div class="col"><input name="subscription_total" type="number" min="1" class="form-control" placeholder="Nový balík: počet"></div><div class="col"><input name="subscription_price" type="number" min="0" step="0.01" class="form-control" placeholder="Cena balíku Kč"></div></div><button class="btn btn-warning fw-bold mt-3">Odeslat sportovci</button></div></form><?php endif; ?>
@@ -236,7 +254,7 @@ if ($isCoach) { require_once __DIR__ . '/includes/header.php'; renderHeader('Onl
 <?php if (!$isCoach && $training['status'] === 'in_progress'): ?><form method="post" action="<?= BASE_URL ?>/api/online_training_complete.php" class="mb-4" onsubmit="return confirm('Opravdu dokončit online trénink? Po dokončení už nepůjdou výsledky upravovat.');"><input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>"><input type="hidden" name="training_id" value="<?= $id ?>"><button class="btn btn-success">Dokončit online trénink</button></form><?php endif; ?>
 <?php if ($isCoach): ?><form method="post" class="card shadow-sm"><div class="card-body"><input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>"><input type="hidden" name="training_id" value="<?= $id ?>"><input type="hidden" name="action" value="note"><label class="form-label fw-bold">Poznámka trenéra</label><textarea name="coach_note" class="form-control" rows="3"><?= h((string)($training['coach_note'] ?? '')) ?></textarea><button class="btn btn-outline-dark mt-2">Uložit poznámku</button></div></form><?php endif; ?>
 <?php if ($isCoach && $training['status'] === 'created'): ?><div class="card border-danger shadow-sm mb-4"><div class="card-body"><strong class="d-block mb-2">Odebrat cvik z draftu</strong><div class="d-flex flex-wrap gap-2"><?php foreach ($exercises as $exercise): ?><form method="post"><input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>"><input type="hidden" name="training_id" value="<?= $id ?>"><input type="hidden" name="action" value="remove_exercise"><input type="hidden" name="online_exercise_id" value="<?= (int)$exercise['id'] ?>"><button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash me-1"></i><?= h($exercise['exercise_name']) ?></button></form><?php endforeach; ?></div></div></div><?php endif; ?>
-<?php if ($isCoach || in_array($training['status'], ['in_progress', 'completed'], true)): ?><div class="card border-secondary shadow-sm mb-4"><div class="card-body"><strong class="d-block mb-2">Moje nahrané přílohy</strong><div class="d-flex flex-wrap gap-2"><?php foreach ($attachments as $attachment): ?><?php if ((string)$attachment['uploaded_by'] === ($isCoach ? 'trainer' : 'athlete')): ?><form method="post"><input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>"><input type="hidden" name="training_id" value="<?= $id ?>"><input type="hidden" name="action" value="delete_attachment"><input type="hidden" name="attachment_id" value="<?= (int)$attachment['id'] ?>"><button class="btn btn-sm btn-outline-danger" title="Smazat přílohu"><i class="fas fa-trash"></i></button></form><?php endif; ?><?php endforeach; ?></div></div></div><?php endif; ?>
+<?php if ($isCoach || in_array($training['status'], ['in_progress', 'completed'], true)): ?><div class="card border-secondary shadow-sm mb-4"><div class="card-body"><strong class="d-block mb-2">Moje nahrané přílohy</strong><div class="d-flex flex-wrap gap-2"><?php foreach ($attachments as $attachment): ?><?php if ((string)$attachment['uploaded_by'] === ($isCoach ? 'trainer' : 'athlete')): ?><div class="border rounded p-2 bg-light" style="min-width:190px"><div class="small fw-semibold"><?= !empty($attachment['online_training_exercise_id']) ? 'Cvik: ' . h((string)($attachment['exercise_name'] ?? '')) : 'Celý online trénink' ?></div><div class="small text-muted mb-2"><?php if ($attachment['attachment_type'] === 'photo'): ?><i class="fas fa-image me-1"></i>Fotografie<?php elseif ($attachment['attachment_type'] === 'video'): ?><i class="fas fa-video me-1"></i>Video soubor<?php else: ?><i class="fas fa-link me-1"></i>Odkaz na video<?php endif; ?><?= !empty($attachment['original_name']) ? ': ' . h((string)$attachment['original_name']) : '' ?></div><form method="post"><input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>"><input type="hidden" name="training_id" value="<?= $id ?>"><input type="hidden" name="action" value="delete_attachment"><input type="hidden" name="attachment_id" value="<?= (int)$attachment['id'] ?>"><button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash me-1"></i>Smazat přílohu</button></form></div><?php endif; ?><?php endforeach; ?></div></div></div><?php endif; ?>
 <?php if (!$isCoach && in_array($training['status'], ['in_progress', 'completed'], true)): ?><script>
 (function () {
     const resultForm = document.getElementById('result-form');
@@ -260,27 +278,14 @@ if ($isCoach) { require_once __DIR__ . '/includes/header.php'; renderHeader('Onl
             const match = field.name.match(/^series\[(\d+)\]/);
             if (!match) return;
             const seriesId = match[1];
+            const rowFields = Array.from(row.querySelectorAll('input[name^="series["]'));
+            const status = document.createElement('span');
+            status.className = 'small text-muted';
+            status.textContent = completed ? 'Dokončeno' : 'Průběžné ukládání';
             const actionCell = document.createElement('td');
             actionCell.className = 'online-series-actions text-nowrap';
-            const saveButton = document.createElement('button');
-            saveButton.type = 'button';
-            saveButton.className = 'btn btn-sm btn-outline-dark online-series-save';
-            saveButton.textContent = 'Uložit';
-            const editButton = document.createElement('button');
-            editButton.type = 'button';
-            editButton.className = 'btn btn-sm btn-outline-secondary online-series-edit ms-1';
-            editButton.textContent = 'Upravit';
-            editButton.hidden = true;
-            actionCell.appendChild(saveButton);
-            actionCell.appendChild(editButton);
+            actionCell.appendChild(status);
             row.appendChild(actionCell);
-            const rowFields = Array.from(row.querySelectorAll('input[name^="series["]'));
-            function setLocked(locked) {
-                rowFields.forEach(function (input) { input.disabled = locked; });
-                saveButton.hidden = locked;
-                editButton.hidden = !locked || completed;
-                row.classList.toggle('table-secondary', locked);
-            }
             function saveRow() {
                 const payload = new FormData();
                 payload.append('csrf_token', resultForm.querySelector('[name="csrf_token"]').value);
@@ -293,35 +298,22 @@ if ($isCoach) { require_once __DIR__ . '/includes/header.php'; renderHeader('Onl
                     if (input.name.indexOf('[duration]') !== -1) payload.append('duration', input.value);
                     if (input.name.indexOf('[note]') !== -1) payload.append('note', input.value);
                 });
-                saveButton.disabled = true;
+                status.textContent = 'Ukládám...';
+                status.className = 'small text-muted';
                 fetch('<?= BASE_URL ?>/api/online_training_save_series.php', { method: 'POST', body: payload, headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } })
                     .then(function (response) { return response.text().then(function (text) { if (!response.ok) throw new Error(text || 'save failed'); try { return JSON.parse(text); } catch (error) { throw new Error(text || 'save failed'); } }); })
                     .then(function (data) {
                         if (!data.success) throw new Error(data.error || 'save failed');
-                        saveButton.textContent = 'Uloženo';
-                        saveButton.classList.remove('btn-outline-dark');
-                        saveButton.classList.add('btn-dark');
-                        setLocked(true);
+                        status.textContent = 'Uloženo';
+                        status.className = 'small text-success fw-semibold';
                     })
-                    .catch(function () { saveButton.disabled = false; saveButton.textContent = 'Uložit znovu'; });
+                    .catch(function () { status.textContent = 'Uložení se nepodařilo'; status.className = 'small text-danger fw-semibold'; });
             }
-            saveButton.addEventListener('click', saveRow);
-            editButton.addEventListener('click', function () {
-                setLocked(false);
-                saveButton.disabled = false;
-                saveButton.textContent = 'Uložit';
-                saveButton.classList.remove('btn-dark');
-                saveButton.classList.add('btn-outline-dark');
+            rowFields.forEach(function (field) {
+                field.disabled = completed;
+                field.addEventListener('input', function () { clearTimeout(saveTimer); saveTimer = setTimeout(saveRow, 650); });
+                field.addEventListener('change', saveRow);
             });
-            const hasSavedValue = rowFields.some(function (input) { return input.value !== ''; });
-            if (completed || hasSavedValue) {
-                saveButton.textContent = hasSavedValue ? 'Uloženo' : 'Uložit';
-                if (hasSavedValue) {
-                    saveButton.classList.remove('btn-outline-dark');
-                    saveButton.classList.add('btn-dark');
-                }
-                setLocked(true);
-            }
         });
         const bulkSaveButton = resultForm.querySelector('button[type="submit"]:not([name="action"])');
         if (bulkSaveButton) bulkSaveButton.hidden = true;
@@ -368,7 +360,55 @@ if ($isCoach) { require_once __DIR__ . '/includes/header.php'; renderHeader('Onl
     });
 })();
 </script><?php endif; ?>
+<?php if ($isCoach && $training['status'] === 'created'): ?><script>
+(function () {
+    const csrf = <?= json_encode(csrfToken()) ?>;
+    const trainingId = <?= (int)$id ?>;
+    const timers = new Map();
+    document.querySelectorAll('input[form="prescription-form"][name^="prescribed["]').forEach(function (input) {
+        const match = input.name.match(/^prescribed\[(\d+)\]\[(weight|reps|duration)\]$/);
+        if (!match) return;
+        const seriesId = match[1];
+        const row = input.closest('tr');
+        if (!row || row.dataset.autosaveReady === '1') return;
+        row.dataset.autosaveReady = '1';
+        const status = document.createElement('span');
+        status.className = 'small text-muted ms-2';
+        status.textContent = 'Průběžné ukládání';
+        const cell = row.lastElementChild;
+        if (cell) cell.appendChild(status);
+        function save() {
+            const payload = new FormData();
+            payload.append('csrf_token', csrf);
+            payload.append('training_id', trainingId);
+            payload.append('action', 'save_prescription_row');
+            payload.append('series_id', seriesId);
+            row.querySelectorAll('input[form="prescription-form"]').forEach(function (field) {
+                if (field.name.indexOf('[weight]') !== -1) payload.append('weight', field.value);
+                if (field.name.indexOf('[reps]') !== -1) payload.append('reps', field.value);
+                if (field.name.indexOf('[duration]') !== -1) payload.append('duration', field.value);
+            });
+            status.textContent = 'Ukládám...';
+            fetch('<?= BASE_URL ?>/api/online_training_save_prescription.php', { method: 'POST', body: payload, headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } })
+                .then(function (response) { if (!response.ok) throw new Error('save failed'); return response.json(); })
+                .then(function (data) { if (!data.success) throw new Error(data.error || 'save failed'); status.textContent = 'Uloženo'; status.className = 'small text-success ms-2'; })
+                .catch(function () { status.textContent = 'Uložení se nepodařilo'; status.className = 'small text-danger ms-2'; });
+        }
+        row.querySelectorAll('input[form="prescription-form"]').forEach(function (field) {
+            field.addEventListener('input', function () { clearTimeout(timers.get(seriesId)); timers.set(seriesId, setTimeout(save, 600)); });
+            field.addEventListener('change', save);
+        });
+    });
+})();
+</script><?php endif; ?>
 <?php if ($isCoach && in_array($training['status'], ['in_progress', 'completed'], true)): ?><div class="card border-success shadow-sm mb-4"><div class="card-header bg-success text-white"><i class="fas fa-chart-line me-2"></i>Skutečné výsledky sportovce</div><div class="card-body p-0"><div class="table-responsive"><table class="table table-sm mb-0 align-middle"><thead class="table-light"><tr><th>Cvik</th><th>Série</th><th>Skutečná váha</th><th>Skutečná opakování</th><th>Poznámka série</th></tr></thead><tbody><?php foreach ($exercises as $exercise): ?><?php foreach ($exercise['series'] as $series): ?><tr><td><?= h($exercise['exercise_name']) ?></td><td><?= (int)$series['series_order'] ?></td><td><?= $series['actual_weight'] !== null ? h((string)$series['actual_weight']) . ' kg' : '–' ?></td><td><?= $series['actual_reps'] !== null ? (int)$series['actual_reps'] : '–' ?></td><td><?= !empty($series['result_note']) ? h((string)$series['result_note']) : '–' ?></td></tr><?php endforeach; ?><?php endforeach; ?></tbody></table></div></div></div><?php endif; ?>
+<?php if (!$isCoach && $training['status'] === 'sent'): ?><script>
+document.querySelectorAll('input[name^="series["]').forEach(function (field) {
+    field.disabled = true;
+    field.setAttribute('aria-disabled', 'true');
+    field.title = 'Výsledky lze zapisovat až po zahájení online tréninku.';
+});
+</script><?php endif; ?>
 <div id="onlineAttachmentModal" class="online-attachment-modal" hidden aria-hidden="true">
     <button type="button" class="online-attachment-modal__close" aria-label="Zavřít">&times;</button>
     <div class="online-attachment-modal__content" role="dialog" aria-modal="true" aria-label="Příloha online tréninku"></div>
@@ -387,6 +427,13 @@ if ($isCoach) { require_once __DIR__ . '/includes/header.php'; renderHeader('Onl
     if (!modal) return;
     const content = modal.querySelector('.online-attachment-modal__content');
     const closeButton = modal.querySelector('.online-attachment-modal__close');
+    const attachmentExerciseLabels = <?= json_encode(array_values(array_map(static fn(array $attachment): string => 'Cvik: ' . (string)($attachment['exercise_name'] ?? ''), array_filter($attachments, static fn(array $attachment): bool => !empty($attachment['online_training_exercise_id'])))), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+    let attachmentLabelIndex = 0;
+    document.querySelectorAll('.card .small.text-muted.mb-1').forEach(function (label) {
+        if (label.textContent.trim() !== 'Ke cviku') return;
+        const exerciseLabel = attachmentExerciseLabels[attachmentLabelIndex++];
+        if (exerciseLabel) label.textContent = exerciseLabel;
+    });
     function closeModal() { modal.hidden = true; modal.setAttribute('aria-hidden', 'true'); content.innerHTML = ''; document.body.style.overflow = ''; }
     document.querySelectorAll('.online-attachment-open, .card a[target="_blank"]').forEach(function (trigger) {
         trigger.addEventListener('click', function (event) {
@@ -417,4 +464,39 @@ if ($isCoach) { require_once __DIR__ . '/includes/header.php'; renderHeader('Onl
     document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && !modal.hidden) closeModal(); });
 })();
 </script>
+<?php if ($isCoach && in_array($training['status'], ['in_progress', 'completed'], true)): ?><script>
+(function () {
+    const resultsBySeries = <?= json_encode(array_reduce($exercises, static function (array $result, array $exercise): array { foreach ($exercise['series'] as $series) { $result[(int)$series['id']] = ['weight' => $series['actual_weight'], 'reps' => $series['actual_reps']]; } return $result; }, []), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+    const trainingCard = Array.from(document.querySelectorAll('.card')).find(function (card) {
+        const header = card.querySelector('.card-header');
+        return header && header.textContent.trim() === 'Cviky a série';
+    });
+    if (!trainingCard) return;
+    const table = trainingCard.querySelector('table');
+    if (!table) return;
+    const headerRow = table.querySelector('thead tr');
+    if (!headerRow) return;
+    const weightHeader = document.createElement('th');
+    weightHeader.textContent = 'Skutečná váha';
+    const repsHeader = document.createElement('th');
+    repsHeader.textContent = 'Skutečná opakování';
+    headerRow.appendChild(weightHeader);
+    headerRow.appendChild(repsHeader);
+    const seriesIds = <?= json_encode(array_values(array_merge(...array_map(static fn(array $exercise): array => array_map(static fn(array $series): int => (int)$series['id'], $exercise['series']), $exercises))), JSON_UNESCAPED_UNICODE) ?>;
+    let index = 0;
+    table.querySelectorAll('tbody tr').forEach(function (row) {
+        const series = resultsBySeries[seriesIds[index++]] || {};
+        const weightCell = document.createElement('td');
+        weightCell.textContent = series.weight !== null && series.weight !== undefined ? series.weight + ' kg' : '–';
+        const repsCell = document.createElement('td');
+        repsCell.textContent = series.reps !== null && series.reps !== undefined ? series.reps : '–';
+        row.appendChild(weightCell);
+        row.appendChild(repsCell);
+    });
+    Array.from(document.querySelectorAll('.card')).forEach(function (card) {
+        const header = card.querySelector('.card-header');
+        if (header && header.textContent.includes('Skutečné výsledky sportovce')) card.hidden = true;
+    });
+})();
+</script><?php endif; ?>
 <?php if ($isCoach) renderFooter(); else renderAthleteFooter();

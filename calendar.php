@@ -1660,6 +1660,37 @@ document.addEventListener('DOMContentLoaded', () => {
         return match ? Number(match[1] || 0) : 0;
     }
 
+    function getRescheduleRequestForOrigin(event) {
+        const sourceEventId = Number(event?.id || 0);
+        if (sourceEventId <= 0) {
+            return null;
+        }
+
+        if (Number(event.reschedule_request_id || 0) > 0) {
+            return {
+                id: Number(event.reschedule_request_id),
+                starts_at: event.reschedule_request_starts_at,
+                ends_at: event.reschedule_request_ends_at,
+            };
+        }
+
+        return events.find((candidate) => (
+            (candidate.approval_status || 'approved') === 'pending'
+            && isRescheduleRequestEvent(candidate)
+            && getRescheduleSourceEventId(candidate) === sourceEventId
+        )) || null;
+    }
+
+    function getRescheduleTargetLabel(event) {
+        const request = getRescheduleRequestForOrigin(event);
+        if (!request) {
+            return '';
+        }
+
+        const targetDate = fromSqlDateTime(request.starts_at);
+        return `Změna na ${formatDateCs(targetDate)} ${formatTimeCs(targetDate)}`;
+    }
+
     function rebuildRescheduleOriginEventIds() {
         const next = new Set();
 
@@ -1693,7 +1724,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return false;
         }
 
-        return rescheduleOriginEventIds.has(eventId);
+        return rescheduleOriginEventIds.has(eventId) || Number(event.reschedule_request_id || 0) > 0;
     }
 
     function getEventStatusMeta(event) {
@@ -1817,11 +1848,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const time = `\nČas: ${formatTimeCs(startDate)} - ${formatTimeCs(endDate)}`;
         const color = getEventColorScheme(event);
         const statusMeta = getEventStatusMeta(event);
+        const rescheduleTargetLabel = getRescheduleTargetLabel(event);
         const athleteInfo = athleteLabel && title !== athleteLabel ? `\nSportovci: ${athleteLabel}` : '';
         const statusLine = statusMeta.label ? `\nStav: ${statusMeta.label}` : '';
+        const rescheduleLine = rescheduleTargetLabel ? `\n${rescheduleTargetLabel}` : '';
         const paymentPaid = String(event.payment_status || '') === 'paid';
         const paymentLabel = paymentPaid ? 'Uhrazeno' : '';
-        const detailLine = [timeLabel, event.location || '', statusMeta.label, paymentLabel].filter(Boolean).join(' | ');
+        const detailLine = [timeLabel, event.location || '', statusMeta.label, rescheduleTargetLabel, paymentLabel].filter(Boolean).join(' | ');
         const badgeHtml = [
             statusMeta.label ? `<span class="badge text-bg-warning text-dark me-1">${escapeHtml(statusMeta.label)}</span>` : '',
             paymentPaid ? '<span class="badge bg-success">Uhrazeno</span>' : '',
@@ -1836,7 +1869,7 @@ document.addEventListener('DOMContentLoaded', () => {
             html: isPairedTraining
                 ? `<div style="display:grid;grid-template-columns:1fr 1fr;column-gap:8px;font-weight:700;line-height:1.1;font-size:12px;margin-bottom:4px;"><div>${escapeHtml(athleteNames[0])}</div><div style="text-align:right;">${escapeHtml(athleteNames[1])}</div></div><div style="display:flex;align-items:center;justify-content:center;font-weight:600;line-height:1.2;">${syncBadgeHtml}<span>${escapeHtml(event.location || 'Bez místa')}</span></div><div style="text-align:center;font-weight:600;line-height:1.2;">${escapeHtml(timeLabel)}</div><div style="text-align:center;line-height:1.1;margin-top:3px;">${badgeHtml}</div>`
                 : `<div style="display:flex;align-items:center;font-weight:700;line-height:1.15;font-size:12px;">${syncBadgeHtml}<span>${escapeHtml(title)}</span></div><div style="font-size:11px;line-height:1.15;margin-top:2px;">${escapeHtml(event.location || 'Bez místa')}</div><div style="font-size:11px;line-height:1.15;margin-top:2px;">${escapeHtml(timeLabel)}</div><div style="margin-top:3px;">${badgeHtml}</div>`,
-            toolTip: `${title}${time}${place}${athleteInfo}${statusLine}${paymentLabel ? `\nStav úhrady: ${paymentLabel}` : ''}${event.is_caldav_synced ? '\nSynchronizováno do iCloud' : ''}`,
+            toolTip: `${title}${time}${place}${athleteInfo}${statusLine}${rescheduleLine}${paymentLabel ? `\nStav úhrady: ${paymentLabel}` : ''}${event.is_caldav_synced ? '\nSynchronizováno do iCloud' : ''}`,
             start: toDateTimeSecondsValue(startDate),
             end: toDateTimeSecondsValue(endDate),
             backColor: color.backColor,
@@ -2887,6 +2920,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 approveEventBtn.classList.remove('d-none');
                 deleteEventBtn.innerHTML = '<i class="fas fa-xmark me-1"></i>Zamítnout';
             } else {
+                const rescheduleRequest = getRescheduleRequestForOrigin(event);
+                if (rescheduleRequest) {
+                    const targetDate = fromSqlDateTime(rescheduleRequest.starts_at);
+                    requestInfo.textContent = `Sportovec požádal o změnu tohoto termínu na ${formatDateCs(targetDate)} v ${formatTimeCs(targetDate)}. Žádost najdete v navrženém termínu označeném jako „Žádost o změnu“.`;
+                    requestInfo.classList.remove('d-none');
+                }
                 deleteEventBtn.innerHTML = '<i class="fas fa-trash me-1"></i>Smazat';
             }
 

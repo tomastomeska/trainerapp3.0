@@ -969,6 +969,7 @@ renderAthleteHeader('Můj kalendář', false, true);
                     <div class="fw-semibold" id="eventDetailStatus">-</div>
                 </div>
                 <div class="alert alert-success border mt-3 mb-0 py-2 d-none" id="eventDetailPaymentInfo"></div>
+                <div class="alert alert-warning border mt-3 mb-0 py-2 d-none" id="eventDetailRescheduleInfo"></div>
                 <div class="alert alert-light border mt-3 mb-0 py-2" id="eventDetailCancelInfo">Tento termín lze zrušit.</div>
             </div>
             <div class="modal-footer">
@@ -980,7 +981,7 @@ renderAthleteHeader('Můj kalendář', false, true);
                 </button>
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Zavřít</button>
                 <button type="button" class="btn btn-danger" id="eventDetailCancelBtn">
-                    <i class="fas fa-trash-alt me-1"></i>Zrušit událost
+                    <i class="fas fa-trash-alt me-1"></i><span id="eventDetailCancelLabel">Zrušit událost</span>
                 </button>
             </div>
         </div>
@@ -1259,6 +1260,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getEventStatusMeta(event) {
+        if ((event.approval_status || 'approved') === 'approved' && Number(event.reschedule_request_id || 0) > 0) {
+            return {
+                label: 'Čeká na změnu',
+                className: 'reschedule-origin',
+            };
+        }
+
         if ((event.approval_status || 'approved') === 'pending') {
             return {
                 label: 'Ke schválení',
@@ -1276,6 +1284,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return {
             label: '',
             className: '',
+        };
+    }
+
+    function getRescheduleRequestForOrigin(event) {
+        if (!event || Number(event.reschedule_request_id || 0) <= 0) {
+            return null;
+        }
+
+        return {
+            starts_at: event.reschedule_request_starts_at,
+            ends_at: event.reschedule_request_ends_at,
         };
     }
 
@@ -1473,6 +1492,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const endDate = fromSqlDateTime(event.ends_at);
         const title = getEventTitle(event);
         const statusMeta = getEventStatusMeta(event);
+        const rescheduleRequest = getRescheduleRequestForOrigin(event);
         const timeLabel = `${formatTimeCs(startDate)} - ${formatTimeCs(endDate)}`;
         const detailLine = event.is_foreign
             ? timeLabel
@@ -1488,16 +1508,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const nonCancelableOwnedEvent = ownedByAthlete && !canCancel;
         const isForeign = Boolean(event.is_foreign);
         const syncBadgeHtml = getIcloudSyncBadgeHtml(event);
+        const rescheduleLabel = rescheduleRequest ? 'Čeká na změnu' : '';
 
         return {
             id: String(event.id),
             text: [title, detailLine].filter(Boolean).join('\n'),
             html: isForeign
                 ? `<div style="font-weight:700;line-height:1.15;font-size:12px;">${escapeHtml(title)}</div><div style="font-size:11px;line-height:1.15;margin-top:2px;">${escapeHtml(timeLabel)}</div>`
-                : `<div style="display:flex;align-items:center;font-weight:700;line-height:1.15;font-size:12px;">${syncBadgeHtml}<span>${escapeHtml(title)}</span></div><div style="font-size:11px;line-height:1.15;margin-top:2px;">${escapeHtml(event.location || 'Bez místa')}</div><div style="font-size:11px;line-height:1.15;margin-top:2px;">${escapeHtml(timeLabel)}</div>`,
+                : `<div style="display:flex;align-items:center;font-weight:700;line-height:1.15;font-size:12px;">${syncBadgeHtml}<span>${escapeHtml(title)}</span></div><div style="font-size:11px;line-height:1.15;margin-top:2px;">${escapeHtml(event.location || 'Bez místa')}</div><div style="font-size:11px;line-height:1.15;margin-top:2px;">${escapeHtml(timeLabel)}</div>${rescheduleLabel ? `<div style="font-size:10px;line-height:1.1;margin-top:3px;font-weight:700;">${escapeHtml(rescheduleLabel)}</div>` : ''}`,
             toolTip: isForeign
                 ? `${title}${time}`
-                : `${title}${time}${place}${statusLine}`
+                : `${title}${time}${place}${statusLine}${rescheduleRequest ? `\nPožádáno o změnu na ${formatDateCs(fromSqlDateTime(rescheduleRequest.starts_at))} v ${formatTimeCs(fromSqlDateTime(rescheduleRequest.starts_at))}` : ''}`
                 + (paymentLabel ? `\nStav úhrady: ${paymentLabel}` : '')
                 + (nonCancelableOwnedEvent ? '\nPoznámka: Tento termín už nelze zrušit.' : '')
                 + (event.is_caldav_synced ? '\nSynchronizováno do iCloud' : ''),
@@ -1528,6 +1549,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const startDate = fromSqlDateTime(event.starts_at);
         const endDate = fromSqlDateTime(event.ends_at);
         const statusMeta = getEventStatusMeta(event);
+        const rescheduleRequest = getRescheduleRequestForOrigin(event);
         const canCancel = Boolean(event.can_cancel ?? (event.is_mine || event.is_requested_by_me));
         const lateCancellation = isLateCancellationWindow(event);
 
@@ -1536,6 +1558,16 @@ document.addEventListener('DOMContentLoaded', () => {
         eventDetailWhenEl.textContent = `${formatDateCs(startDate)} ${formatTimeCs(startDate)} - ${formatTimeCs(endDate)}`;
         eventDetailLocationEl.textContent = event.location || '-';
         eventDetailStatusEl.textContent = statusMeta.label || 'Schváleno';
+
+        const rescheduleInfoEl = document.getElementById('eventDetailRescheduleInfo');
+        if (rescheduleInfoEl && rescheduleRequest) {
+            const targetDate = fromSqlDateTime(rescheduleRequest.starts_at);
+            rescheduleInfoEl.textContent = `Požádáno o změnu termínu na ${formatDateCs(targetDate)} v ${formatTimeCs(targetDate)}.`;
+            rescheduleInfoEl.classList.remove('d-none');
+        } else if (rescheduleInfoEl) {
+            rescheduleInfoEl.textContent = '';
+            rescheduleInfoEl.classList.add('d-none');
+        }
 
         if (eventDetailAddToIosBtn) {
             if (athleteAppleCaldavActive) {
@@ -1561,6 +1593,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const canEdit = Boolean(event.can_edit ?? false);
         const canRequestChange = Boolean(event.can_request_change ?? false);
+        const isRescheduleRequest = (event.approval_status || 'approved') === 'pending'
+            && /^reschedule:\d+$/.test(String(event.series_id || ''));
+        const eventDetailCancelLabel = document.getElementById('eventDetailCancelLabel');
+        if (eventDetailCancelLabel) {
+            eventDetailCancelLabel.textContent = isRescheduleRequest ? 'Zrušit žádost' : 'Zrušit událost';
+        }
 
         if (eventDetailPrimaryActionBtn && eventDetailPrimaryActionLabel) {
             if (canEdit || canRequestChange) {
@@ -1574,10 +1612,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        if (canEdit) {
+        if (canEdit && !isRescheduleRequest) {
             eventDetailCancelBtn.classList.add('d-none');
             eventDetailCancelInfoEl.className = 'alert alert-secondary mt-3 mb-0 py-2';
             eventDetailCancelInfoEl.textContent = 'Tento čekající požadavek můžete upravit bez zrušení.';
+        } else if (isRescheduleRequest && canCancel) {
+            eventDetailCancelBtn.classList.remove('d-none');
+            eventDetailCancelBtn.disabled = false;
+            eventDetailCancelInfoEl.className = 'alert alert-warning mt-3 mb-0 py-2';
+            eventDetailCancelInfoEl.textContent = 'Tímto zrušíte pouze žádost o změnu. Původní schválený termín zůstane zachovaný.';
         } else if (canCancel) {
             eventDetailCancelBtn.classList.remove('d-none');
             eventDetailCancelBtn.disabled = false;
@@ -2099,11 +2142,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const col = document.createElement('div');
             col.className = 'col-12 col-lg-6';
             const isPendingChange = item.status === 'change_pending';
+            const requestedChangeHtml = item.requested_change
+                ? `<div class="alert alert-warning border mt-2 mb-0 py-2 small"><i class="fas fa-calendar-day me-1"></i>Požádáno o změnu na <strong>${escapeHtml(item.requested_change.date_label)} ${escapeHtml(item.requested_change.time_label)}</strong></div>`
+                : '';
             const actionHtml = `${item.can_request_change ? '<button type="button" class="btn btn-sm btn-outline-warning js-athlete-training-change"><i class="fas fa-calendar-day me-1"></i>Požádat o změnu</button>' : ''}${item.can_cancel ? `<button type="button" class="btn btn-sm btn-outline-danger js-athlete-training-cancel"><i class="fas fa-ban me-1"></i>${isPendingChange ? 'Zrušit žádost' : 'Zrušit'}</button>` : ''}`;
             const sourceHtml = isPendingChange && item.source
                 ? `<div class="small mt-2 p-2 bg-light rounded"><span class="badge text-bg-secondary me-1">Původní termín</span>${escapeHtml(item.source.date_label)} ${escapeHtml(item.source.time_label)}${item.source.location ? ` · ${escapeHtml(item.source.location)}` : ''}</div>`
                 : '';
-            col.innerHTML = `<article class="card h-100 border-2 ${isPendingChange ? 'border-warning' : 'border-success'} shadow-sm"><div class="card-body"><div class="d-flex justify-content-between gap-2"><div><div class="fw-bold">${escapeHtml(item.date_label)} · ${escapeHtml(item.time_label)}</div><div class="mt-1">${escapeHtml(item.title)}</div></div><span class="badge ${isPendingChange ? 'text-bg-warning' : 'text-bg-success'}">${isPendingChange ? 'Čeká na potvrzení změny' : 'Schváleno'}</span></div><div class="small text-muted mt-2">${item.location ? `<i class="fas fa-location-dot me-1"></i>${escapeHtml(item.location)}` : 'Místo není uvedeno'}</div>${sourceHtml}${actionHtml ? `<div class="d-flex gap-2 flex-wrap mt-3" data-event-id="${Number(item.id || 0)}">${actionHtml}</div>` : ''}</div></article>`;
+            col.innerHTML = `<article class="card h-100 border-2 ${isPendingChange ? 'border-warning' : 'border-success'} shadow-sm"><div class="card-body"><div class="d-flex justify-content-between gap-2"><div><div class="fw-bold">${escapeHtml(item.date_label)} · ${escapeHtml(item.time_label)}</div><div class="mt-1">${escapeHtml(item.title)}</div></div><span class="badge ${isPendingChange ? 'text-bg-warning' : 'text-bg-success'}">${isPendingChange ? 'Čeká na potvrzení změny' : 'Schváleno'}</span></div><div class="small text-muted mt-2">${item.location ? `<i class="fas fa-location-dot me-1"></i>${escapeHtml(item.location)}` : 'Místo není uvedeno'}</div>${requestedChangeHtml}${sourceHtml}${actionHtml ? `<div class="d-flex gap-2 flex-wrap mt-3" data-event-id="${Number(item.id || 0)}">${actionHtml}</div>` : ''}</div></article>`;
             const actionWrap = col.querySelector('[data-event-id]');
             if (actionWrap) {
                 actionWrap.dataset.event = JSON.stringify(item);
