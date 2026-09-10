@@ -2255,6 +2255,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedType = getSelectedEventTitleType();
         const isGroupLesson = selectedType === 'group_lesson';
 
+        [eventDateInput, eventHourInput, eventMinuteInput].forEach((control) => {
+            control.required = !lockMode;
+        });
+
         eventTrainingFields.classList.toggle('d-none', lockMode);
         lockFields.classList.toggle('d-none', !lockMode);
         if (eventAthleteFields) {
