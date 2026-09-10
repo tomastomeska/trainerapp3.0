@@ -6,9 +6,9 @@ if ($isCli) {
 } else {
     require_once __DIR__ . '/../includes/admin_auth.php';
     $secret = getCronSecret();
-    if (!hash_equals($secret, (string)($_GET['secret'] ?? ''))) {
-        http_response_code(403);
-        exit('Unauthorized - neplatny secret token.');
+    $providedSecret = (string)($_GET['secret'] ?? '');
+    if (!hash_equals($secret, $providedSecret)) {
+        requireAdminLogin();
     }
 }
 

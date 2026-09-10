@@ -11,6 +11,7 @@ $error   = null;
 
 $supportsArchiving = workoutSetArchivingEnabled();
 $supportsArchivedAt = workoutSetsHasColumn('archived_at');
+$supportsGlobalSets = workoutSetsHasColumn('is_global') && workoutSetsHasColumn('description');
 $scopeRaw = trim((string)($_GET['scope'] ?? 'active'));
 $scope = in_array($scopeRaw, ['active', 'archived', 'all'], true) ? $scopeRaw : 'active';
 if (!$supportsArchiving) {
@@ -95,7 +96,7 @@ $setsSql = 'SELECT ws.*,
             (SELECT COUNT(*) FROM training_sessions ts WHERE ts.workout_set_id = ws.id) AS session_count
      FROM workout_sets ws
      LEFT JOIN workout_set_exercises wse ON ws.id = wse.workout_set_id
-     WHERE ws.coach_id = ?';
+    WHERE ' . ($supportsGlobalSets ? '(ws.coach_id = ? OR ws.is_global = 1)' : 'ws.coach_id = ?');
 $setsParams = [$coachId];
 if ($supportsArchiving) {
     if ($scope === 'active') {
@@ -105,7 +106,7 @@ if ($supportsArchiving) {
     }
 }
 $setsSql .= ' GROUP BY ws.id
-    ORDER BY CASE WHEN ws.name = ? THEN 0 ELSE 1 END, ws.name';
+    ORDER BY CASE WHEN ws.name = ? THEN 0 ELSE 1 END, ' . ($supportsGlobalSets ? 'ws.is_global DESC, ' : '') . 'ws.name';
 $setsParams[] = 'Flexibilní sada';
 
 $stmt = $pdo->prepare($setsSql);
@@ -187,11 +188,16 @@ renderHeader('Sady', false, true);
     <div class="row g-3">
         <?php foreach ($sets as $ws): ?>
             <?php $isArchived = $supportsArchiving && (int)($ws['is_active'] ?? 1) !== 1; ?>
+            <?php $isGlobal = $supportsGlobalSets && (int)($ws['is_global'] ?? 0) === 1; ?>
+            <?php $detailsId = 'global-set-details-' . (int)$ws['id']; ?>
             <div class="col-md-6 col-xl-4">
                 <div class="card border-0 shadow-sm h-100 <?= $ws['name'] === 'Flexibilní sada' ? 'border-warning' : '' ?>">
-                    <div class="card-header d-flex justify-content-between align-items-center <?= $ws['name'] === 'Flexibilní sada' ? 'bg-warning text-dark' : 'bg-dark text-white' ?>">
+                    <div class="card-header d-flex justify-content-between align-items-center <?= $ws['name'] === 'Flexibilní sada' ? 'bg-warning text-dark' : ($isGlobal ? 'bg-primary text-white' : 'bg-dark text-white') ?>">
                         <span class="fw-bold">
-                            <i class="fas fa-layer-group me-2 <?= $ws['name'] === 'Flexibilní sada' ? 'text-dark' : 'text-warning' ?>"></i><?= h($ws['name']) ?>
+                            <i class="fas <?= $isGlobal ? 'fa-globe' : 'fa-layer-group' ?> me-2 <?= $ws['name'] === 'Flexibilní sada' ? 'text-dark' : ($isGlobal ? 'text-white' : 'text-warning') ?>"></i><?= h($ws['name']) ?>
+                            <?php if ($isGlobal): ?>
+                                <span class="badge bg-light text-primary ms-1">Globální</span>
+                            <?php endif; ?>
                             <?php if ($isArchived): ?>
                                 <span class="badge bg-secondary ms-1">Archiv</span>
                             <?php endif; ?>
@@ -215,13 +221,22 @@ renderHeader('Sady', false, true);
                                 Prázdná sada pro skládání tréninku za běhu. Cviky do ní přidáte až v aktivním tréninku.
                             </div>
                         <?php endif; ?>
-                        <?php if ($items): ?>
-                            <ol class="mb-3 ps-3">
+                        <?php if ($isGlobal && trim((string)($ws['description'] ?? '')) !== ''): ?>
+                            <div class="alert alert-info py-2 small">
+                                <?php $description = trim((string)$ws['description']); ?>
+                                <strong>Vhodné pro:</strong> <?= h(mb_strimwidth(preg_replace('/\s+/', ' ', $description), 0, 170, '...')) ?>
+                            </div>
+                            <button type="button" class="btn btn-outline-primary btn-sm mb-3" data-bs-toggle="modal" data-bs-target="#<?= $detailsId ?>">
+                                <i class="fas fa-circle-info me-1"></i>Zobrazit podrobnosti
+                            </button>
+                        <?php endif; ?>
+                        <?php if ($items && !$isGlobal): ?>
+                            <ol class="mb-2 ps-3">
                                 <?php foreach ($items as $item): ?>
                                     <li><?= h($item['name']) ?></li>
                                 <?php endforeach; ?>
                             </ol>
-                        <?php else: ?>
+                        <?php elseif (!$isGlobal): ?>
                             <p class="text-muted small">Žádné cviky.</p>
                         <?php endif; ?>
                         <small class="text-muted">
@@ -229,6 +244,9 @@ renderHeader('Sady', false, true);
                         </small>
                     </div>
                     <div class="card-footer bg-transparent d-flex gap-2">
+                        <?php if ($isGlobal): ?>
+                            <small class="text-muted"><i class="fas fa-lock me-1"></i>Globální sadu spravuje administrátor.</small>
+                        <?php else: ?>
                         <a href="<?= BASE_URL ?>/sada_edit.php?id=<?= $ws['id'] ?>"
                             class="btn btn-outline-secondary btn-sm flex-fill">
                             <i class="fas fa-edit me-1"></i>Upravit
@@ -278,9 +296,41 @@ renderHeader('Sady', false, true);
                                 <i class="fas fa-lock me-1"></i>Smazat
                             </button>
                         <?php endif; ?>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
+            <?php if ($isGlobal): ?>
+                <div class="modal fade" id="<?= $detailsId ?>" tabindex="-1" aria-labelledby="<?= $detailsId ?>-title" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-scrollable">
+                        <div class="modal-content">
+                            <div class="modal-header bg-primary text-white">
+                                <h5 class="modal-title" id="<?= $detailsId ?>-title"><i class="fas fa-globe me-2"></i><?= h($ws['name']) ?></h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+                            </div>
+                            <div class="modal-body">
+                                <?php if (trim((string)($ws['description'] ?? '')) !== ''): ?>
+                                    <h6>Vhodné pro</h6>
+                                    <p><?= nl2br(h(trim((string)$ws['description']))) ?></p>
+                                <?php endif; ?>
+                                <h6 class="mt-3">Cviky v sadě</h6>
+                                <?php if ($items): ?>
+                                    <ol class="mb-0 ps-3">
+                                        <?php foreach ($items as $item): ?>
+                                            <li><?= h($item['name']) ?></li>
+                                        <?php endforeach; ?>
+                                    </ol>
+                                <?php else: ?>
+                                    <p class="text-muted mb-0">Sada zatím neobsahuje žádné cviky.</p>
+                                <?php endif; ?>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Zavřít</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
         <?php endforeach; ?>
     </div>
 <?php endif; ?>
