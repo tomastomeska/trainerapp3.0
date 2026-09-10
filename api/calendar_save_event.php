@@ -623,6 +623,19 @@ if ($eventId > 0) {
                AND coach_id = ?'
         );
 
+        $pendingRequestsStmt = $pdo->prepare(
+            'SELECT id
+             FROM coach_calendar_events
+             WHERE coach_id = ?
+               AND approval_status = "pending"
+               AND requested_by_athlete_id IS NOT NULL
+               AND series_id = ?'
+        );
+        $pendingRequestsStmt->execute([$coachId, (string)($existingEvent['series_id'] ?? '')]);
+        $pendingRequestIds = array_map('intval', $pendingRequestsStmt->fetchAll(PDO::FETCH_COLUMN));
+        if (!in_array($eventId, $pendingRequestIds, true)) {
+            $pendingRequestIds[] = $eventId;
+        }
         $deleteRequestStmt = $pdo->prepare('DELETE FROM coach_calendar_events WHERE id = ? AND coach_id = ? LIMIT 1');
 
         try {
@@ -644,7 +657,9 @@ if ($eventId > 0) {
                 $coachId,
             ]);
 
-            $deleteRequestStmt->execute([$eventId, $coachId]);
+            foreach ($pendingRequestIds as $pendingRequestId) {
+                $deleteRequestStmt->execute([$pendingRequestId, $coachId]);
+            }
 
             $pdo->commit();
         } catch (Throwable $e) {
@@ -665,11 +680,15 @@ if ($eventId > 0) {
 
         enqueueCoachGoogleCalendarSync($coachId, $rescheduleSourceEventId, 'upsert');
         enqueueCoachAppleCaldavSync($coachId, $rescheduleSourceEventId, 'upsert');
-        enqueueCoachGoogleCalendarSync($coachId, $eventId, 'delete');
-        enqueueCoachAppleCaldavSync($coachId, $eventId, 'delete');
+        foreach ($pendingRequestIds as $pendingRequestId) {
+            enqueueCoachGoogleCalendarSync($coachId, $pendingRequestId, 'delete');
+            enqueueCoachAppleCaldavSync($coachId, $pendingRequestId, 'delete');
+        }
         foreach ($syncAthleteIds as $syncAthleteId) {
             enqueueAthleteAppleCaldavSync($syncAthleteId, $rescheduleSourceEventId, 'upsert');
-            enqueueAthleteAppleCaldavSync($syncAthleteId, $eventId, 'delete');
+            foreach ($pendingRequestIds as $pendingRequestId) {
+                enqueueAthleteAppleCaldavSync($syncAthleteId, $pendingRequestId, 'delete');
+            }
         }
         processInlineCalendarSyncQueues(2, 3, 3);
 
