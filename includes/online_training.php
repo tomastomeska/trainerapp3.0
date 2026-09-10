@@ -78,7 +78,8 @@ function onlineTrainingLoadExercises(PDO $pdo, int $trainingId): array {
 }
 
 function onlineTrainingCreateFromSet(PDO $pdo, int $coachId, int $athleteId, int $setId, string $title, string $note): int {
-    $setStmt = $pdo->prepare('SELECT id, name FROM workout_sets WHERE id = ? AND coach_id = ?' . (workoutSetArchivingEnabled() ? ' AND is_active = 1' : '') . ' LIMIT 1');
+    $setAccessSql = (workoutSetsHasColumn('is_global') && workoutSetsHasColumn('description')) ? '(coach_id = ? OR is_global = 1)' : 'coach_id = ?';
+    $setStmt = $pdo->prepare('SELECT id, name FROM workout_sets WHERE id = ? AND ' . $setAccessSql . (workoutSetArchivingEnabled() ? ' AND is_active = 1' : '') . ' LIMIT 1');
     $setStmt->execute([$setId, $coachId]);
     $set = $setStmt->fetch();
     if (!$set) {

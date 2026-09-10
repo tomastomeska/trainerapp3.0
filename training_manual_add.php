@@ -32,10 +32,11 @@ if (!$athlete) {
 
 $activeSetFilter = workoutSetArchivingEnabled() ? ' AND ws.is_active = 1' : '';
 
+$globalSetFields = (workoutSetsHasColumn('is_global') && workoutSetsHasColumn('description')) ? ', ws.is_global, ws.description' : '';
 $stmtSets = $pdo->prepare(
-    'SELECT ws.id, ws.name
+    'SELECT ws.id, ws.name' . $globalSetFields . '
      FROM workout_sets ws
-     WHERE ws.coach_id = ?' . $activeSetFilter . '
+    WHERE ' . ((workoutSetsHasColumn('is_global') && workoutSetsHasColumn('description')) ? '(ws.coach_id = ? OR ws.is_global = 1)' : 'ws.coach_id = ?') . $activeSetFilter . '
      ORDER BY ws.name'
 );
 $stmtSets->execute([$coachId]);
@@ -46,7 +47,7 @@ $stmtSetExercises = $pdo->prepare(
      FROM workout_set_exercises wse
      JOIN workout_sets ws ON ws.id = wse.workout_set_id
      JOIN exercises e ON e.id = wse.exercise_id
-    WHERE ws.coach_id = ?' . $activeSetFilter . '
+    WHERE ' . ((workoutSetsHasColumn('is_global') && workoutSetsHasColumn('description')) ? '(ws.coach_id = ? OR ws.is_global = 1)' : 'ws.coach_id = ?') . $activeSetFilter . '
      ORDER BY ws.name, wse.exercise_order'
 );
 $stmtSetExercises->execute([$coachId]);
@@ -95,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Zadejte datum tréninku.';
     }
 
-    $setCheckSql = 'SELECT id FROM workout_sets WHERE id = ? AND coach_id = ?';
+    $setCheckSql = 'SELECT id FROM workout_sets WHERE id = ? AND ' . ((workoutSetsHasColumn('is_global') && workoutSetsHasColumn('description')) ? '(coach_id = ? OR is_global = 1)' : 'coach_id = ?');
     if (workoutSetArchivingEnabled()) {
         $setCheckSql .= ' AND is_active = 1';
     }
@@ -462,7 +463,7 @@ renderHeader('Přidat minulý trénink');
                     <select class="form-select" name="workout_set_id" id="setSelect" required>
                         <option value="">— Vyberte sadu —</option>
                         <?php foreach ($workoutSets as $ws): ?>
-                        <option value="<?= (int)$ws['id'] ?>"><?= h($ws['name']) ?></option>
+                        <option value="<?= (int)$ws['id'] ?>"><?= !empty($ws['is_global']) ? 'Globální: ' : '' ?><?= h($ws['name']) ?><?= !empty($ws['description']) ? ' - ' . h($ws['description']) : '' ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>

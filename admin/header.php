@@ -75,6 +75,10 @@ function renderAdminHeader(string $title = ''): void {
 				   class="nav-link <?= in_array(basename($_SERVER['PHP_SELF']), ['exercises.php','exercise_export.php','exercise_import.php']) ? 'active' : '' ?>">
 					<i class="fas fa-globe me-2"></i>Globální cviky
 				</a>
+				<a href="<?= BASE_URL ?>/admin/global_workout_sets.php"
+				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'global_workout_sets.php' ? 'active' : '' ?>">
+					<i class="fas fa-layer-group me-2"></i>Globální sady
+				</a>
 				<a href="<?= BASE_URL ?>/admin/meals.php"
 				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'meals.php' ? 'active' : '' ?>">
 					<i class="fas fa-utensils me-2"></i>Globální jídla

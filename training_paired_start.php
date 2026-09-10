@@ -51,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 break;
             }
 
-            $setCheckSql = 'SELECT id FROM workout_sets WHERE id = ? AND coach_id = ?';
+            $setCheckSql = 'SELECT id FROM workout_sets WHERE id = ? AND ' . ((workoutSetsHasColumn('is_global') && workoutSetsHasColumn('description')) ? '(coach_id = ? OR is_global = 1)' : 'coach_id = ?');
             if (workoutSetArchivingEnabled()) {
                 $setCheckSql .= ' AND is_active = 1';
             }
@@ -125,11 +125,12 @@ $stmtA = $pdo->prepare(
 $stmtA->execute([$coachId]);
 $athletes = $stmtA->fetchAll();
 
+$globalSetFields = (workoutSetsHasColumn('is_global') && workoutSetsHasColumn('description')) ? ', ws.is_global, ws.description' : '';
 $stmtS = $pdo->prepare(
-    'SELECT ws.id, ws.name, COUNT(wse.id) AS exercise_count
+    'SELECT ws.id, ws.name' . $globalSetFields . ', COUNT(wse.id) AS exercise_count
      FROM workout_sets ws
      LEFT JOIN workout_set_exercises wse ON ws.id = wse.workout_set_id
-    WHERE ws.coach_id = ?' . (workoutSetArchivingEnabled() ? ' AND ws.is_active = 1' : '') . '
+    WHERE ' . ((workoutSetsHasColumn('is_global') && workoutSetsHasColumn('description')) ? '(ws.coach_id = ? OR ws.is_global = 1)' : 'ws.coach_id = ?') . (workoutSetArchivingEnabled() ? ' AND ws.is_active = 1' : '') . '
      GROUP BY ws.id
      ORDER BY ws.name'
 );
@@ -205,7 +206,7 @@ renderHeader('Párový trénink', false, true);
                                         <option value="">— Vyberte sadu —</option>
                                         <?php foreach ($sets as $s): ?>
                                         <option value="<?= $s['id'] ?>">
-                                            <?= h($s['name']) ?>
+                                            <?= !empty($s['is_global']) ? 'Globální: ' : '' ?><?= h($s['name']) ?><?= !empty($s['description']) ? ' - ' . h($s['description']) : '' ?>
                                             (<?= $s['exercise_count'] ?> <?= $s['exercise_count'] === 1 ? 'cvik' : ($s['exercise_count'] < 5 ? 'cviky' : 'cviků') ?>)
                                         </option>
                                         <?php endforeach; ?>
@@ -289,7 +290,7 @@ renderHeader('Párový trénink', false, true);
     const setOptions = `
         <option value="">— Vyberte sadu —</option>
         <?php foreach ($sets as $s): ?>
-        <option value="<?= $s['id'] ?>"><?= h($s['name']) ?> (<?= $s['exercise_count'] ?> <?= $s['exercise_count'] === 1 ? 'cvik' : ($s['exercise_count'] < 5 ? 'cviky' : 'cviků') ?>)</option>
+        <option value="<?= $s['id'] ?>"><?= !empty($s['is_global']) ? 'Globální: ' : '' ?><?= h($s['name']) ?><?= !empty($s['description']) ? ' - ' . h($s['description']) : '' ?> (<?= $s['exercise_count'] ?> <?= $s['exercise_count'] === 1 ? 'cvik' : ($s['exercise_count'] < 5 ? 'cviky' : 'cviků') ?>)</option>
         <?php endforeach; ?>
     `;
 

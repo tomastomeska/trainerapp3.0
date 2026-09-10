@@ -24,7 +24,7 @@ if (!$stmt->fetch()) {
 }
 
 // Ověření sady (u archivace pustíme pouze aktivní)
-$setCheckSql = 'SELECT id FROM workout_sets WHERE id = ? AND coach_id = ?';
+$setCheckSql = 'SELECT id FROM workout_sets WHERE id = ? AND ' . ((workoutSetsHasColumn('is_global') && workoutSetsHasColumn('description')) ? '(coach_id = ? OR is_global = 1)' : 'coach_id = ?');
 if (workoutSetArchivingEnabled()) {
     $setCheckSql .= ' AND is_active = 1';
 }
