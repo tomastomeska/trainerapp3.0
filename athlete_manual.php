@@ -59,9 +59,6 @@ renderAthleteHeader('Návod pro sportovce', false, true);
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h2 class="mb-0"><i class="fas fa-book-open me-2 text-warning"></i>Návod pro sportovce</h2>
     <div class="d-flex gap-2 flex-wrap">
-        <a href="<?= BASE_URL ?>/athlete_dashboard.php" class="btn btn-outline-secondary btn-sm">
-            <i class="fas fa-house me-1"></i>Domů
-        </a>
         <button type="button" class="btn btn-outline-dark btn-sm" onclick="window.print()">
             <i class="fas fa-print me-1"></i>Vytisknout návod
         </button>

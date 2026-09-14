@@ -470,7 +470,6 @@ renderAthleteHeader('MyCoach denní záznam', false, true);
         <a href="<?= BASE_URL ?>/athlete_mycoach_daily.php?date=<?= urlencode($previousDate) ?>" class="btn btn-outline-secondary btn-sm"><i class="fas fa-chevron-left me-1"></i>Předchozí den</a>
         <a href="<?= BASE_URL ?>/athlete_mycoach_daily.php?date=<?= urlencode($todayDate) ?>" class="btn btn-outline-secondary btn-sm">Dnes</a>
         <a href="<?= BASE_URL ?>/athlete_mycoach_daily.php?date=<?= urlencode($nextDate) ?>" class="btn btn-outline-secondary btn-sm">Další den<i class="fas fa-chevron-right ms-1"></i></a>
-        <a href="<?= BASE_URL ?>/athlete_dashboard.php" class="btn btn-outline-secondary btn-sm"><i class="fas fa-house me-1"></i>Domů</a>
         <a href="<?= BASE_URL ?>/athlete_mycoach.php" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i>Zpět do MyCoach</a>
     </div>
 </div>

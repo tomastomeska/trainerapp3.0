@@ -419,9 +419,6 @@ renderAthleteHeader('MyCoach dotazník', false, true);
         <div class="text-muted">MyCoach pro sportovce</div>
     </div>
     <div class="d-flex gap-2 flex-wrap mc-actions">
-        <a href="<?= BASE_URL ?>/athlete_dashboard.php" class="btn btn-outline-secondary btn-sm fw-semibold">
-            <i class="fas fa-house me-1"></i>Domů
-        </a>
         <a href="<?= BASE_URL ?>/athlete_mycoach_graphs.php" class="btn btn-outline-secondary btn-sm fw-semibold">
             <i class="fas fa-chart-line me-1"></i>Grafy
         </a>

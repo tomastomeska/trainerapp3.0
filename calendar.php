@@ -1143,7 +1143,10 @@ renderHeader('Kalendář', false, true);
 <style>
 #eventModal .modal-dialog { height: calc(100dvh - 1rem); max-height: calc(100dvh - 1rem); margin-top: .5rem; margin-bottom: .5rem; }
 #eventModal .modal-content { max-height: 100%; }
-#eventModal .modal-body { min-height: 0; overflow-y: auto; padding: 1rem; }
+#eventModal .modal-content form { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+#eventModal .modal-header,
+#eventModal .modal-footer { flex: 0 0 auto; }
+#eventModal .modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 1rem; -webkit-overflow-scrolling: touch; }
 .event-type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .55rem .75rem; }
 .event-advanced { border: 1px solid #d9dee5; border-radius: 6px; background: #f8f9fa; }
 .event-advanced summary { cursor: pointer; list-style: none; padding: .75rem; font-weight: 700; color: #374151; }

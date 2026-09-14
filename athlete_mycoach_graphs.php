@@ -61,7 +61,6 @@ renderAthleteHeader('MyCoach grafy', true, true);
         <div class="text-muted">Vývoj readiness, energie a spánku v čase</div>
     </div>
     <div class="d-flex gap-2 flex-wrap mc-actions">
-        <a href="<?= BASE_URL ?>/athlete_dashboard.php" class="btn btn-outline-secondary btn-sm fw-semibold"><i class="fas fa-house me-1"></i>Domů</a>
         <a href="<?= BASE_URL ?>/athlete_mycoach_daily.php" class="btn btn-success btn-sm fw-semibold"><i class="fas fa-book-open me-1"></i>Denní záznam</a>
         <a href="<?= BASE_URL ?>/athlete_mycoach.php" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i>Zpět do MyCoach</a>
         <a href="<?= BASE_URL ?>/athlete_mycoach_export.php" class="btn btn-outline-primary btn-sm fw-semibold"><i class="fas fa-file-csv me-1"></i>Export CSV</a>

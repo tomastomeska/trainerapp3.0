@@ -150,9 +150,6 @@ foreach ($eventRows as $eventRow) {
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h2 class="mb-0"><i class="fas fa-flag-checkered me-2 text-warning"></i>Events</h2>
     <div class="d-flex gap-2 flex-wrap">
-        <a href="<?= BASE_URL ?>/athlete_dashboard.php" class="btn btn-outline-secondary btn-sm">
-            <i class="fas fa-house me-1"></i>Domů
-        </a>
     </div>
 </div>
 

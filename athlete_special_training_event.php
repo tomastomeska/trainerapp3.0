@@ -216,9 +216,6 @@ renderAthleteHeader('Events - ' . $eventName, false, true);
         <a href="<?= BASE_URL ?>/athlete_special_training.php" class="btn btn-outline-secondary btn-sm">
             <i class="fas fa-arrow-left me-1"></i>Zpět na eventy
         </a>
-        <a href="<?= BASE_URL ?>/athlete_dashboard.php" class="btn btn-outline-secondary btn-sm">
-            <i class="fas fa-house me-1"></i>Domů
-        </a>
     </div>
 </div>
 

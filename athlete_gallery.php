@@ -215,9 +215,6 @@ renderAthleteHeader('Galerie', false, true);
 
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h2 class="mb-0"><i class="fas fa-images me-2 text-warning"></i>Galerie</h2>
-    <a href="<?= BASE_URL ?>/athlete_dashboard.php" class="btn btn-outline-secondary btn-sm">
-        <i class="fas fa-house me-1"></i>Domů
-    </a>
 </div>
 
 <div id="gallerySharedSection"><?= $sharedHtml ?></div>

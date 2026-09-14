@@ -161,9 +161,6 @@ renderAthleteHeader('Videa', false, true);
 
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h2 class="mb-0"><i class="fas fa-video me-2 text-danger"></i>Videa</h2>
-    <a href="<?= BASE_URL ?>/athlete_dashboard.php" class="btn btn-outline-secondary btn-sm">
-        <i class="fas fa-house me-1"></i>Domu
-    </a>
 </div>
 
 <div id="athleteVideosSharedSection"><?= $sharedHtml ?></div>

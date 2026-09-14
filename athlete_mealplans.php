@@ -75,9 +75,6 @@ renderAthleteHeader('Jídelníčky', false, true);
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h2 class="mb-0"><i class="fas fa-utensils me-2 text-warning"></i>Jídelníčky</h2>
     <div class="d-flex gap-2 flex-wrap">
-        <a href="<?= BASE_URL ?>/athlete_dashboard.php" class="btn btn-outline-secondary btn-sm">
-            <i class="fas fa-house me-1"></i>Domů
-        </a>
         <a href="<?= BASE_URL ?>/athlete_mealplans_print.php" target="_blank" class="btn btn-outline-dark btn-sm">
             <i class="fas fa-print me-1"></i>Tisk jídelníčků
         </a>

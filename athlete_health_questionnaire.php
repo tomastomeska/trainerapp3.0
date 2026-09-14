@@ -317,9 +317,6 @@ renderAthleteHeader('Zdravotní dotazník', false, true);
 
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <h2 class="mb-0"><i class="fas fa-notes-medical me-2 text-warning"></i>Zdravotní dotazník</h2>
-    <a href="<?= BASE_URL ?>/athlete_dashboard.php" class="btn btn-outline-secondary btn-sm">
-        <i class="fas fa-arrow-left me-1"></i>Domů
-    </a>
 </div>
 
 <div class="health-q-wrapper">

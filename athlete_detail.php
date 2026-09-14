@@ -634,17 +634,27 @@ renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']), true, true
                         <select name="workout_set_id" id="workout_set_id" class="form-select" required>
                             <option value="">– vyberte sadu –</option>
                             <?php foreach ($workoutSets as $ws): ?>
+                            <?php
+                                // Krátký náhled jen s názvy cviků (bez popisku sady), max. 4 + zbytek souhrnně
+                                $namesPreview = '';
+                                if (!empty($ws['exercise_names'])) {
+                                    $namesArr = array_filter(array_map('trim', explode(',', (string)$ws['exercise_names'])), fn($n) => $n !== '');
+                                    $previewCount = 4;
+                                    if (count($namesArr) > $previewCount) {
+                                        $namesPreview = implode(', ', array_slice($namesArr, 0, $previewCount)) . ' a další ' . (count($namesArr) - $previewCount);
+                                    } else {
+                                        $namesPreview = implode(', ', $namesArr);
+                                    }
+                                }
+                            ?>
                             <option value="<?= $ws['id'] ?>">
                                 <?= !empty($ws['is_global']) ? 'Globální: ' : '' ?><?= h($ws['name']) ?>
                                 (<?= $ws['exercise_count'] ?> <?= $ws['exercise_count'] === 1 ? 'cvik' : ($ws['exercise_count'] < 5 ? 'cviky' : 'cviků') ?>)
                                 <?php if ($ws['name'] === 'Flexibilní sada'): ?>
                                     – přidávání cviků během tréninku
                                 <?php endif; ?>
-                                <?php if (!empty($ws['exercise_names'])): ?>
-                                    – <?= h($ws['exercise_names']) ?>
-                                <?php endif; ?>
-                                <?php if (!empty($ws['description'])): ?>
-                                    – <?= h($ws['description']) ?>
+                                <?php if ($namesPreview !== ''): ?>
+                                    – <?= h($namesPreview) ?>
                                 <?php endif; ?>
                             </option>
                             <?php endforeach; ?>
