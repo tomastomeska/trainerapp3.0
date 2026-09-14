@@ -230,6 +230,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $action = (string)($_POST['action'] ?? '');
+    if ($action === 'save_profile_photo') {
+        $newPhoto = saveUploadedPhoto('photo', 'athletes');
+        if ($newPhoto === null) {
+            flash('danger', 'Fotografii se nepodařilo nahrát. Zkontrolujte formát a velikost souboru.');
+        } else {
+            deleteUploadedPhoto($athlete['photo'] ?? null, 'athletes');
+            $photoStmt = $pdo->prepare('UPDATE athletes SET photo = ? WHERE id = ?');
+            $photoStmt->execute([$newPhoto, $athleteId]);
+            flash('success', 'Profilová fotografie byla aktualizována.');
+        }
+
+        redirect(BASE_URL . '/athlete_dashboard.php');
+    }
+
     if ($action === 'save_weight' || $action === 'update_weight') {
         $weightInput = str_replace(',', '.', trim((string)($_POST['weight_kg'] ?? '')));
         $measuredAt = preg_replace('/[^0-9\-]/', '', (string)($_POST['measured_at'] ?? date('Y-m-d')));
@@ -1021,11 +1035,6 @@ renderAthleteHeader('Profil sportovce', false, true);
 
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
     <h2 class="mb-0"><i class="fas fa-user me-2 text-warning"></i>Můj profil</h2>
-    <div class="d-flex gap-2 flex-wrap">
-        <a href="<?= BASE_URL ?>/logout.php" class="btn btn-outline-danger btn-sm">
-            <i class="fas fa-sign-out-alt me-1"></i>Odhlásit
-        </a>
-    </div>
 </div>
 
 <div class="dashboard-quick-tiles mb-3">
@@ -1110,6 +1119,30 @@ renderAthleteHeader('Profil sportovce', false, true);
 </div>
 
 <div class="d-md-none mb-4">
+    <div class="athlete-mobile-summary-card mb-3">
+        <div class="athlete-mobile-summary-card__head">
+            <div class="athlete-mobile-summary-card__title"><i class="fas fa-camera me-2 text-warning"></i>Profilová fotografie</div>
+        </div>
+        <div class="athlete-mobile-summary-card__body">
+            <?php $athleteMobileProfilePhoto = photoUrl($athlete['photo'] ?? null, 'athletes'); ?>
+            <div class="d-flex align-items-center gap-3">
+                <?php if ($athleteMobileProfilePhoto): ?>
+                <img src="<?= h($athleteMobileProfilePhoto) ?>" alt="Profilová fotografie" class="rounded-circle" style="width:64px;height:64px;object-fit:cover;flex:0 0 auto;">
+                <?php else: ?>
+                <div class="rounded-circle bg-light border d-flex align-items-center justify-content-center text-muted" style="width:64px;height:64px;flex:0 0 auto;">
+                    <i class="fas fa-user fa-lg"></i>
+                </div>
+                <?php endif; ?>
+                <form method="post" enctype="multipart/form-data" class="flex-grow-1">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="action" value="save_profile_photo">
+                    <input type="file" name="photo" class="form-control form-control-sm" accept="image/*" required>
+                    <button type="submit" class="btn btn-warning btn-sm mt-2"><i class="fas fa-upload me-1"></i>Nahrát fotografii</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div class="athlete-mobile-summary-card mb-3">
         <div class="athlete-mobile-summary-card__head">
             <div>
@@ -1358,6 +1391,26 @@ renderAthleteHeader('Profil sportovce', false, true);
         <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-dark text-white"><i class="fas fa-id-card me-2"></i>Informace</div>
             <div class="card-body">
+                <?php $athleteProfilePhoto = photoUrl($athlete['photo'] ?? null, 'athletes'); ?>
+                <div class="d-flex align-items-center gap-3 mb-3 pb-3 border-bottom">
+                    <?php if ($athleteProfilePhoto): ?>
+                    <img src="<?= h($athleteProfilePhoto) ?>" alt="Profilová fotografie" class="rounded-circle" style="width:72px;height:72px;object-fit:cover;">
+                    <?php else: ?>
+                    <div class="rounded-circle bg-light border d-flex align-items-center justify-content-center text-muted" style="width:72px;height:72px;flex:0 0 auto;">
+                        <i class="fas fa-user fa-2x"></i>
+                    </div>
+                    <?php endif; ?>
+                    <form method="post" enctype="multipart/form-data" class="flex-grow-1">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="action" value="save_profile_photo">
+                        <label class="form-label fw-semibold mb-1">Profilová fotografie</label>
+                        <input type="file" name="photo" class="form-control form-control-sm" accept="image/*" required>
+                        <div class="form-text">Vyberte novou fotografii a odešlete ji.</div>
+                        <button type="submit" class="btn btn-warning btn-sm mt-2">
+                            <i class="fas fa-camera me-1"></i>Nahrát fotografii
+                        </button>
+                    </form>
+                </div>
                 <table class="table table-sm table-borderless mb-0">
                     <tr><td class="text-muted fw-semibold" style="width:45%">Jméno</td><td><?= h(trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name'])) ?></td></tr>
                     <tr><td class="text-muted fw-semibold">E-mail</td><td><?= h((string)$athlete['email']) ?></td></tr>

@@ -71,10 +71,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($error === null && $email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $error = 'Zadejte platnou e-mailovou adresu.';
         } else {
-            $photo = saveUploadedPhoto('photo', 'athletes');
             $stmt = $pdo->prepare(
-                'INSERT INTO athletes (coach_id, first_name, last_name, birth_date, gender, phone_contact, email, training_rate, paired_training_rate, notes, photo)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                'INSERT INTO athletes (coach_id, first_name, last_name, birth_date, gender, phone_contact, email, training_rate, paired_training_rate, notes)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             );
             $stmt->execute([
                 $coachId,
@@ -87,7 +86,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $trainingRate,
                 $pairedTrainingRate,
                 $notes ?: null,
-                $photo,
             ]);
             $newAthleteId = (int)$pdo->lastInsertId();
 
@@ -135,7 +133,7 @@ renderHeader('Přidat sportovce', false, true);
 
         <div class="card border-0 shadow-sm">
             <div class="card-body p-4">
-                <form method="post" enctype="multipart/form-data" novalidate>
+                <form method="post" novalidate>
                     <?= csrfField() ?>
                     <div class="row g-3 mb-3">
                         <div class="col-sm-6">
@@ -201,10 +199,6 @@ renderHeader('Přidat sportovce', false, true);
                         <label class="form-label fw-semibold">Poznámky</label>
                         <textarea name="notes" class="form-control" rows="3"
                                   placeholder="Volitelné poznámky o sportovci..."><?= h($_POST['notes'] ?? '') ?></textarea>
-                    </div>
-                    <div class="mb-4">
-                        <label class="form-label fw-semibold">Fotografie <span class="text-muted fw-normal">(nepovinné)</span></label>
-                        <input type="file" name="photo" class="form-control" accept="image/*">
                     </div>
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-warning fw-bold px-4">

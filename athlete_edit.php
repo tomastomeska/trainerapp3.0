@@ -144,27 +144,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($error === null && $email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $error = 'Zadejte platnou e-mailovou adresu.';
         } else {
-            $newPhoto = saveUploadedPhoto('photo', 'athletes');
-            if ($newPhoto !== null) {
-                deleteUploadedPhoto($athlete['photo'] ?? null, 'athletes');
-                $stmt = $pdo->prepare(
-                    'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, gender=?, phone_contact=?, email=?, training_rate=?, paired_training_rate=?, online_training_rate=?, notes=?, photo=?
-                     WHERE id=? AND coach_id=?'
-                );
-                $stmt->execute([
-                    $firstName, $lastName, $birthDate, $gender, $phone ?: null, $email ?: null, $trainingRate, $pairedTrainingRate, $onlineTrainingRate, $notes ?: null,
-                    $newPhoto, $athleteId, $coachId,
-                ]);
-            } else {
-                $stmt = $pdo->prepare(
-                    'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, gender=?, phone_contact=?, email=?, training_rate=?, paired_training_rate=?, online_training_rate=?, notes=?
-                     WHERE id=? AND coach_id=?'
-                );
-                $stmt->execute([
-                    $firstName, $lastName, $birthDate, $gender, $phone ?: null, $email ?: null, $trainingRate, $pairedTrainingRate, $onlineTrainingRate, $notes ?: null,
-                    $athleteId, $coachId,
-                ]);
-            }
+            $stmt = $pdo->prepare(
+                'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, gender=?, phone_contact=?, email=?, training_rate=?, paired_training_rate=?, online_training_rate=?, notes=?
+                 WHERE id=? AND coach_id=?'
+            );
+            $stmt->execute([
+                $firstName, $lastName, $birthDate, $gender, $phone ?: null, $email ?: null, $trainingRate, $pairedTrainingRate, $onlineTrainingRate, $notes ?: null,
+                $athleteId, $coachId,
+            ]);
             flash('success', 'Údaje sportovce byly aktualizovány.');
             redirect($returnTo);
         }
@@ -196,7 +183,7 @@ renderHeader('Upravit sportovce');
 
         <div class="card border-0 shadow-sm">
             <div class="card-body p-4">
-                <form method="post" enctype="multipart/form-data" novalidate>
+                <form method="post" novalidate>
                     <?= csrfField() ?>
                     <input type="hidden" name="return_to" value="<?= h($returnTo) ?>">
                     <div class="row g-3 mb-3">
@@ -279,19 +266,6 @@ renderHeader('Upravit sportovce');
                     <div class="mb-4">
                         <label class="form-label fw-semibold">Poznámky</label>
                         <textarea name="notes" class="form-control" rows="3"><?= h($d['notes'] ?? '') ?></textarea>
-                    </div>
-                    <div class="mb-4">
-                        <label class="form-label fw-semibold">Fotografie</label>
-                        <?php $currentPhoto = photoUrl($athlete['photo'] ?? null, 'athletes'); ?>
-                        <?php if ($currentPhoto): ?>
-                        <div class="mb-2">
-                            <img src="<?= h($currentPhoto) ?>" alt="Fotografie"
-                                 class="rounded" style="height:80px;object-fit:cover;">
-                            <small class="text-muted ms-2">Aktuální fotografie</small>
-                        </div>
-                        <?php endif; ?>
-                        <input type="file" name="photo" class="form-control" accept="image/*">
-                        <div class="form-text">Nahráním nové fotografie se předchozí nahradí.</div>
                     </div>
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-warning fw-bold px-4">
