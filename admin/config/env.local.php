@@ -46,7 +46,7 @@ if (!defined('SESSION_NAME')) define('SESSION_NAME', (string)envValue('TRAINERAP
 if (!defined('SESSION_SECURE')) define('SESSION_SECURE', envValue('TRAINERAPP_SESSION_SECURE', '0') === '1');
 if (!defined('ENABLE_SETUP_ADMIN')) define('ENABLE_SETUP_ADMIN', envValue('TRAINERAPP_ENABLE_SETUP_ADMIN', '0') === '1');
 
-if (!defined('SMTP_HOST'))      define('SMTP_HOST',      (string)envValue('TRAINERAPP_SMTP_HOST', 'smtp.wedos.com'));
+if (!defined('SMTP_HOST'))      define('SMTP_HOST',      (string)envValue('TRAINERAPP_SMTP_HOST', 'wes1-smtp.wedos.net'));
 if (!defined('SMTP_PORT'))      define('SMTP_PORT',      (int)envValue('TRAINERAPP_SMTP_PORT', '587'));
 if (!defined('SMTP_USER'))      define('SMTP_USER',      (string)envValue('TRAINERAPP_SMTP_USER', 'no_reply@reservio.online'));
 if (!defined('SMTP_PASS'))      define('SMTP_PASS',      (string)envValue('TRAINERAPP_SMTP_PASS', '20Tomeska@17'));

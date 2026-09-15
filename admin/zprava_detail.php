@@ -15,6 +15,50 @@ if (!$message) {
 	redirect(BASE_URL . '/admin/zpravy.php');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'resend_unread') {
+	if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
+		flash('danger', 'Neplatný bezpečnostní token.');
+		redirect(BASE_URL . '/admin/zprava_detail.php?id=' . $id);
+	}
+
+	$unreadStmt = $pdo->prepare(
+		'SELECT r.coach_id, c.name, c.username, c.email
+		 FROM admin_message_recipients r
+		 JOIN coaches c ON c.id = r.coach_id
+		 WHERE r.message_id = ? AND r.read_at IS NULL'
+	);
+	$unreadStmt->execute([$id]);
+	$unreadRecipients = $unreadStmt->fetchAll();
+	$queuedCount = 0;
+	$withoutEmailCount = 0;
+
+	foreach ($unreadRecipients as $recipient) {
+		$email = trim((string)($recipient['email'] ?? ''));
+		if ($email === '') {
+			$withoutEmailCount++;
+			continue;
+		}
+		$coachName = trim((string)($recipient['name'] ?? ''));
+		if ($coachName === '') {
+			$coachName = trim((string)($recipient['username'] ?? 'trenér'));
+		}
+		if (sendMessageNotificationEmail($email, $coachName, (string)$message['subject'], $id)) {
+			$queuedCount++;
+		}
+	}
+
+	if ($queuedCount > 0) {
+		processEmailNotificationQueue(200, 'coach_message_notification');
+	}
+
+	$result = 'Znovuodeslání: ' . $queuedCount . ' e-mailů bylo zařazeno ke zpracování.';
+	if ($withoutEmailCount > 0) {
+		$result .= ' Trenéři bez e-mailu: ' . $withoutEmailCount . '.';
+	}
+	flash($queuedCount > 0 ? 'success' : 'warning', $result);
+	redirect(BASE_URL . '/admin/zprava_detail.php?id=' . $id);
+}
+
 // Příjemci se stavem přečtení
 $recipients = $pdo->prepare("
 	SELECT r.*, c.name AS coach_name, c.username, c.email
@@ -45,6 +89,7 @@ $actions = $actions->fetchAll();
 
 $totalCount = count($recipients);
 $readCount  = count(array_filter($recipients, fn($r) => $r['read_at'] !== null));
+$unreadCount = $totalCount - $readCount;
 
 renderAdminHeader('Detail zprávy');
 ?>
@@ -134,6 +179,15 @@ renderAdminHeader('Detail zprávy');
 				</span>
 			</div>
 			<div class="card-body p-0">
+				<?php if ($unreadCount > 0): ?>
+				<form method="post" class="p-3 border-bottom" onsubmit="return confirm('Znovu odeslat e-mail všem <?= $unreadCount ?> nepřečteným trenérům?')">
+					<?= csrfField() ?>
+					<input type="hidden" name="action" value="resend_unread">
+					<button type="submit" class="btn btn-outline-primary w-100">
+						<i class="fas fa-rotate-right me-1"></i>Znovu poslat nepřečteným (<?= $unreadCount ?>)
+					</button>
+				</form>
+				<?php endif; ?>
 				<?php if (empty($recipients)): ?>
 				<div class="p-3 text-muted">Žádní příjemci.</div>
 				<?php else: ?>

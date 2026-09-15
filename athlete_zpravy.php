@@ -86,7 +86,7 @@ $tab = in_array($_GET['tab'] ?? '', ['sent']) ? 'sent' : 'inbox';
 
 // Přijaté zprávy (od trenéra)
 $inboxStmt = $pdo->prepare(
-    'SELECT id, subject, body, read_at, created_at
+    'SELECT id, subject, body, attachment_path, attachment_name, read_at, created_at
      FROM athlete_notifications
      WHERE athlete_id = ?
      ORDER BY created_at DESC, id DESC'
@@ -181,6 +181,7 @@ renderAthleteHeader('Zprávy', false, true);
                 <td>
                     <div class="fw-semibold"><?= h((string)$m['subject']) ?></div>
                     <div class="small text-muted mt-1" style="white-space:pre-wrap"><?= h((string)$m['body']) ?></div>
+                    <?php if (!empty($m['attachment_name'])): ?><a href="<?= BASE_URL ?>/uploads/messages/<?= rawurlencode((string)$m['attachment_path']) ?>" target="_blank" class="small d-inline-block mt-2"><i class="fas fa-paperclip me-1"></i><?= h((string)$m['attachment_name']) ?></a><?php endif; ?>
                 </td>
                 <td class="text-nowrap small"><?= formatDateTime((string)$m['created_at']) ?></td>
                 <td>

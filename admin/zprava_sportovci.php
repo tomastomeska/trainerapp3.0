@@ -5,8 +5,9 @@ require_once __DIR__ . '/header.php';
 requireAdminLogin();
 $pdo = getDB();
 
-$activeAthletesStmt = $pdo->query('SELECT id FROM athletes WHERE login_enabled = 1');
-$activeAthleteIds = array_map(static fn(array $row): int => (int)$row['id'], $activeAthletesStmt->fetchAll());
+$activeAthletesStmt = $pdo->query('SELECT id, first_name, last_name, email FROM athletes WHERE login_enabled = 1');
+$activeAthletes = $activeAthletesStmt->fetchAll();
+$activeAthleteIds = array_map(static fn(array $row): int => (int)$row['id'], $activeAthletes);
 $errors = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -27,20 +28,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Nenachází se žádný sportovec s aktivním přístupem do aplikace.';
     }
 
+    $attachmentPath = null;
+    $attachmentName = null;
+    if (!empty($_FILES['attachment']['name'])) {
+        $upload = $_FILES['attachment'];
+        if ((int)$upload['error'] !== UPLOAD_ERR_OK) {
+            $errors[] = 'Chyba při nahrávání přílohy (kód ' . (int)$upload['error'] . ').';
+        } elseif ((int)$upload['size'] > 50 * 1024 * 1024) {
+            $errors[] = 'Příloha nesmí být větší než 50 MB.';
+        } else {
+            $extension = strtolower(pathinfo((string)$upload['name'], PATHINFO_EXTENSION));
+            $allowedExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'zip', 'rar', '7z', 'mp4', 'mov', 'avi', 'mkv', 'txt', 'ppt', 'pptx'];
+            if (!in_array($extension, $allowedExtensions, true)) {
+                $errors[] = 'Typ souboru .' . h($extension) . ' není povolen.';
+            } else {
+                $uploadDir = dirname(__DIR__) . '/uploads/messages/';
+                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+                    $errors[] = 'Přílohu se nepodařilo uložit.';
+                } else {
+                    $attachmentName = mb_substr((string)$upload['name'], 0, 255, 'UTF-8');
+                    $attachmentPath = time() . '_' . bin2hex(random_bytes(4)) . '.' . $extension;
+                    if (!move_uploaded_file((string)$upload['tmp_name'], $uploadDir . $attachmentPath)) {
+                        $attachmentPath = null;
+                        $attachmentName = null;
+                        $errors[] = 'Přílohu se nepodařilo uložit.';
+                    }
+                }
+            }
+        }
+    }
+
     if (empty($errors)) {
         try {
             $pdo->beginTransaction();
-            $broadcastStmt = $pdo->prepare('INSERT INTO admin_athlete_broadcasts (subject, body) VALUES (?, ?)');
-            $broadcastStmt->execute([$subject, $body]);
+            $broadcastStmt = $pdo->prepare('INSERT INTO admin_athlete_broadcasts (subject, body, attachment_path, attachment_name) VALUES (?, ?, ?, ?)');
+            $broadcastStmt->execute([$subject, $body, $attachmentPath, $attachmentName]);
             $broadcastId = (int)$pdo->lastInsertId();
-            $messageStmt = $pdo->prepare('INSERT INTO athlete_notifications (athlete_id, subject, body) VALUES (?, ?, ?)');
+            $messageStmt = $pdo->prepare('INSERT INTO athlete_notifications (athlete_id, subject, body, attachment_path, attachment_name) VALUES (?, ?, ?, ?, ?)');
             $recipientStmt = $pdo->prepare('INSERT INTO admin_athlete_broadcast_recipients (broadcast_id, athlete_id, notification_id) VALUES (?, ?, ?)');
             foreach ($activeAthleteIds as $athleteId) {
-                $messageStmt->execute([$athleteId, $subject, $body]);
+                $messageStmt->execute([$athleteId, $subject, $body, $attachmentPath, $attachmentName]);
                 $recipientStmt->execute([$broadcastId, $athleteId, (int)$pdo->lastInsertId()]);
             }
             $pdo->commit();
-            flash('success', 'Zpráva byla odeslána ' . count($activeAthleteIds) . ' sportovcům s aktivním přístupem.');
+
+            $emailSent = 0;
+            foreach ($activeAthletes as $athlete) {
+                if (empty($athlete['email'])) {
+                    continue;
+                }
+                $athleteName = trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']);
+                if (sendAthleteMessageNotificationEmail((string)$athlete['email'], $athleteName !== '' ? $athleteName : 'sportovče', $subject, $body)) {
+                    $emailSent++;
+                }
+            }
+            if ($emailSent > 0) {
+                processEmailNotificationQueue(200, 'athlete_message_notification');
+            }
+            $emailNote = $emailSent > 0 ? ' E-mailová upozornění: ' . $emailSent . '.' : ' E-mailová upozornění se nepodařilo zařadit.';
+            flash('success', 'Zpráva byla odeslána ' . count($activeAthleteIds) . ' sportovcům s aktivním přístupem.' . $emailNote);
             redirect(BASE_URL . '/admin/zprava_sportovci_detail.php?id=' . $broadcastId);
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) {
@@ -79,7 +125,7 @@ renderAdminHeader('Zpráva sportovcům');
             <i class="fas fa-users me-2"></i>Zpráva se odešle všem sportovcům s aktivním přístupem do aplikace, bez ohledu na jejich trenéra.
             <strong class="ms-1">Příjemců: <?= count($activeAthleteIds) ?></strong>
         </div>
-        <form method="post" class="card shadow-sm">
+        <form method="post" enctype="multipart/form-data" class="card shadow-sm">
             <div class="card-body p-4">
                 <?= csrfField() ?>
                 <div class="mb-3">
@@ -89,6 +135,10 @@ renderAdminHeader('Zpráva sportovcům');
                 <div class="mb-0">
                     <label for="body" class="form-label fw-semibold">Text zprávy <span class="text-danger">*</span></label>
                     <textarea id="body" name="body" class="form-control" rows="10" maxlength="4000" required><?= h($_POST['body'] ?? '') ?></textarea>
+                </div>
+                <div class="mt-3">
+                    <label for="attachment" class="form-label fw-semibold">Příloha <small class="text-muted">(max. 50 MB, dokument, obrázek nebo video)</small></label>
+                    <input type="file" id="attachment" name="attachment" class="form-control" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.jpg,.jpeg,.png,.gif,.webp,.zip,.rar,.7z,.mp4,.mov,.avi,.mkv,.txt,.ppt,.pptx">
                 </div>
             </div>
             <div class="card-footer d-flex justify-content-between align-items-center flex-wrap gap-2">

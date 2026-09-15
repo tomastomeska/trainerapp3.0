@@ -2284,6 +2284,8 @@ function ensureSchemaUpgrades(PDO $pdo): void {
             `athlete_id` INT NOT NULL,
             `subject`    VARCHAR(255) NOT NULL,
             `body`       TEXT NOT NULL,
+            `attachment_path` VARCHAR(500) NULL,
+            `attachment_name` VARCHAR(255) NULL,
             `read_at`    DATETIME NULL,
             `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             KEY `idx_athlete_notifications_athlete` (`athlete_id`, `created_at`),
@@ -2291,16 +2293,38 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
 
+    $stmtAthleteNotificationAttachmentPath = $pdo->query("SHOW COLUMNS FROM athlete_notifications LIKE 'attachment_path'");
+    if (!$stmtAthleteNotificationAttachmentPath->fetch()) {
+        $pdo->exec("ALTER TABLE athlete_notifications ADD COLUMN `attachment_path` VARCHAR(500) NULL AFTER `body`");
+    }
+
+    $stmtAthleteNotificationAttachmentName = $pdo->query("SHOW COLUMNS FROM athlete_notifications LIKE 'attachment_name'");
+    if (!$stmtAthleteNotificationAttachmentName->fetch()) {
+        $pdo->exec("ALTER TABLE athlete_notifications ADD COLUMN `attachment_name` VARCHAR(255) NULL AFTER `attachment_path`");
+    }
+
     // Hromadné zprávy administrátora pro sportovce včetně přehledu přečtení.
     $pdo->exec(" 
         CREATE TABLE IF NOT EXISTS `admin_athlete_broadcasts` (
             `id`         INT AUTO_INCREMENT PRIMARY KEY,
             `subject`    VARCHAR(255) NOT NULL,
             `body`       TEXT NOT NULL,
+            `attachment_path` VARCHAR(500) NULL,
+            `attachment_name` VARCHAR(255) NULL,
             `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             KEY `idx_admin_athlete_broadcasts_created` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
+
+    $stmtBroadcastAttachmentPath = $pdo->query("SHOW COLUMNS FROM admin_athlete_broadcasts LIKE 'attachment_path'");
+    if (!$stmtBroadcastAttachmentPath->fetch()) {
+        $pdo->exec("ALTER TABLE admin_athlete_broadcasts ADD COLUMN `attachment_path` VARCHAR(500) NULL AFTER `body`");
+    }
+
+    $stmtBroadcastAttachmentName = $pdo->query("SHOW COLUMNS FROM admin_athlete_broadcasts LIKE 'attachment_name'");
+    if (!$stmtBroadcastAttachmentName->fetch()) {
+        $pdo->exec("ALTER TABLE admin_athlete_broadcasts ADD COLUMN `attachment_name` VARCHAR(255) NULL AFTER `attachment_path`");
+    }
 
     $pdo->exec(" 
         CREATE TABLE IF NOT EXISTS `admin_athlete_broadcast_recipients` (

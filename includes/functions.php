@@ -1191,6 +1191,7 @@ if (!function_exists('ensureEmailNotificationTemplatesTable')) {
                 'birthday_warning' => ['name' => 'Připomenutí narozenin', 'description' => 'Notifikace zasílaná několik dní před narozeninami sportovce.', 'subject' => 'Blíží se narozeniny: {athlete_name} ({age} let)', 'body' => "Dobrý den, {coach_name},\n\nváš sportovec {athlete_name} bude mít za {days_left} dní narozeniny ({birth_date}).\n\nV den narozenin mu/jí bude {age} let.\n\nS pozdravem\nTrainerApp – automatické notifikace", 'is_active' => 1],
                 'birthday_today' => ['name' => 'Dnes má narozeniny', 'description' => 'Notifikace o narozeninách ve stejný den.', 'subject' => 'Narozeniny: {athlete_name} slaví dnes {age} let!', 'body' => "Dobrý den, {coach_name},\n\ndnes slaví narozeniny váš sportovec {athlete_name} – je mu/jí {age} let!\n\nNezapomeňte mu/jí popřát.\n\nS pozdravem\nTrainerApp – automatické notifikace", 'is_active' => 1],
                 'coach_message' => ['name' => 'Nová zpráva trenérovi', 'description' => 'E-mail při nové zprávě v administraci.', 'subject' => 'Nová zpráva v TrainerApp: {subject}', 'body' => "Dobrý den, {coach_name},\n\nobdrželi jste novou zprávu v aplikaci TrainerApp.\n\nPředmět: {subject}\n\nPřejít do aplikace: {link}\n\nTrainerApp – automatické notifikace", 'is_active' => 1],
+                'athlete_message' => ['name' => 'Nová zpráva sportovci', 'description' => 'E-mail při hromadné zprávě administrátora sportovcům.', 'subject' => 'Nová zpráva v TrainerApp: {subject}', 'body' => "Ahoj {athlete_name},\n\nobdrželi jste novou zprávu v aplikaci TrainerApp.\n\nPředmět: {subject}\n\n{message}\n\nPřejít do zpráv: {link}\n\nTrainerApp – automatické notifikace", 'is_active' => 1],
                 'calendar_notification' => ['name' => 'Kalendářová notifikace', 'description' => 'E-mail sportovci při změně nebo schválení události v kalendáři.', 'subject' => '{subject}', 'body' => "Ahoj {athlete_name},\n\n{message}\n\nDetail najdeš po přihlášení do TrainerApp.\n\nTrainerApp", 'is_active' => 1],
                 'support_ticket' => ['name' => 'Nový ticket podpory', 'description' => 'Při vytvoření nového tiketu v podpoře.', 'subject' => 'Nový ticket podpory #{ticket_id}: {subject}', 'body' => "Dobrý den,\n\nv aplikaci byl vytvořen nový ticket podpory #{ticket_id}.\n\nOdesílatel: {reporter}\nPředmět: {subject}\nTyp problému: {issue_type}\n\nPopis: {description}\n\nDetail: {ticket_url}", 'is_active' => 1],
                 'coach_access_request' => ['name' => 'Žádost o přístup trenéra', 'description' => 'Notifikace majiteli při nové žádosti o přístup trenéra.', 'subject' => 'Nová žádost o přístup trenéra', 'body' => "Nová žádost o přístup trenéra\n\nJméno: {name}\nE-mail: {email}\nČas: {created_at}\n\n{note}", 'is_active' => 1],
@@ -5178,6 +5179,9 @@ function getMailRequestTimeout(): int {
  */
 function _configureMail(object $mail): void {
     $host = defined('SMTP_HOST') ? SMTP_HOST : '';
+  if (strcasecmp($host, 'smtp.wedos.com') === 0) {
+    $host = 'wes1-smtp.wedos.net';
+  }
     $smtpTimeout = getMailRequestTimeout();
 
     if ($host === '') {
@@ -5186,14 +5190,18 @@ function _configureMail(object $mail): void {
         $mail->setFrom(SMTP_FROM, SMTP_FROM_NAME);
         return;
     }
+    $port = defined('SMTP_PORT') ? (int)SMTP_PORT : 587;
     $mail->isSMTP();
     $mail->Host       = $host;
     $mail->SMTPAuth   = true;
     $mail->AuthType   = 'LOGIN';
     $mail->Username   = SMTP_USER;
     $mail->Password   = SMTP_PASS;
-    $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-    $mail->Port       = defined('SMTP_PORT') ? SMTP_PORT : 587;
+    // WEDOS: 465 vyzaduje implicitni SSL/TLS, 587/25 pouzivaji STARTTLS.
+    $mail->SMTPSecure = $port === 465
+        ? PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS
+        : PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+    $mail->Port       = $port;
     $mail->Timeout    = $smtpTimeout;
     $mail->CharSet    = 'UTF-8';
     $mail->SMTPOptions = ['ssl' => [
@@ -5488,6 +5496,70 @@ function sendAthleteCalendarNotificationEmailNow(string $toEmail, string $athlet
   }
 }
 
+function sendAthleteMessageNotificationEmail(string $toEmail, string $athleteName, string $subject, string $message): bool {
+  if (!isEmailNotificationEnabled('athlete_message')) {
+    return true;
+  }
+
+  $excerpt = mb_substr(trim($message), 0, 500, 'UTF-8');
+  if (mb_strlen(trim($message), 'UTF-8') > 500) {
+    $excerpt .= '...';
+  }
+
+  if (isEmailQueueEnabled() && emailNotificationQueueTableAvailable()) {
+    return enqueueEmailNotificationJob('athlete_message_notification', $toEmail, $subject, [
+      'athlete_name' => $athleteName,
+      'message' => $excerpt,
+    ]);
+  }
+
+  if (isEmailQueueEnabled() && !emailNotificationQueueTableAvailable()) {
+    error_log('Skipping immediate athlete message email to avoid blocking request; email queue table is unavailable.');
+    return false;
+  }
+
+  return sendAthleteMessageNotificationEmailNow($toEmail, $athleteName, $subject, $excerpt);
+}
+
+function sendAthleteMessageNotificationEmailNow(string $toEmail, string $athleteName, string $subject, string $message): bool {
+  $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
+  if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
+    return false;
+  }
+  require_once $phpmailerSrc . '/Exception.php';
+  require_once $phpmailerSrc . '/PHPMailer.php';
+  require_once $phpmailerSrc . '/SMTP.php';
+
+  $safeName = htmlspecialchars($athleteName, ENT_QUOTES, 'UTF-8');
+  $safeMessage = nl2br(htmlspecialchars($message, ENT_QUOTES, 'UTF-8'));
+  $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['SERVER_PORT'] ?? '') === '443');
+  $scheme = $isHttps ? 'https' : 'http';
+  $host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
+  $link = $scheme . '://' . $host . BASE_URL . '/athlete_zpravy.php';
+
+  $htmlBody = "<p>Ahoj <strong>{$safeName}</strong>,</p>"
+    . "<p>obdrželi jste novou zprávu v aplikaci <strong>TrainerApp</strong>.</p>"
+    . "<p><strong>Předmět:</strong> " . htmlspecialchars($subject, ENT_QUOTES, 'UTF-8') . "</p>"
+    . "<p>{$safeMessage}</p>"
+    . "<p><a href=\"{$link}\" style=\"background:#0d6efd;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none\">Přejít do zpráv</a></p>"
+    . "<hr><p style=\"color:#888;font-size:.85em\">TrainerApp – automatické notifikace</p>";
+
+  $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+  try {
+    _configureMail($mail);
+    $mail->addAddress($toEmail);
+    $mail->isHTML(true);
+    $mail->Subject = 'Nová zpráva v TrainerApp: ' . $subject;
+    $mail->Body = $htmlBody;
+    $mail->AltBody = "Ahoj {$athleteName},\n\nobdrželi jste novou zprávu v aplikaci TrainerApp.\nPředmět: {$subject}\n\n{$message}\n\nPřejít do zpráv: {$link}";
+    $mail->send();
+    return true;
+  } catch (\Exception $e) {
+    error_log('sendAthleteMessageNotificationEmail error: ' . $mail->ErrorInfo . ' | ' . $e->getMessage());
+    return false;
+  }
+}
+
 function sendGalleryNotificationEmail(
   string $toEmail,
   string $recipientName,
@@ -5617,10 +5689,10 @@ function createCoachSystemMessage(int $coachId, string $subject, string $body, b
   return $messageId;
 }
 
-function createAthleteNotification(int $athleteId, string $subject, string $body): int {
+function createAthleteNotification(int $athleteId, string $subject, string $body, ?string $attachmentPath = null, ?string $attachmentName = null): int {
   $pdo = getDB();
-  $stmt = $pdo->prepare('INSERT INTO athlete_notifications (athlete_id, subject, body) VALUES (?, ?, ?)');
-  $stmt->execute([$athleteId, $subject, $body]);
+  $stmt = $pdo->prepare('INSERT INTO athlete_notifications (athlete_id, subject, body, attachment_path, attachment_name) VALUES (?, ?, ?, ?, ?)');
+  $stmt->execute([$athleteId, $subject, $body, $attachmentPath, $attachmentName]);
   return (int)$pdo->lastInsertId();
 }
 
@@ -5983,6 +6055,9 @@ function sendTestEmail(string $toEmail): string {
     require_once $phpmailerSrc . '/SMTP.php';
 
     $host     = defined('SMTP_HOST') ? SMTP_HOST : '';
+    if (strcasecmp($host, 'smtp.wedos.com') === 0) {
+      $host = 'wes1-smtp.wedos.net';
+    }
     $useSendmail = ($host === '');
 
     $mail = new PHPMailer\PHPMailer\PHPMailer(true);
@@ -5994,6 +6069,7 @@ function sendTestEmail(string $toEmail): string {
             $mail->CharSet = 'UTF-8';
             $mail->setFrom(SMTP_FROM, SMTP_FROM_NAME);
         } else {
+            $port = defined('SMTP_PORT') ? (int)SMTP_PORT : 587;
             $mail->isSMTP();
             $mail->SMTPDebug   = 3;
             $mail->Debugoutput = function (string $str, int $level) use (&$debugLog): void {
@@ -6004,8 +6080,11 @@ function sendTestEmail(string $toEmail): string {
             $mail->AuthType   = 'LOGIN';
             $mail->Username   = SMTP_USER;
             $mail->Password   = SMTP_PASS;
-            $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-            $mail->Port       = defined('SMTP_PORT') ? SMTP_PORT : 587;
+            // WEDOS: 465 vyzaduje implicitni SSL/TLS, 587/25 pouzivaji STARTTLS.
+            $mail->SMTPSecure = $port === 465
+                ? PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS
+                : PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Port       = $port;
             $mail->CharSet    = 'UTF-8';
             $mail->SMTPOptions = ['ssl' => ['verify_peer' => false, 'verify_peer_name' => false, 'allow_self_signed' => true, 'ciphers' => 'DEFAULT:@SECLEVEL=0']];
             $mail->setFrom(SMTP_FROM, SMTP_FROM_NAME);
@@ -6940,6 +7019,10 @@ function processEmailNotificationQueue(int $limit = 20, ?string $templateKeyFilt
         $athleteName = trim((string)($payload['athlete_name'] ?? 'sportovec'));
         $message = trim((string)($payload['message'] ?? ''));
         $sent = sendAthleteCalendarNotificationEmailNow($recipientEmail, $athleteName, $subject, $message);
+      } elseif ($templateKey === 'athlete_message_notification') {
+        $athleteName = trim((string)($payload['athlete_name'] ?? 'sportovec'));
+        $message = trim((string)($payload['message'] ?? ''));
+        $sent = sendAthleteMessageNotificationEmailNow($recipientEmail, $athleteName, $subject, $message);
       } elseif ($templateKey === 'gallery_notification') {
         $recipientName = trim((string)($payload['recipient_name'] ?? 'uživateli'));
         $recipientRole = trim((string)($payload['recipient_role'] ?? 'coach'));

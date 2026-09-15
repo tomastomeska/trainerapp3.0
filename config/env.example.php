@@ -30,6 +30,7 @@ define('SESSION_SECURE', false);
 define('ENABLE_SETUP_ADMIN', false);
 
 // SMTP (volitelne)
+// WEDOS: server wes1-smtp.wedos.net, port 587 (STARTTLS, doporuceno), 465 (SSL/TLS) nebo 25 (STARTTLS).
 define('SMTP_HOST',      '');
 define('SMTP_PORT',      587);
 define('SMTP_TIMEOUT',   8);

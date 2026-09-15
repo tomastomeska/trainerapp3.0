@@ -1487,6 +1487,9 @@ HTML;
  */
 function _configureMail(object $mail): void {
     $host = defined('SMTP_HOST') ? SMTP_HOST : '';
+  if (strcasecmp($host, 'smtp.wedos.com') === 0) {
+    $host = 'wes1-smtp.wedos.net';
+  }
   $smtpTimeout = max(3, (int)(defined('SMTP_TIMEOUT') ? SMTP_TIMEOUT : 8));
 
     if ($host === '') {
@@ -1495,14 +1498,18 @@ function _configureMail(object $mail): void {
         $mail->setFrom(SMTP_FROM, SMTP_FROM_NAME);
         return;
     }
+    $port = defined('SMTP_PORT') ? (int)SMTP_PORT : 587;
     $mail->isSMTP();
     $mail->Host       = $host;
     $mail->SMTPAuth   = true;
     $mail->AuthType   = 'LOGIN';
     $mail->Username   = SMTP_USER;
     $mail->Password   = SMTP_PASS;
-    $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-    $mail->Port       = defined('SMTP_PORT') ? SMTP_PORT : 587;
+    // WEDOS: 465 vyzaduje implicitni SSL/TLS, 587/25 pouzivaji STARTTLS.
+    $mail->SMTPSecure = $port === 465
+        ? PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS
+        : PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+    $mail->Port       = $port;
     $mail->Timeout    = $smtpTimeout;
     $mail->CharSet    = 'UTF-8';
     $mail->SMTPOptions = ['ssl' => [
@@ -1629,6 +1636,9 @@ function sendTestEmail(string $toEmail): string {
     require_once $phpmailerSrc . '/SMTP.php';
 
     $host     = defined('SMTP_HOST') ? SMTP_HOST : '';
+    if (strcasecmp($host, 'smtp.wedos.com') === 0) {
+      $host = 'wes1-smtp.wedos.net';
+    }
     $useSendmail = ($host === '');
 
     $mail = new PHPMailer\PHPMailer\PHPMailer(true);
@@ -1640,6 +1650,7 @@ function sendTestEmail(string $toEmail): string {
             $mail->CharSet = 'UTF-8';
             $mail->setFrom(SMTP_FROM, SMTP_FROM_NAME);
         } else {
+            $port = defined('SMTP_PORT') ? (int)SMTP_PORT : 587;
             $mail->isSMTP();
             $mail->SMTPDebug   = 3;
             $mail->Debugoutput = function (string $str, int $level) use (&$debugLog): void {
@@ -1650,8 +1661,11 @@ function sendTestEmail(string $toEmail): string {
             $mail->AuthType   = 'LOGIN';
             $mail->Username   = SMTP_USER;
             $mail->Password   = SMTP_PASS;
-            $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
-            $mail->Port       = defined('SMTP_PORT') ? SMTP_PORT : 587;
+            // WEDOS: 465 vyzaduje implicitni SSL/TLS, 587/25 pouzivaji STARTTLS.
+            $mail->SMTPSecure = $port === 465
+                ? PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS
+                : PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Port       = $port;
             $mail->CharSet    = 'UTF-8';
             $mail->SMTPOptions = ['ssl' => ['verify_peer' => false, 'verify_peer_name' => false, 'allow_self_signed' => true, 'ciphers' => 'DEFAULT:@SECLEVEL=0']];
             $mail->setFrom(SMTP_FROM, SMTP_FROM_NAME);
