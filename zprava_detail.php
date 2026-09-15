@@ -147,10 +147,11 @@ renderHeader('Zpráva: ' . $message['subject']);
     <div class="card-footer">
         <i class="fas fa-paperclip me-1 text-muted"></i>
         <strong>Příloha:</strong>
-        <a href="<?= BASE_URL ?>/uploads/messages/<?= rawurlencode($message['attachment_path']) ?>"
-           target="_blank" class="ms-1">
+        <button type="button" class="btn btn-link p-0 border-0 align-baseline ms-1 message-attachment"
+                data-attachment-url="<?= h(BASE_URL . '/uploads/messages/' . rawurlencode((string)$message['attachment_path'])) ?>"
+                data-attachment-name="<?= h((string)$message['attachment_name']) ?>">
             <?= h($message['attachment_name']) ?>
-        </a>
+        </button>
     </div>
     <?php endif; ?>
 </div>
@@ -274,6 +275,20 @@ renderHeader('Zpráva: ' . $message['subject']);
 </div>
 </div>
 
+<div class="modal fade" id="messageAttachmentModal" tabindex="-1" aria-labelledby="messageAttachmentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered" style="height:calc(100vh - 2rem)">
+        <div class="modal-content h-100 d-flex flex-column overflow-hidden">
+            <div class="modal-header">
+                <h5 class="modal-title text-truncate" id="messageAttachmentModalLabel">Příloha zprávy</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+            </div>
+            <div class="modal-body p-0 flex-grow-1 overflow-hidden" style="min-height:0">
+                <iframe id="messageAttachmentFrame" title="Náhled přílohy zprávy" class="w-100 h-100 border-0 d-block"></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+
 <?php if ($requiresManualConfirm): ?>
 <!-- Modal: musíte potvrdit přečtení -->
 <div class="modal fade" id="leaveModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
@@ -335,6 +350,22 @@ let   confirmed  = false;
 let   pendingUrl = null;
 
 window.addEventListener('load', function() {
+
+const attachmentModalElement = document.getElementById('messageAttachmentModal');
+const attachmentFrame = document.getElementById('messageAttachmentFrame');
+const attachmentTitle = document.getElementById('messageAttachmentModalLabel');
+
+document.querySelectorAll('.message-attachment').forEach(button => {
+    button.addEventListener('click', () => {
+        attachmentTitle.textContent = button.dataset.attachmentName || 'Příloha zprávy';
+        attachmentFrame.src = button.dataset.attachmentUrl;
+        bootstrap.Modal.getOrCreateInstance(attachmentModalElement).show();
+    });
+});
+
+attachmentModalElement.addEventListener('hidden.bs.modal', () => {
+    attachmentFrame.removeAttribute('src');
+});
 
 // ── Prevence odchodu bez potvrzení ─────────────────────────
 if (REQUIRES_MANUAL_CONFIRM) {

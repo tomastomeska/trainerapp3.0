@@ -114,10 +114,11 @@ renderAdminHeader('Detail zprávy');
 			<?php if ($message['attachment_name']): ?>
 			<div class="card-footer">
 				<i class="fas fa-paperclip me-1 text-muted"></i>
-				<a href="<?= BASE_URL ?>/uploads/messages/<?= rawurlencode($message['attachment_path']) ?>"
-				   target="_blank" class="text-decoration-none">
+				<button type="button" class="btn btn-link p-0 border-0 align-baseline text-decoration-none message-attachment"
+						data-attachment-url="<?= h(BASE_URL . '/uploads/messages/' . rawurlencode((string)$message['attachment_path'])) ?>"
+						data-attachment-name="<?= h((string)$message['attachment_name']) ?>">
 					<?= h($message['attachment_name']) ?>
-				</a>
+				</button>
 			</div>
 			<?php endif; ?>
 		</div>
@@ -224,5 +225,32 @@ renderAdminHeader('Detail zprávy');
 		</div>
 	</div>
 </div>
+
+<div class="modal fade" id="messageAttachmentModal" tabindex="-1" aria-labelledby="messageAttachmentModalLabel" aria-hidden="true">
+	<div class="modal-dialog modal-xl modal-dialog-centered" style="height:calc(100vh - 2rem)">
+		<div class="modal-content h-100 d-flex flex-column overflow-hidden">
+			<div class="modal-header">
+				<h5 class="modal-title text-truncate" id="messageAttachmentModalLabel">Příloha zprávy</h5>
+				<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+			</div>
+			<div class="modal-body p-0 flex-grow-1 overflow-hidden" style="min-height:0">
+				<iframe id="messageAttachmentFrame" title="Náhled přílohy zprávy" class="w-100 h-100 border-0 d-block"></iframe>
+			</div>
+		</div>
+	</div>
+</div>
+
+<script>
+document.querySelectorAll('.message-attachment').forEach(function (button) {
+	button.addEventListener('click', function () {
+		document.getElementById('messageAttachmentModalLabel').textContent = button.dataset.attachmentName || 'Příloha zprávy';
+		document.getElementById('messageAttachmentFrame').src = button.dataset.attachmentUrl;
+		bootstrap.Modal.getOrCreateInstance(document.getElementById('messageAttachmentModal')).show();
+	});
+});
+document.getElementById('messageAttachmentModal').addEventListener('hidden.bs.modal', function () {
+	document.getElementById('messageAttachmentFrame').removeAttribute('src');
+});
+</script>
 
 <?php renderAdminFooter(); ?>

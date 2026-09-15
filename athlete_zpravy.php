@@ -181,7 +181,13 @@ renderAthleteHeader('Zprávy', false, true);
                 <td>
                     <div class="fw-semibold"><?= h((string)$m['subject']) ?></div>
                     <div class="small text-muted mt-1" style="white-space:pre-wrap"><?= h((string)$m['body']) ?></div>
-                    <?php if (!empty($m['attachment_name'])): ?><a href="<?= BASE_URL ?>/uploads/messages/<?= rawurlencode((string)$m['attachment_path']) ?>" target="_blank" class="small d-inline-block mt-2"><i class="fas fa-paperclip me-1"></i><?= h((string)$m['attachment_name']) ?></a><?php endif; ?>
+                    <?php if (!empty($m['attachment_name'])): ?>
+                    <button type="button" class="btn btn-link btn-sm p-0 small d-inline-block mt-2 message-attachment"
+                            data-attachment-url="<?= h(BASE_URL . '/uploads/messages/' . rawurlencode((string)$m['attachment_path'])) ?>"
+                            data-attachment-name="<?= h((string)$m['attachment_name']) ?>">
+                        <i class="fas fa-paperclip me-1"></i><?= h((string)$m['attachment_name']) ?>
+                    </button>
+                    <?php endif; ?>
                 </td>
                 <td class="text-nowrap small"><?= formatDateTime((string)$m['created_at']) ?></td>
                 <td>
@@ -251,6 +257,20 @@ renderAthleteHeader('Zprávy', false, true);
 
 <?php endif; ?>
 
+<div class="modal fade" id="messageAttachmentModal" tabindex="-1" aria-labelledby="messageAttachmentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered" style="height:calc(100vh - 2rem)">
+        <div class="modal-content h-100 d-flex flex-column overflow-hidden">
+            <div class="modal-header">
+                <h5 class="modal-title text-truncate" id="messageAttachmentModalLabel">Příloha zprávy</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+            </div>
+            <div class="modal-body p-0 flex-grow-1 overflow-hidden" style="min-height:0">
+                <iframe id="messageAttachmentFrame" title="Náhled přílohy zprávy" class="w-100 h-100 border-0 d-block"></iframe>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Modal: napsat zprávu trenérovi -->
 <div class="modal fade" id="composeModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
@@ -283,6 +303,22 @@ renderAthleteHeader('Zprávy', false, true);
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    const attachmentModalElement = document.getElementById('messageAttachmentModal');
+    const attachmentFrame = document.getElementById('messageAttachmentFrame');
+    const attachmentTitle = document.getElementById('messageAttachmentModalLabel');
+
+    document.querySelectorAll('.message-attachment').forEach(function (button) {
+        button.addEventListener('click', function () {
+            attachmentTitle.textContent = button.dataset.attachmentName || 'Příloha zprávy';
+            attachmentFrame.src = button.dataset.attachmentUrl;
+            bootstrap.Modal.getOrCreateInstance(attachmentModalElement).show();
+        });
+    });
+
+    attachmentModalElement.addEventListener('hidden.bs.modal', function () {
+        attachmentFrame.removeAttribute('src');
+    });
+
     const selectAll = document.getElementById('bulkSelectAllAthlete');
     const submitBtn = document.getElementById('btnBulkReadAthlete');
 
