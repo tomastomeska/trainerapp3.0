@@ -46,6 +46,20 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
             );
             $agreementAlertStmt->execute([(int)$athlete['id'], (int)$athlete['coach_id']]);
             $hasPendingAgreement = ((int)$agreementAlertStmt->fetchColumn()) > 0;
+
+            $adminChatTable = $pdo->query("SHOW TABLES LIKE 'admin_athlete_chat_messages'");
+            if ($adminChatTable !== false && (bool)$adminChatTable->fetchColumn()) {
+                $adminChatUnreadStmt = $pdo->prepare("SELECT COUNT(*) FROM admin_athlete_chat_messages WHERE athlete_id = ? AND sender = 'admin' AND athlete_read_at IS NULL");
+                $adminChatUnreadStmt->execute([(int)$athlete['id']]);
+                $unread += (int)$adminChatUnreadStmt->fetchColumn();
+            }
+
+            $coachChatTable = $pdo->query("SHOW TABLES LIKE 'coach_athlete_chat_messages'");
+            if ($coachChatTable !== false && (bool)$coachChatTable->fetchColumn()) {
+                $coachChatUnreadStmt = $pdo->prepare("SELECT COUNT(*) FROM coach_athlete_chat_messages WHERE athlete_id = ? AND sender = 'coach' AND athlete_read_at IS NULL");
+                $coachChatUnreadStmt->execute([(int)$athlete['id']]);
+                $unread += (int)$coachChatUnreadStmt->fetchColumn();
+            }
         } catch (Throwable $e) {
             $unread = 0;
             $unreadInfo = 0;

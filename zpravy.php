@@ -16,6 +16,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $action = $_POST['action'] ?? '';
 
+    if ($action === 'send_chat_to_admin') {
+        $chatBody = mb_substr(trim((string)($_POST['chat_body'] ?? '')), 0, 4000, 'UTF-8');
+        if ($chatBody === '') {
+            flash('danger', 'Zadejte prosím text zprávy.');
+            redirect(BASE_URL . '/zpravy.php?tab=admin_chat');
+        }
+
+        try {
+            $pdo->prepare(
+                "INSERT INTO admin_coach_chat_messages (coach_id, sender, body, coach_read_at) VALUES (?, 'coach', ?, NOW())"
+            )->execute([$coachId, $chatBody]);
+            $chatMessageId = (int)$pdo->lastInsertId();
+
+            $coach = getCurrentCoach();
+            $coachName = trim((string)($coach['name'] ?? '')) !== '' ? (string)$coach['name'] : trim((string)($coach['username'] ?? 'trenér'));
+            notifyAdminAboutNewCoachChatMessage($coachId, $chatMessageId, $coachName, $chatBody);
+
+            flash('success', 'Zpráva byla odeslána administrátorovi.');
+        } catch (Throwable $e) {
+            error_log('coach admin chat send error: ' . $e->getMessage());
+            flash('danger', 'Chat s administrátorem ještě není na této instanci dostupný.');
+        }
+        redirect(BASE_URL . '/zpravy.php?tab=admin_chat');
+    }
+
     if ($action === 'send_bulk_to_athletes') {
         $subject = trim((string)($_POST['subject'] ?? ''));
         $body = trim((string)($_POST['body'] ?? ''));
@@ -128,7 +153,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     redirect(BASE_URL . '/zpravy.php' . ($redirectTab ? '?tab=' . urlencode($redirectTab) : ''));
 }
 
-$tab = in_array($_GET['tab'] ?? '', ['archived','deleted','sent_athletes'], true) ? (string)$_GET['tab'] : 'inbox';
+$tab = in_array($_GET['tab'] ?? '', ['archived','deleted','sent_athletes','admin_chat'], true) ? (string)$_GET['tab'] : 'inbox';
+
+// Individuální chat s administrátorem (tabulka nemusí existovat, dokud neproběhne migrace)
+$adminChatTableExists = false;
+try {
+    $chatTableCheck = $pdo->query("SHOW TABLES LIKE 'admin_coach_chat_messages'");
+    $adminChatTableExists = $chatTableCheck !== false && (bool)$chatTableCheck->fetchColumn();
+} catch (Throwable $e) {
+    $adminChatTableExists = false;
+}
+
+$adminChatMessages = [];
+$adminChatUnread = 0;
+if ($adminChatTableExists) {
+    if ($tab === 'admin_chat') {
+        $pdo->prepare("UPDATE admin_coach_chat_messages SET coach_read_at = NOW() WHERE coach_id = ? AND sender = 'admin' AND coach_read_at IS NULL")
+            ->execute([$coachId]);
+    }
+    $adminChatStmt = $pdo->prepare('SELECT * FROM admin_coach_chat_messages WHERE coach_id = ? ORDER BY created_at ASC, id ASC');
+    $adminChatStmt->execute([$coachId]);
+    $adminChatMessages = $adminChatStmt->fetchAll();
+
+    $adminChatUnreadStmt = $pdo->prepare("SELECT COUNT(*) FROM admin_coach_chat_messages WHERE coach_id = ? AND sender = 'admin' AND coach_read_at IS NULL");
+    $adminChatUnreadStmt->execute([$coachId]);
+    $adminChatUnread = (int)$adminChatUnreadStmt->fetchColumn();
+}
+
+$coachAthleteChatTableExists = false;
+try {
+    $coachAthleteChatCheck = $pdo->query("SHOW TABLES LIKE 'coach_athlete_chat_messages'");
+    $coachAthleteChatTableExists = $coachAthleteChatCheck !== false && (bool)$coachAthleteChatCheck->fetchColumn();
+} catch (Throwable $e) {
+    $coachAthleteChatTableExists = false;
+}
 
 // Zprávy pro tohoto trenéra dle záložky
 $messages = $pdo->prepare("
@@ -190,7 +248,7 @@ if ($tab === 'sent_athletes') {
             $bulkRecipientsByMessage[$mid][] = $recipient;
         }
     }
-} else {
+} elseif ($tab !== 'admin_chat') {
     // Zprávy pro tohoto trenéra dle záložky
     $messagesStmt = $pdo->prepare("
         SELECT m.id, m.subject, m.sent_at, m.attachment_name,
@@ -236,9 +294,16 @@ renderHeader('Zprávy', false, true);
     <h3 class="fw-bold mb-0">
         <i class="fas fa-envelope me-2 text-primary"></i>Moje zprávy
     </h3>
-    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#bulkAthleteMessageModal">
-        <i class="fas fa-paper-plane me-1"></i>Napsat všem sportovcům
-    </button>
+    <div class="d-flex flex-wrap gap-2">
+        <?php if ($coachAthleteChatTableExists): ?>
+        <a href="<?= BASE_URL ?>/coach_chat_mobile.php" class="btn btn-outline-success" target="_blank" rel="noopener">
+            <i class="fas fa-mobile-screen-button me-1"></i>Mobilní chat
+        </a>
+        <?php endif; ?>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#bulkAthleteMessageModal">
+            <i class="fas fa-paper-plane me-1"></i>Napsat všem sportovcům
+        </button>
+    </div>
 </div>
 
 <!-- Záložky -->
@@ -269,7 +334,66 @@ renderHeader('Zprávy', false, true);
             <?php endif; ?>
         </a>
     </li>
+    <li class="nav-item">
+        <a class="nav-link <?= $tab === 'admin_chat' ? 'active' : '' ?>" href="<?= BASE_URL ?>/zpravy.php?tab=admin_chat">
+            <i class="fas fa-comments me-1"></i>Administrátor
+            <?php if ($adminChatUnread > 0): ?>
+            <span class="badge bg-danger ms-1"><?= $adminChatUnread ?></span>
+            <?php endif; ?>
+        </a>
+    </li>
 </ul>
+
+<?php if ($tab === 'admin_chat'): ?>
+
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body" style="max-height:60vh; overflow-y:auto" id="adminChatScroll">
+                <?php if (empty($adminChatMessages)): ?>
+                <div class="text-muted text-center py-4">Zatím žádné zprávy. Napšte administrátorovi svůj dotaz.</div>
+                <?php else: foreach ($adminChatMessages as $m): $isCoachMsg = $m['sender'] === 'coach'; ?>
+                <div class="d-flex mb-3 <?= $isCoachMsg ? 'justify-content-end' : 'justify-content-start' ?>">
+                    <div class="p-2 px-3 rounded-3 <?= $isCoachMsg ? 'bg-primary text-white' : 'bg-light border' ?>" style="max-width:75%">
+                        <div style="white-space:pre-wrap"><?= h((string)$m['body']) ?></div>
+                        <?php if (!empty($m['attachment_name'])): ?>
+                        <div class="mt-1">
+                            <a class="d-inline-flex align-items-center gap-1 small <?= $isCoachMsg ? 'text-white' : 'text-primary' ?>" href="<?= h(BASE_URL . '/uploads/messages/' . rawurlencode((string)$m['attachment_path'])) ?>" target="_blank" rel="noopener">
+                                <i class="fas fa-paperclip"></i><?= h((string)$m['attachment_name']) ?>
+                            </a>
+                        </div>
+                        <?php endif; ?>
+                        <div class="small mt-1 <?= $isCoachMsg ? 'text-white-50' : 'text-muted' ?>">
+                            <?= $isCoachMsg ? 'Vy' : 'Administrátor' ?> · <?= date('d.m.Y H:i', strtotime((string)$m['created_at'])) ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; endif; ?>
+            </div>
+            <div class="card-footer">
+                <form method="post">
+                    <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                    <input type="hidden" name="action" value="send_chat_to_admin">
+                    <div class="mb-2">
+                        <textarea name="chat_body" class="form-control" rows="3" maxlength="4000" placeholder="Napšte zprávu administrátorovi..." required></textarea>
+                    </div>
+                    <div class="d-flex justify-content-end">
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane me-1"></i>Odeslat</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var box = document.getElementById('adminChatScroll');
+    if (box) { box.scrollTop = box.scrollHeight; }
+});
+</script>
+
+<?php else: ?>
 
 <?php if (empty($messages)): ?>
 <div class="alert alert-info"><i class="fas fa-info-circle me-2"></i>
@@ -384,6 +508,8 @@ renderHeader('Zprávy', false, true);
         </table>
     </div>
 </div>
+<?php endif; ?>
+
 <?php endif; ?>
 
 <script>

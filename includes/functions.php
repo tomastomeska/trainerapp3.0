@@ -1195,6 +1195,10 @@ if (!function_exists('ensureEmailNotificationTemplatesTable')) {
                 'calendar_notification' => ['name' => 'Kalendářová notifikace', 'description' => 'E-mail sportovci při změně nebo schválení události v kalendáři.', 'subject' => '{subject}', 'body' => "Ahoj {athlete_name},\n\n{message}\n\nDetail najdeš po přihlášení do TrainerApp.\n\nTrainerApp", 'is_active' => 1],
                 'support_ticket' => ['name' => 'Nový ticket podpory', 'description' => 'Při vytvoření nového tiketu v podpoře.', 'subject' => 'Nový ticket podpory #{ticket_id}: {subject}', 'body' => "Dobrý den,\n\nv aplikaci byl vytvořen nový ticket podpory #{ticket_id}.\n\nOdesílatel: {reporter}\nPředmět: {subject}\nTyp problému: {issue_type}\n\nPopis: {description}\n\nDetail: {ticket_url}", 'is_active' => 1],
                 'coach_access_request' => ['name' => 'Žádost o přístup trenéra', 'description' => 'Notifikace majiteli při nové žádosti o přístup trenéra.', 'subject' => 'Nová žádost o přístup trenéra', 'body' => "Nová žádost o přístup trenéra\n\nJméno: {name}\nE-mail: {email}\nČas: {created_at}\n\n{note}", 'is_active' => 1],
+                'admin_athlete_chat_reply' => ['name' => 'Nová zpráva v chatu (sportovec)', 'description' => 'Notifikace administrátorovi, když sportovec napíše v individuálním chatu (max. 1 e-mail na nepřečtenou sérii zpráv).', 'subject' => 'Nová zpráva v chatu od sportovce: {athlete_name}', 'body' => "V chatu je nová zpráva od sportovce {athlete_name}.\n\nZpráva:\n{message}\n\nOtevřít chat: {link}", 'is_active' => 1],
+                'admin_coach_chat_reply' => ['name' => 'Nová zpráva v chatu (trenér)', 'description' => 'Notifikace administrátorovi, když trenér napíše v individuálním chatu (max. 1 e-mail na nepřečtenou sérii zpráv).', 'subject' => 'Nová zpráva v chatu od trenéra: {coach_name}', 'body' => "V chatu je nová zpráva od trenéra {coach_name}.\n\nZpráva:\n{message}\n\nOtevřít chat: {link}", 'is_active' => 1],
+                'coach_chat_message' => ['name' => 'Nová zpráva v chatu od administrátora', 'description' => 'E-mail trenérovi, když mu administrátor napíše v individuálním chatu.', 'subject' => 'Nová zpráva v chatu od administrátora', 'body' => "Dobrý den, {coach_name},\n\nv chatu vám napsal administrátor TrainerApp.\n\n{message}\n\nOtevřít chat: {link}", 'is_active' => 1],
+                'coach_athlete_chat_reply' => ['name' => 'Nová zpráva v chatu (od sportovce trenérovi)', 'description' => 'Notifikace trenérovi, když mu sportovec napíše v individuálním chatu (max. 1 e-mail na nepřečtenou sérii zpráv).', 'subject' => 'Nová zpráva v chatu od sportovce: {athlete_name}', 'body' => "V chatu je nová zpráva od sportovce {athlete_name}.\n\nZpráva:\n{message}\n\nOtevřít chat: {link}", 'is_active' => 1],
                 'weight_invite' => ['name' => 'Výzva k zadání hmotnosti', 'description' => 'Když trenér žádá sportovce o vyplnění hmotnosti.', 'subject' => 'Výzva k zadání tělesné hmotnosti', 'body' => "Ahoj {athlete_name},\n\ntrenér {coach_name} tě žádá o zadání aktuální tělesné hmotnosti.\n\nVyplň ji zde: {entry_url}\nOdkaz je platný do {expires_at}.\n\nTrainerApp", 'is_active' => 1],
                 'payment_request' => ['name' => 'Výzva k platbě', 'description' => 'Požadavek na platbu pro sportovce.', 'subject' => 'Výzva k platbě - {month_label}', 'body' => "Dobrý den, {athlete_name},\n\nzasílám výzvu k platbě za tréninky za období {month_label}.\n\nČástka: {amount_text}\nÚčet: {account}\nPoznámka: {note}\n\nQR: {qr_url}\n\nS pozdravem\n{coach_name}", 'is_active' => 1],
                 'mycoach_subscription' => ['name' => 'Aktivace MyCoach předplatného', 'description' => 'Předplatné MyCoach aktivováno pro uživatele.', 'subject' => 'Vaše předplatné MyCoach App bylo aktivováno', 'body' => "Dobrý den,\n\npředplatné MyCoach App bylo pro váš účet aktivováno.\n\nPlatnost předplatného: {start_date} – {end_date}\n\nNyní máte plný přístup ke všem funkcím aplikace.\n\nS pozdravem,\nTým MyCoach", 'is_active' => 1],
@@ -5879,6 +5883,390 @@ function sendCoachAccessRequestOwnerEmail(string $ownerEmail, array $request): b
   } catch (\Exception $e) {
     error_log('sendCoachAccessRequestOwnerEmail fallback error: ' . $e->getMessage());
     return false;
+  }
+}
+
+/**
+ * Notifikace administrátorovi, kdyz sportovec odpovi v individualnim chatu (admin_athlete_chat_messages).
+ */
+function sendAdminAthleteChatReplyOwnerEmail(int $athleteId, string $athleteName, string $message): bool {
+  if (!isEmailNotificationEnabled('admin_athlete_chat_reply')) {
+    return true;
+  }
+
+  $ownerEmail = getAdminNotificationEmail();
+  if ($ownerEmail === '') {
+    return false;
+  }
+
+  $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
+  if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
+    return false;
+  }
+  require_once $phpmailerSrc . '/Exception.php';
+  require_once $phpmailerSrc . '/PHPMailer.php';
+  require_once $phpmailerSrc . '/SMTP.php';
+
+  $h = fn(?string $s): string => htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8');
+  $host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
+  $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+  $base = $host !== '' ? $scheme . '://' . $host : 'https://www.reservio.online';
+  $link = $base . BASE_URL . '/admin/zprava_sportovec_chat.php?athlete_id=' . $athleteId;
+  $excerpt = mb_substr(trim($message), 0, 500, 'UTF-8');
+
+  $subject = 'Nová zpráva v chatu od sportovce: ' . $athleteName;
+  $htmlBody = "<p>Dobrý den,</p>"
+    . "<p>v chatu je <strong>nová zpráva</strong> od sportovce <strong>" . $h($athleteName) . "</strong>.</p>"
+    . "<p>" . nl2br($h($excerpt)) . "</p>"
+    . "<p><a href=\"" . $h($link) . "\" style=\"background:#0d6efd;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none\">Otevřít chat</a></p>"
+    . "<hr><p style=\"color:#888;font-size:.85em\">TrainerApp – automatické notifikace. Dokud zprávu nepřečtete v chatu, o dalších zprávách od tohoto sportovce už znovu e-mailem neinformujeme.</p>";
+  $altBody = "V chatu je nová zpráva od sportovce {$athleteName}.\n\n{$excerpt}\n\nOtevřít chat: {$link}";
+
+  $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+  try {
+    _configureMail($mail);
+    $mail->addAddress($ownerEmail);
+    $mail->isHTML(true);
+    $mail->Subject = $subject;
+    $mail->Body = $htmlBody;
+    $mail->AltBody = $altBody;
+    $mail->send();
+    return true;
+  } catch (\Exception $e) {
+    error_log('sendAdminAthleteChatReplyOwnerEmail error: ' . $mail->ErrorInfo . ' | ' . $e->getMessage());
+  }
+
+  try {
+    $fallback = new PHPMailer\PHPMailer\PHPMailer(true);
+    $fallback->isMail();
+    $fallback->CharSet = 'UTF-8';
+    $fallback->setFrom(SMTP_FROM, SMTP_FROM_NAME);
+    $fallback->addAddress($ownerEmail);
+    $fallback->isHTML(true);
+    $fallback->Subject = $subject;
+    $fallback->Body = $htmlBody;
+    $fallback->AltBody = $altBody;
+    $fallback->send();
+    return true;
+  } catch (\Exception $e) {
+    error_log('sendAdminAthleteChatReplyOwnerEmail fallback error: ' . $e->getMessage());
+    return false;
+  }
+}
+
+/**
+ * Posle notifikaci adminovi jen jednou za neprectenou serii zprav od sportovce –
+ * dokud admin chat neprecte (admin_read_at), na dalsi zpravy stejneho sportovce se uz mail neposila.
+ */
+function notifyAdminAboutNewAthleteChatMessage(int $athleteId, int $messageId, string $athleteName, string $message): void {
+  try {
+    $pdo = getDB();
+    $pendingStmt = $pdo->prepare(
+      "SELECT COUNT(*) FROM admin_athlete_chat_messages
+       WHERE athlete_id = ? AND sender = 'athlete' AND admin_read_at IS NULL AND admin_notified_at IS NOT NULL AND id != ?"
+    );
+    $pendingStmt->execute([$athleteId, $messageId]);
+    if ((int)$pendingStmt->fetchColumn() > 0) {
+      return;
+    }
+  } catch (Throwable $e) {
+    error_log('notifyAdminAboutNewAthleteChatMessage check error: ' . $e->getMessage());
+    return;
+  }
+
+  if (sendAdminAthleteChatReplyOwnerEmail($athleteId, $athleteName, $message)) {
+    try {
+      getDB()->prepare('UPDATE admin_athlete_chat_messages SET admin_notified_at = NOW() WHERE id = ?')->execute([$messageId]);
+    } catch (Throwable $e) {
+      error_log('notifyAdminAboutNewAthleteChatMessage mark error: ' . $e->getMessage());
+    }
+  }
+}
+
+/**
+ * Notifikace administrátorovi, kdyz trener napise v individualnim chatu (admin_coach_chat_messages).
+ */
+function sendAdminCoachChatReplyOwnerEmail(int $coachId, string $coachName, string $message): bool {
+  if (!isEmailNotificationEnabled('admin_coach_chat_reply')) {
+    return true;
+  }
+
+  $ownerEmail = getAdminNotificationEmail();
+  if ($ownerEmail === '') {
+    return false;
+  }
+
+  $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
+  if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
+    return false;
+  }
+  require_once $phpmailerSrc . '/Exception.php';
+  require_once $phpmailerSrc . '/PHPMailer.php';
+  require_once $phpmailerSrc . '/SMTP.php';
+
+  $h = fn(?string $s): string => htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8');
+  $host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
+  $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+  $base = $host !== '' ? $scheme . '://' . $host : 'https://www.reservio.online';
+  $link = $base . BASE_URL . '/admin/zprava_trener_chat.php?coach_id=' . $coachId;
+  $excerpt = mb_substr(trim($message), 0, 500, 'UTF-8');
+
+  $subject = 'Nová zpráva v chatu od trenéra: ' . $coachName;
+  $htmlBody = "<p>Dobrý den,</p>"
+    . "<p>v chatu je <strong>nová zpráva</strong> od trenéra <strong>" . $h($coachName) . "</strong>.</p>"
+    . "<p>" . nl2br($h($excerpt)) . "</p>"
+    . "<p><a href=\"" . $h($link) . "\" style=\"background:#0d6efd;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none\">Otevřít chat</a></p>"
+    . "<hr><p style=\"color:#888;font-size:.85em\">TrainerApp – automatické notifikace. Dokud zprávu nepřečtete v chatu, o dalších zprávách od tohoto trenéra už znovu e-mailem neinformujeme.</p>";
+  $altBody = "V chatu je nová zpráva od trenéra {$coachName}.\n\n{$excerpt}\n\nOtevřít chat: {$link}";
+
+  $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+  try {
+    _configureMail($mail);
+    $mail->addAddress($ownerEmail);
+    $mail->isHTML(true);
+    $mail->Subject = $subject;
+    $mail->Body = $htmlBody;
+    $mail->AltBody = $altBody;
+    $mail->send();
+    return true;
+  } catch (\Exception $e) {
+    error_log('sendAdminCoachChatReplyOwnerEmail error: ' . $mail->ErrorInfo . ' | ' . $e->getMessage());
+  }
+
+  try {
+    $fallback = new PHPMailer\PHPMailer\PHPMailer(true);
+    $fallback->isMail();
+    $fallback->CharSet = 'UTF-8';
+    $fallback->setFrom(SMTP_FROM, SMTP_FROM_NAME);
+    $fallback->addAddress($ownerEmail);
+    $fallback->isHTML(true);
+    $fallback->Subject = $subject;
+    $fallback->Body = $htmlBody;
+    $fallback->AltBody = $altBody;
+    $fallback->send();
+    return true;
+  } catch (\Exception $e) {
+    error_log('sendAdminCoachChatReplyOwnerEmail fallback error: ' . $e->getMessage());
+    return false;
+  }
+}
+
+/**
+ * Posle notifikaci adminovi jen jednou za neprectenou serii zprav od trenera –
+ * dokud admin chat neprecte (admin_read_at), na dalsi zpravy stejneho trenera se uz mail neposila.
+ */
+function notifyAdminAboutNewCoachChatMessage(int $coachId, int $messageId, string $coachName, string $message): void {
+  try {
+    $pdo = getDB();
+    $pendingStmt = $pdo->prepare(
+      "SELECT COUNT(*) FROM admin_coach_chat_messages
+       WHERE coach_id = ? AND sender = 'coach' AND admin_read_at IS NULL AND admin_notified_at IS NOT NULL AND id != ?"
+    );
+    $pendingStmt->execute([$coachId, $messageId]);
+    if ((int)$pendingStmt->fetchColumn() > 0) {
+      return;
+    }
+  } catch (Throwable $e) {
+    error_log('notifyAdminAboutNewCoachChatMessage check error: ' . $e->getMessage());
+    return;
+  }
+
+  if (sendAdminCoachChatReplyOwnerEmail($coachId, $coachName, $message)) {
+    try {
+      getDB()->prepare('UPDATE admin_coach_chat_messages SET admin_notified_at = NOW() WHERE id = ?')->execute([$messageId]);
+    } catch (Throwable $e) {
+      error_log('notifyAdminAboutNewCoachChatMessage mark error: ' . $e->getMessage());
+    }
+  }
+}
+
+/**
+ * Notifikace trenerovi, kdyz mu administrator napise v individualnim chatu.
+ */
+function sendCoachChatMessageNotificationEmail(string $toEmail, string $coachName, string $message): bool {
+  if (!isEmailNotificationEnabled('coach_chat_message')) {
+    return true;
+  }
+
+  $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
+  if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
+    return false;
+  }
+  require_once $phpmailerSrc . '/Exception.php';
+  require_once $phpmailerSrc . '/PHPMailer.php';
+  require_once $phpmailerSrc . '/SMTP.php';
+
+  $h = fn(?string $s): string => htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8');
+  $host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
+  $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+  $base = $host !== '' ? $scheme . '://' . $host : 'https://www.reservio.online';
+  $link = $base . BASE_URL . '/zpravy.php?tab=admin_chat';
+  $excerpt = mb_substr(trim($message), 0, 500, 'UTF-8');
+
+  $subject = 'Nová zpráva v chatu od administrátora';
+  $htmlBody = "<p>Dobrý den, <strong>" . $h($coachName) . "</strong>,</p>"
+    . "<p>v chatu vám napsal administrátor TrainerApp.</p>"
+    . "<p>" . nl2br($h($excerpt)) . "</p>"
+    . "<p><a href=\"" . $h($link) . "\" style=\"background:#0d6efd;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none\">Otevřít chat</a></p>"
+    . "<hr><p style=\"color:#888;font-size:.85em\">TrainerApp – automatické notifikace</p>";
+  $altBody = "Dobrý den, {$coachName},\n\nv chatu vám napsal administrátor TrainerApp.\n\n{$excerpt}\n\nOtevřít chat: {$link}";
+
+  $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+  try {
+    _configureMail($mail);
+    $mail->addAddress($toEmail);
+    $mail->isHTML(true);
+    $mail->Subject = $subject;
+    $mail->Body = $htmlBody;
+    $mail->AltBody = $altBody;
+    $mail->send();
+    return true;
+  } catch (\Exception $e) {
+    error_log('sendCoachChatMessageNotificationEmail error: ' . $mail->ErrorInfo . ' | ' . $e->getMessage());
+  }
+
+  try {
+    $fallback = new PHPMailer\PHPMailer\PHPMailer(true);
+    $fallback->isMail();
+    $fallback->CharSet = 'UTF-8';
+    $fallback->setFrom(SMTP_FROM, SMTP_FROM_NAME);
+    $fallback->addAddress($toEmail);
+    $fallback->isHTML(true);
+    $fallback->Subject = $subject;
+    $fallback->Body = $htmlBody;
+    $fallback->AltBody = $altBody;
+    $fallback->send();
+    return true;
+  } catch (\Exception $e) {
+    error_log('sendCoachChatMessageNotificationEmail fallback error: ' . $e->getMessage());
+    return false;
+  }
+}
+
+/**
+ * Notifikace trenerovi, kdyz mu jeho sportovec odpovi v individualnim chatu (coach_athlete_chat_messages).
+ */
+function sendCoachAthleteChatReplyEmail(string $toEmail, string $coachName, string $athleteName, int $athleteId, string $message): bool {
+  if (!isEmailNotificationEnabled('coach_athlete_chat_reply')) {
+    return true;
+  }
+
+  $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
+  if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
+    return false;
+  }
+  require_once $phpmailerSrc . '/Exception.php';
+  require_once $phpmailerSrc . '/PHPMailer.php';
+  require_once $phpmailerSrc . '/SMTP.php';
+
+  $h = fn(?string $s): string => htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8');
+  $host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
+  $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+  $base = $host !== '' ? $scheme . '://' . $host : 'https://www.reservio.online';
+  $link = $base . BASE_URL . '/athlete_chat.php?athlete_id=' . $athleteId;
+  $excerpt = mb_substr(trim($message), 0, 500, 'UTF-8');
+
+  $subject = 'Nová zpráva v chatu od sportovce: ' . $athleteName;
+  $htmlBody = "<p>Dobrý den, <strong>" . $h($coachName) . "</strong>,</p>"
+    . "<p>v chatu je <strong>nová zpráva</strong> od sportovce <strong>" . $h($athleteName) . "</strong>.</p>"
+    . "<p>" . nl2br($h($excerpt)) . "</p>"
+    . "<p><a href=\"" . $h($link) . "\" style=\"background:#0d6efd;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none\">Otevřít chat</a></p>"
+    . "<hr><p style=\"color:#888;font-size:.85em\">TrainerApp – automatické notifikace. Dokud zprávu nepřečtete v chatu, o dalších zprávách od tohoto sportovce už znovu e-mailem neinformujeme.</p>";
+  $altBody = "V chatu je nová zpráva od sportovce {$athleteName}.\n\n{$excerpt}\n\nOtevřít chat: {$link}";
+
+  $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+  try {
+    _configureMail($mail);
+    $mail->addAddress($toEmail);
+    $mail->isHTML(true);
+    $mail->Subject = $subject;
+    $mail->Body = $htmlBody;
+    $mail->AltBody = $altBody;
+    $mail->send();
+    return true;
+  } catch (\Exception $e) {
+    error_log('sendCoachAthleteChatReplyEmail error: ' . $mail->ErrorInfo . ' | ' . $e->getMessage());
+  }
+
+  try {
+    $fallback = new PHPMailer\PHPMailer\PHPMailer(true);
+    $fallback->isMail();
+    $fallback->CharSet = 'UTF-8';
+    $fallback->setFrom(SMTP_FROM, SMTP_FROM_NAME);
+    $fallback->addAddress($toEmail);
+    $fallback->isHTML(true);
+    $fallback->Subject = $subject;
+    $fallback->Body = $htmlBody;
+    $fallback->AltBody = $altBody;
+    $fallback->send();
+    return true;
+  } catch (\Exception $e) {
+    error_log('sendCoachAthleteChatReplyEmail fallback error: ' . $e->getMessage());
+    return false;
+  }
+}
+
+/**
+ * Posle notifikaci trenerovi jen jednou za neprectenou serii zprav od sportovce (throttle stejny jako u admin chatu).
+ */
+function notifyCoachAboutNewAthleteChatMessage(int $coachId, int $athleteId, int $messageId, string $coachEmail, string $coachName, string $athleteName, string $message): void {
+  if ($coachEmail === '') {
+    return;
+  }
+  try {
+    $pdo = getDB();
+    $pendingStmt = $pdo->prepare(
+      "SELECT COUNT(*) FROM coach_athlete_chat_messages
+       WHERE coach_id = ? AND athlete_id = ? AND sender = 'athlete' AND coach_read_at IS NULL AND coach_notified_at IS NOT NULL AND id != ?"
+    );
+    $pendingStmt->execute([$coachId, $athleteId, $messageId]);
+    if ((int)$pendingStmt->fetchColumn() > 0) {
+      return;
+    }
+  } catch (Throwable $e) {
+    error_log('notifyCoachAboutNewAthleteChatMessage check error: ' . $e->getMessage());
+    return;
+  }
+
+  if (sendCoachAthleteChatReplyEmail($coachEmail, $coachName, $athleteName, $athleteId, $message)) {
+    try {
+      getDB()->prepare('UPDATE coach_athlete_chat_messages SET coach_notified_at = NOW() WHERE id = ?')->execute([$messageId]);
+    } catch (Throwable $e) {
+      error_log('notifyCoachAboutNewAthleteChatMessage mark error: ' . $e->getMessage());
+    }
+  }
+}
+
+/**
+ * Posle notifikaci sportovci jen jednou za neprectenou serii zprav od trenera (throttle stejny jako u admin chatu).
+ */
+function notifyAthleteAboutNewCoachChatMessage(int $athleteId, int $messageId, string $athleteEmail, string $athleteName, string $coachName, string $message): void {
+  if ($athleteEmail === '') {
+    return;
+  }
+  try {
+    $pdo = getDB();
+    $pendingStmt = $pdo->prepare(
+      "SELECT COUNT(*) FROM coach_athlete_chat_messages
+       WHERE athlete_id = ? AND sender = 'coach' AND athlete_read_at IS NULL AND athlete_notified_at IS NOT NULL AND id != ?"
+    );
+    $pendingStmt->execute([$athleteId, $messageId]);
+    if ((int)$pendingStmt->fetchColumn() > 0) {
+      return;
+    }
+  } catch (Throwable $e) {
+    error_log('notifyAthleteAboutNewCoachChatMessage check error: ' . $e->getMessage());
+    return;
+  }
+
+  $subject = 'Nová zpráva v chatu od trenéra';
+  if (sendAthleteMessageNotificationEmail($athleteEmail, $athleteName !== '' ? $athleteName : 'sportovče', $subject, $message)) {
+    processEmailNotificationQueue(200, 'athlete_message_notification');
+    try {
+      getDB()->prepare('UPDATE coach_athlete_chat_messages SET athlete_notified_at = NOW() WHERE id = ?')->execute([$messageId]);
+    } catch (Throwable $e) {
+      error_log('notifyAthleteAboutNewCoachChatMessage mark error: ' . $e->getMessage());
+    }
   }
 }
 

@@ -58,6 +58,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . '/athlete_zpravy.php?tab=inbox');
     }
 
+    // Napsat zprávu administrátorovi (individuální chat)
+    if ($action === 'send_chat_to_admin') {
+        $chatBody = mb_substr(trim((string)($_POST['chat_body'] ?? '')), 0, 4000, 'UTF-8');
+        if ($chatBody === '') {
+            flash('danger', 'Zadejte prosím text zprávy.');
+            redirect(BASE_URL . '/athlete_zpravy.php?tab=admin_chat');
+        }
+
+        try {
+            $pdo->prepare(
+                "INSERT INTO admin_athlete_chat_messages (athlete_id, sender, body, athlete_read_at) VALUES (?, 'athlete', ?, NOW())"
+            )->execute([$athleteId, $chatBody]);
+            $chatMessageId = (int)$pdo->lastInsertId();
+
+            $athleteFullName = trim((string)($athlete['first_name'] ?? '') . ' ' . (string)($athlete['last_name'] ?? ''));
+            notifyAdminAboutNewAthleteChatMessage($athleteId, $chatMessageId, $athleteFullName !== '' ? $athleteFullName : 'sportovec', $chatBody);
+
+            flash('success', 'Zpráva byla odeslána administrátorovi.');
+        } catch (Throwable $e) {
+            error_log('athlete admin chat send error: ' . $e->getMessage());
+            flash('danger', 'Chat s administrátorem ještě není na této instanci dostupný.');
+        }
+        redirect(BASE_URL . '/athlete_zpravy.php?tab=admin_chat');
+    }
+
     // Napsat novou zprávu trenérovi
     if ($action === 'send_message') {
         $subject = trim((string)($_POST['subject'] ?? ''));
@@ -82,7 +107,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     redirect(BASE_URL . '/athlete_zpravy.php');
 }
 
-$tab = in_array($_GET['tab'] ?? '', ['sent']) ? 'sent' : 'inbox';
+$tab = in_array($_GET['tab'] ?? '', ['sent', 'admin_chat']) ? $_GET['tab'] : 'inbox';
+
+// Individuální chat s administrátorem (tabulka nemusí existovat, dokud neproběhne migrace)
+$adminChatTableExists = false;
+try {
+    $chatTableCheck = $pdo->query("SHOW TABLES LIKE 'admin_athlete_chat_messages'");
+    $adminChatTableExists = $chatTableCheck !== false && (bool)$chatTableCheck->fetchColumn();
+} catch (Throwable $e) {
+    $adminChatTableExists = false;
+}
+
+$adminChatMessages = [];
+$adminChatUnread = 0;
+if ($adminChatTableExists) {
+    if ($tab === 'admin_chat') {
+        $pdo->prepare("UPDATE admin_athlete_chat_messages SET athlete_read_at = NOW() WHERE athlete_id = ? AND sender = 'admin' AND athlete_read_at IS NULL")
+            ->execute([$athleteId]);
+    }
+    $adminChatStmt = $pdo->prepare('SELECT * FROM admin_athlete_chat_messages WHERE athlete_id = ? ORDER BY created_at ASC, id ASC');
+    $adminChatStmt->execute([$athleteId]);
+    $adminChatMessages = $adminChatStmt->fetchAll();
+
+    $adminChatUnreadStmt = $pdo->prepare("SELECT COUNT(*) FROM admin_athlete_chat_messages WHERE athlete_id = ? AND sender = 'admin' AND athlete_read_at IS NULL");
+    $adminChatUnreadStmt->execute([$athleteId]);
+    $adminChatUnread = (int)$adminChatUnreadStmt->fetchColumn();
+}
 
 // Přijaté zprávy (od trenéra)
 $inboxStmt = $pdo->prepare(
@@ -114,10 +164,19 @@ renderAthleteHeader('Zprávy', false, true);
 <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
     <h2 class="mb-0"><i class="fas fa-envelope me-2 text-warning"></i>Zprávy</h2>
     <div class="d-flex flex-wrap gap-2">
+        <a href="<?= BASE_URL ?>/athlete_chat_mobile.php" class="btn btn-outline-success fw-bold" target="_blank" rel="noopener">
+            <i class="fas fa-mobile-screen-button me-1"></i>Mobilní chat
+        </a>
+        <a href="<?= BASE_URL ?>/athlete_zpravy.php?tab=admin_chat" class="btn btn-outline-primary fw-bold">
+            <i class="fas fa-comments me-1"></i>Napsat administrátorovi
+        </a>
         <button class="btn btn-warning fw-bold" data-bs-toggle="modal" data-bs-target="#composeModal">
             <i class="fas fa-pen me-1"></i>Napsat trenérovi
         </button>
     </div>
+</div>
+<div class="alert alert-light border small mb-4">
+    <i class="fas fa-circle-info me-1 text-muted"></i>Tip: klikni na <strong>Mobilní chat</strong> – otevře se rychlá stránka s chatem na trenéra i administrátora a přímo na ní najdeš návod, jak si ji uložit na plochu telefonu jako ikonku.
 </div>
 
 <!-- Záložky -->
@@ -133,6 +192,14 @@ renderAthleteHeader('Zprávy', false, true);
     <li class="nav-item">
         <a class="nav-link <?= $tab === 'sent' ? 'active' : '' ?>" href="<?= BASE_URL ?>/athlete_zpravy.php?tab=sent">
             <i class="fas fa-paper-plane me-1"></i>Odeslané
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link <?= $tab === 'admin_chat' ? 'active' : '' ?>" href="<?= BASE_URL ?>/athlete_zpravy.php?tab=admin_chat">
+            <i class="fas fa-comments me-1"></i>Administrátor
+            <?php if ($adminChatUnread > 0): ?>
+            <span class="badge bg-danger ms-1"><?= $adminChatUnread ?></span>
+            <?php endif; ?>
         </a>
     </li>
 </ul>
@@ -217,7 +284,7 @@ renderAthleteHeader('Zprávy', false, true);
 </div>
 <?php endif; ?>
 
-<?php else: /* tab=sent */ ?>
+<?php elseif ($tab === 'sent'): ?>
 
 <?php if (empty($sent)): ?>
 <div class="alert alert-info">Zatím jste trenérovi žádnou zprávu nepsali.</div>
@@ -255,7 +322,57 @@ renderAthleteHeader('Zprávy', false, true);
 </div>
 <?php endif; ?>
 
+<?php elseif ($tab === 'admin_chat'): ?>
+
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body" style="max-height:60vh; overflow-y:auto" id="adminChatScroll">
+                <?php if (empty($adminChatMessages)): ?>
+                <div class="text-muted text-center py-4">Zatím žádné zprávy. Napište administrátorovi svůj dotaz.</div>
+                <?php else: foreach ($adminChatMessages as $m): $isAthleteMsg = $m['sender'] === 'athlete'; ?>
+                <div class="d-flex mb-3 <?= $isAthleteMsg ? 'justify-content-end' : 'justify-content-start' ?>">
+                    <div class="p-2 px-3 rounded-3 <?= $isAthleteMsg ? 'bg-warning' : 'bg-light border' ?>" style="max-width:75%">
+                        <div style="white-space:pre-wrap"><?= h((string)$m['body']) ?></div>
+                        <?php if (!empty($m['attachment_name'])): ?>
+                        <div class="mt-1">
+                            <a class="d-inline-flex align-items-center gap-1 small" href="<?= h(BASE_URL . '/uploads/messages/' . rawurlencode((string)$m['attachment_path'])) ?>" target="_blank" rel="noopener">
+                                <i class="fas fa-paperclip"></i><?= h((string)$m['attachment_name']) ?>
+                            </a>
+                        </div>
+                        <?php endif; ?>
+                        <div class="small mt-1 text-muted">
+                            <?= $isAthleteMsg ? 'Vy' : 'Administrátor' ?> · <?= formatDateTime((string)$m['created_at']) ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; endif; ?>
+            </div>
+            <div class="card-footer">
+                <form method="post">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="action" value="send_chat_to_admin">
+                    <div class="mb-2">
+                        <textarea name="chat_body" class="form-control" rows="3" maxlength="4000" placeholder="Napište zprávu administrátorovi..." required></textarea>
+                    </div>
+                    <div class="d-flex justify-content-end">
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane me-1"></i>Odeslat</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var box = document.getElementById('adminChatScroll');
+    if (box) { box.scrollTop = box.scrollHeight; }
+});
+</script>
+
 <?php endif; ?>
+
 
 <div class="modal fade" id="messageAttachmentModal" tabindex="-1" aria-labelledby="messageAttachmentModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-centered" style="height:calc(100vh - 2rem)">

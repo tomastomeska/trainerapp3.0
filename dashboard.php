@@ -1061,6 +1061,10 @@ renderHeader('Dashboard', false, true);
                        class="btn btn-dark btn-sm flex-fill">
                         <i class="fas fa-user me-1"></i>Detail
                     </a>
+                    <a href="<?= BASE_URL ?>/athlete_chat.php?id=<?= $a['id'] ?>"
+                       class="btn btn-outline-success btn-sm flex-fill">
+                        <i class="fas fa-comments me-1"></i>Chat
+                    </a>
                     <a href="<?= BASE_URL ?>/food_diary.php?athlete_id=<?= $a['id'] ?>"
                               class="btn btn-outline-primary btn-sm flex-fill">
                         <i class="fas fa-bowl-food me-1"></i>Strava

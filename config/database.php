@@ -2344,6 +2344,73 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
 
+    // Individualni chat mezi administratorem a jednim sportovcem (obousmerne odpovedi)
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `admin_athlete_chat_messages` (
+            `id`              INT AUTO_INCREMENT PRIMARY KEY,
+            `athlete_id`      INT NOT NULL,
+            `sender`          ENUM('admin','athlete') NOT NULL,
+            `body`            TEXT NOT NULL,
+            `attachment_path` VARCHAR(500) NULL,
+            `attachment_name` VARCHAR(255) NULL,
+            `admin_read_at`   DATETIME NULL,
+            `athlete_read_at` DATETIME NULL,
+            `admin_notified_at` DATETIME NULL,
+            `created_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY `idx_admin_athlete_chat_athlete` (`athlete_id`, `created_at`),
+            CONSTRAINT `fk_admin_athlete_chat_athlete`
+                FOREIGN KEY (`athlete_id`) REFERENCES `athletes`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    $stmtChatNotifiedAt = $pdo->query("SHOW COLUMNS FROM admin_athlete_chat_messages LIKE 'admin_notified_at'");
+    if (!$stmtChatNotifiedAt->fetch()) {
+        $pdo->exec("ALTER TABLE admin_athlete_chat_messages ADD COLUMN `admin_notified_at` DATETIME NULL AFTER `athlete_read_at`");
+    }
+
+    // Individualni chat mezi administratorem a jednim trenerem (obousmerne odpovedi)
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `admin_coach_chat_messages` (
+            `id`              INT AUTO_INCREMENT PRIMARY KEY,
+            `coach_id`        INT NOT NULL,
+            `sender`          ENUM('admin','coach') NOT NULL,
+            `body`            TEXT NOT NULL,
+            `attachment_path` VARCHAR(500) NULL,
+            `attachment_name` VARCHAR(255) NULL,
+            `admin_read_at`   DATETIME NULL,
+            `coach_read_at`   DATETIME NULL,
+            `admin_notified_at` DATETIME NULL,
+            `created_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY `idx_admin_coach_chat_coach` (`coach_id`, `created_at`),
+            CONSTRAINT `fk_admin_coach_chat_coach`
+                FOREIGN KEY (`coach_id`) REFERENCES `coaches`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
+    // Individualni chat mezi trenerem a jeho sportovcem (obousmerne odpovedi, mimo hromadne zpravy)
+    $pdo->exec(" 
+        CREATE TABLE IF NOT EXISTS `coach_athlete_chat_messages` (
+            `id`              INT AUTO_INCREMENT PRIMARY KEY,
+            `coach_id`        INT NOT NULL,
+            `athlete_id`      INT NOT NULL,
+            `sender`          ENUM('coach','athlete') NOT NULL,
+            `body`            TEXT NOT NULL,
+            `attachment_path` VARCHAR(500) NULL,
+            `attachment_name` VARCHAR(255) NULL,
+            `coach_read_at`   DATETIME NULL,
+            `athlete_read_at` DATETIME NULL,
+            `coach_notified_at`   DATETIME NULL,
+            `athlete_notified_at` DATETIME NULL,
+            `created_at`      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY `idx_coach_athlete_chat_coach` (`coach_id`, `created_at`),
+            KEY `idx_coach_athlete_chat_athlete` (`athlete_id`, `created_at`),
+            CONSTRAINT `fk_coach_athlete_chat_coach`
+                FOREIGN KEY (`coach_id`) REFERENCES `coaches`(`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_coach_athlete_chat_athlete`
+                FOREIGN KEY (`athlete_id`) REFERENCES `athletes`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
     // Zpravy od trenera sportovcum (hromadne i jednotlive) + prehled precteni
     $pdo->exec(" 
         CREATE TABLE IF NOT EXISTS `coach_athlete_messages` (

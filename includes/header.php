@@ -178,6 +178,20 @@ if ($coach) {
         $onlineTrainingStmt = $pdo->prepare("SELECT COUNT(*) FROM online_trainings WHERE trainer_id = ? AND status = 'completed'");
         $onlineTrainingStmt->execute([(int)$coach['id']]);
         $onlineTrainingCount = (int)$onlineTrainingStmt->fetchColumn();
+
+        $coachChatTable = $pdo->query("SHOW TABLES LIKE 'admin_coach_chat_messages'");
+        if ($coachChatTable !== false && (bool)$coachChatTable->fetchColumn()) {
+            $coachChatUnreadStmt = $pdo->prepare("SELECT COUNT(*) FROM admin_coach_chat_messages WHERE coach_id = ? AND sender = 'admin' AND coach_read_at IS NULL");
+            $coachChatUnreadStmt->execute([(int)$coach['id']]);
+            $unreadMsgCount += (int)$coachChatUnreadStmt->fetchColumn();
+        }
+
+        $athleteChatTable = $pdo->query("SHOW TABLES LIKE 'coach_athlete_chat_messages'");
+        if ($athleteChatTable !== false && (bool)$athleteChatTable->fetchColumn()) {
+            $athleteChatUnreadStmt = $pdo->prepare("SELECT COUNT(*) FROM coach_athlete_chat_messages WHERE coach_id = ? AND sender = 'athlete' AND coach_read_at IS NULL");
+            $athleteChatUnreadStmt->execute([(int)$coach['id']]);
+            $unreadMsgCount += (int)$athleteChatUnreadStmt->fetchColumn();
+        }
     } catch (Throwable $e) {
         $unreadMsgCount = 0;
         $pendingCalendarCount = 0;

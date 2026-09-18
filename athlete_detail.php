@@ -862,6 +862,9 @@ function openActiveTrainingWarning() {
                 <button type="button" class="btn btn-outline-success w-100 mt-2" data-bs-toggle="modal" data-bs-target="#messageAthleteModal">
                     <i class="fas fa-paper-plane me-1"></i>Napsat sportovci
                 </button>
+                <a href="<?= BASE_URL ?>/athlete_chat.php?id=<?= (int)$athlete['id'] ?>" class="btn btn-outline-primary w-100 mt-2">
+                    <i class="fas fa-comments me-1"></i>Chat se sportovcem
+                </a>
             </div>
         </div>
     </div>
