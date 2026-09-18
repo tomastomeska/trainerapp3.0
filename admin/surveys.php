@@ -373,6 +373,7 @@ $formQuestions = $editSurvey['questions'] ?? [[
     <?php $detail = surveyFetchById($pdo, (int)$survey['id']); $totalResponses = (int)$survey['response_count']; ?>
     <details class="survey-results"><summary>Zobrazit výsledky a odpovědi</summary>
     <div class="pt-2">
+        <div class="fw-bold small text-uppercase text-muted mb-2">Souhrn výsledků</div>
         <?php foreach (($detail['questions'] ?? []) as $question): ?>
         <div class="mb-3">
             <div class="small fw-semibold mb-2"><?= h($question['question_text']) ?></div>
@@ -391,6 +392,35 @@ $formQuestions = $editSurvey['questions'] ?? [[
             <?php endif; ?>
         </div>
         <?php endforeach; ?>
+        <?php $respondents = surveyFetchRespondents($pdo, (int)$survey['id']); ?>
+        <div class="fw-bold small text-uppercase text-muted mt-4 mb-2">Respondenti</div>
+        <?php if (!$respondents): ?>
+        <div class="text-muted small">Zatím nikdo neodpověděl.</div>
+        <?php else: ?>
+            <?php foreach ($respondents as $respondent): ?>
+            <div class="border rounded p-3 mb-2 bg-light">
+                <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap mb-2">
+                    <div>
+                        <div class="fw-semibold"><i class="fas <?= $respondent['user_type'] === 'athlete' ? 'fa-person-running' : 'fa-user-tie' ?> me-1 text-info"></i><?= h((string)$respondent['respondent_name']) ?></div>
+                        <div class="small text-muted"><?= $respondent['user_type'] === 'athlete' ? 'Sportovec' : 'Trenér' ?><?= $respondent['respondent_email'] ? ' · ' . h((string)$respondent['respondent_email']) : '' ?></div>
+                    </div>
+                    <span class="small text-muted"><?= h(formatDateTime((string)$respondent['submitted_at'])) ?></span>
+                </div>
+                <?php foreach (($detail['questions'] ?? []) as $question): $answers = $respondent['answers_by_question'][(int)$question['id']] ?? []; ?>
+                <div class="mb-2">
+                    <div class="small text-muted"><?= h((string)$question['question_text']) ?></div>
+                    <?php if (!$answers): ?>
+                    <div class="small">Bez odpovědi</div>
+                    <?php elseif (in_array($question['question_type'], ['single_choice', 'multiple_choice'], true)): ?>
+                    <div class="small fw-semibold"><?= h(implode(', ', array_values(array_filter(array_map(static fn(array $answer): string => (string)($answer['option_text'] ?? ''), $answers))))) ?></div>
+                    <?php else: ?>
+                    <div class="small fw-semibold" style="white-space: pre-wrap;"><?= h((string)($answers[0]['answer_text'] ?? '')) ?></div>
+                    <?php endif; ?>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php endforeach; ?>
+        <?php endif; ?>
     </div>
     </details>
 </article>

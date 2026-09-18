@@ -101,6 +101,42 @@ function surveyQuestionStats(PDO $pdo, int $questionId): array
     return $stmt->fetchAll();
 }
 
+function surveyFetchRespondents(PDO $pdo, int $surveyId): array
+{
+    $stmt = $pdo->prepare(
+        "SELECT sr.id, sr.user_type, sr.user_id, sr.submitted_at,
+                COALESCE(NULLIF(TRIM(CONCAT(a.first_name, ' ', a.last_name)), ''), NULLIF(c.name, ''), c.username, CONCAT(sr.user_type, ' #', sr.user_id)) AS respondent_name,
+                COALESCE(a.email, c.email, '') AS respondent_email
+         FROM survey_responses sr
+         LEFT JOIN athletes a ON sr.user_type = 'athlete' AND a.id = sr.user_id
+         LEFT JOIN coaches c ON sr.user_type = 'coach' AND c.id = sr.user_id
+         WHERE sr.survey_id = ?
+         ORDER BY sr.submitted_at DESC, sr.id DESC"
+    );
+    $stmt->execute([$surveyId]);
+    $respondents = $stmt->fetchAll();
+
+    $answerStmt = $pdo->prepare(
+        'SELECT sa.response_id, sa.question_id, sa.option_id, sa.answer_text, so.option_text
+         FROM survey_answers sa
+         LEFT JOIN survey_options so ON so.id = sa.option_id
+         JOIN survey_responses sr ON sr.id = sa.response_id
+         WHERE sr.survey_id = ?
+         ORDER BY sa.id ASC'
+    );
+    $answerStmt->execute([$surveyId]);
+    $answersByResponse = [];
+    foreach ($answerStmt->fetchAll() as $answer) {
+        $answersByResponse[(int)$answer['response_id']][(int)$answer['question_id']][] = $answer;
+    }
+
+    foreach ($respondents as &$respondent) {
+        $respondent['answers_by_question'] = $answersByResponse[(int)$respondent['id']] ?? [];
+    }
+
+    return $respondents;
+}
+
 function surveySupportsMultipleChoice(PDO $pdo): bool
 {
     try {
