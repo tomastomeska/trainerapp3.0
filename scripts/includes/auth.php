@@ -40,6 +40,10 @@ function isLoggedIn(): bool {
     return !empty($_SESSION['coach_id']);
 }
 
+function athleteIsLoggedIn(): bool {
+    return !empty($_SESSION['athlete_id']);
+}
+
 function requireLogin(): void {
     if (!isLoggedIn()) {
         $script = str_replace('\\', '/', $_SERVER['SCRIPT_NAME'] ?? '');

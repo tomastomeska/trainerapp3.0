@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/surveys.php';
 require_once __DIR__ . '/includes/online_training.php';
 require_once __DIR__ . '/includes/athlete_header.php';
 require_once __DIR__ . '/includes/health_questionnaire.php';
@@ -1111,6 +1112,11 @@ renderAthleteHeader('Profil sportovce', false, true);
     <a href="<?= BASE_URL ?>/athlete_manual.php" class="quick-tile quick-tile-success">
         <span class="quick-tile__label"><i class="fas fa-circle-question me-1"></i>Návod</span>
         <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+    </a>
+    <?php $athleteSurveyPending = surveySchemaAvailable($pdo) && count(array_filter(surveyFetchForUser($pdo, 'athlete', $athleteId), static fn(array $survey): bool => empty($survey['response_id']))) > 0; ?>
+    <a href="<?= BASE_URL ?>/athlete_surveys.php" class="quick-tile quick-tile-info <?= $athleteSurveyPending ? 'survey-pending' : '' ?>">
+        <span class="quick-tile__label"><i class="fas fa-square-poll-vertical me-1"></i>Ankety</span>
+        <span class="quick-tile__value"><?= $athleteSurveyPending ? '<span class="badge rounded-pill bg-danger">!</span>' : '<i class="fas fa-chevron-right"></i>' ?></span>
     </a>
     <a href="<?= BASE_URL ?>/athlete_terms.php" class="quick-tile quick-tile-warning">
         <span class="quick-tile__label"><i class="fas fa-file-contract me-1"></i>Podmínky</span>

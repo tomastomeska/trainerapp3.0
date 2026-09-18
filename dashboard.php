@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/surveys.php';
 require_once __DIR__ . '/includes/header.php';
 require_once __DIR__ . '/includes/health_questionnaire.php';
 
@@ -58,6 +59,10 @@ try {
 
 $coachMyCoachEnabled = mycoachAccessEnabledForCoach($pdo, (int)$coachId);
 $mycoachAppIsLive = mycoachAppIsLive();
+$coachSurveyPending = surveySchemaAvailable($pdo) && count(array_filter(
+    surveyFetchForUser($pdo, 'coach', (int)$coachId),
+    static fn(array $survey): bool => empty($survey['response_id'])
+)) > 0;
 $onlineTrainingCount = 0;
 try {
     $onlineCountStmt = $pdo->prepare('SELECT COUNT(*) FROM online_trainings WHERE trainer_id = ? AND status IN (\'sent\', \'in_progress\')');
@@ -706,6 +711,10 @@ renderHeader('Dashboard', false, true);
                 <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-brain me-1"></i>MyCoach <span class="badge rounded-pill <?= $mycoachAppIsLive ? 'bg-success' : 'bg-warning text-dark' ?>"><?= $mycoachAppIsLive ? 'Pro' : 'Brzy' ?></span></span>
                 <span class="quick-tile__value"><i class="fas fa-<?= $mycoachAppIsLive ? 'star' : 'rocket' ?>"></i></span>
             </a>
+            <a href="<?= BASE_URL ?>/surveys.php" class="quick-tile quick-tile-info <?= $coachSurveyPending ? 'survey-pending' : '' ?>">
+                <span class="quick-tile__label"><i class="fas fa-square-poll-vertical me-1"></i>Ankety</span>
+                <span class="quick-tile__value"><?= $coachSurveyPending ? '<span class="badge rounded-pill bg-danger">!</span>' : '<i class="fas fa-chevron-right"></i>' ?></span>
+            </a>
             <a href="<?= BASE_URL ?>/coach_manual.php" class="quick-tile quick-tile-success">
                 <span class="quick-tile__label"><i class="fas fa-circle-question me-1"></i>Návod</span>
                 <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
@@ -749,6 +758,10 @@ renderHeader('Dashboard', false, true);
     <?php endif; ?>
         <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-brain me-1"></i>MyCoach <span class="badge rounded-pill <?= $mycoachAppIsLive ? 'bg-success' : 'bg-warning text-dark' ?>"><?= $mycoachAppIsLive ? 'Pro' : 'Brzy' ?></span></span>
         <span class="quick-tile__value"><i class="fas fa-<?= $mycoachAppIsLive ? 'star' : 'rocket' ?>"></i></span>
+    </a>
+    <a href="<?= BASE_URL ?>/surveys.php" class="quick-tile quick-tile-info <?= $coachSurveyPending ? 'survey-pending' : '' ?>">
+        <span class="quick-tile__label"><i class="fas fa-square-poll-vertical me-1"></i>Ankety</span>
+        <span class="quick-tile__value"><?= $coachSurveyPending ? '<span class="badge rounded-pill bg-danger">!</span>' : '<i class="fas fa-chevron-right"></i>' ?></span>
     </a>
 </div>
 

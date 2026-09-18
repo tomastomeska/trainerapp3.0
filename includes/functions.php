@@ -7029,6 +7029,12 @@ function processEmailNotificationQueue(int $limit = 20, ?string $templateKeyFilt
         $postTitle = trim((string)($payload['post_title'] ?? ''));
         $postExcerpt = trim((string)($payload['post_excerpt'] ?? ''));
         $sent = sendGalleryNotificationEmailNow($recipientEmail, $recipientName, $recipientRole, $subject, $postTitle, $postExcerpt);
+      } elseif ($templateKey === 'survey_notification') {
+        $recipientName = trim((string)($payload['recipient_name'] ?? 'uživateli'));
+        $surveyType = trim((string)($payload['survey_type'] ?? 'poll'));
+        $surveyTitle = trim((string)($payload['survey_title'] ?? ''));
+        $surveyRole = trim((string)($payload['recipient_role'] ?? 'athlete'));
+        $sent = sendSurveyNotificationEmailNow($recipientEmail, $recipientName, $surveyType, $surveyTitle, $surveyRole);
       } else {
         throw new RuntimeException('Neznamy template email fronty: ' . $templateKey);
       }
@@ -7076,6 +7082,108 @@ function processEmailNotificationQueue(int $limit = 20, ?string $templateKeyFilt
   }
 
   return $results;
+}
+
+function sendSurveyNotificationEmails(PDO $pdo, int $surveyId, string $title, string $surveyType, string $audience): int
+{
+  try {
+    $recipients = [];
+    if ($audience === 'all' || $audience === 'coaches') {
+      try {
+        $recipients = array_merge($recipients, $pdo->query("SELECT email, name, 'coach' AS recipient_role FROM coaches WHERE is_active = 1 AND email IS NOT NULL AND email <> ''")->fetchAll());
+      } catch (Throwable $e) {
+        error_log('Survey coach recipients query error: ' . $e->getMessage());
+      }
+    }
+    if ($audience === 'all' || $audience === 'athletes') {
+      try {
+        $recipients = array_merge($recipients, $pdo->query("SELECT a.email, CONCAT(a.first_name, ' ', a.last_name) AS name, 'athlete' AS recipient_role
+          FROM athletes a
+          JOIN coaches c ON c.id = a.coach_id
+          WHERE a.login_enabled = 1
+            AND c.is_active = 1
+            AND a.email IS NOT NULL
+            AND a.email <> ''")->fetchAll());
+      } catch (Throwable $e) {
+        error_log('Survey athlete recipients query error: ' . $e->getMessage());
+      }
+    }
+
+    $sent = 0;
+    foreach ($recipients as $recipient) {
+      if (sendSurveyNotificationEmail((string)$recipient['email'], trim((string)$recipient['name']), $surveyType, $title, (string)$recipient['recipient_role'])) {
+        $sent++;
+      }
+    }
+    return $sent;
+  } catch (Throwable $e) {
+    error_log('sendSurveyNotificationEmails error: ' . $e->getMessage());
+    return 0;
+  }
+}
+
+function sendSurveyNotificationEmail(string $toEmail, string $recipientName, string $surveyType, string $surveyTitle, string $recipientRole): bool
+{
+  if (!isEmailNotificationEnabled('survey_notification')) {
+    return true;
+  }
+
+  $subject = 'TrainerApp: ' . ($surveyType === 'poll' ? 'nová anketa' : 'nový dotazník');
+  if (isEmailQueueEnabled() && emailNotificationQueueTableAvailable()) {
+    return enqueueEmailNotificationJob('survey_notification', $toEmail, $subject, [
+      'recipient_name' => $recipientName,
+      'survey_type' => $surveyType,
+      'survey_title' => $surveyTitle,
+      'recipient_role' => $recipientRole,
+    ]);
+  }
+  return sendSurveyNotificationEmailNow($toEmail, $recipientName, $surveyType, $surveyTitle, $recipientRole);
+}
+
+function sendSurveyNotificationEmailNow(string $toEmail, string $recipientName, string $surveyType, string $surveyTitle, string $recipientRole): bool
+{
+  $phpmailerSrc = dirname(__DIR__) . '/vendor/phpmailer/phpmailer/src';
+  if (!file_exists($phpmailerSrc . '/PHPMailer.php')) {
+    return false;
+  }
+  require_once $phpmailerSrc . '/Exception.php';
+  require_once $phpmailerSrc . '/PHPMailer.php';
+  require_once $phpmailerSrc . '/SMTP.php';
+  $link = (($_SERVER['HTTPS'] ?? '') !== '' ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? '') . BASE_URL . ($recipientRole === 'coach' ? '/surveys.php' : '/athlete_surveys.php');
+  $kind = $surveyType === 'poll' ? 'anketa' : 'dotazník';
+  $kindWithArticle = $surveyType === 'poll' ? 'připravená anketa' : 'připravený dotazník';
+  $safeName = htmlspecialchars($recipientName !== '' ? $recipientName : 'uživateli', ENT_QUOTES, 'UTF-8');
+  $safeTitle = htmlspecialchars($surveyTitle, ENT_QUOTES, 'UTF-8');
+  $mail = new PHPMailer\PHPMailer\PHPMailer(true);
+  try {
+    _configureMail($mail);
+    $mail->addAddress($toEmail);
+    $mail->isHTML(true);
+    $mail->Subject = 'TrainerApp: nový ' . $kind;
+    $mail->Body = "<p>Ahoj <strong>{$safeName}</strong>,</p><p>v aplikaci TrainerApp je pro vás {$kindWithArticle}: <strong>{$safeTitle}</strong>.</p><p><a href=\"{$link}\">Otevřít v aplikaci</a></p>";
+    $mail->AltBody = "V aplikaci TrainerApp je pro vás {$kindWithArticle}: {$surveyTitle}. Otevřít: {$link}";
+    $mail->send();
+    return true;
+  } catch (Throwable $e) {
+    error_log('sendSurveyNotificationEmail error: ' . $e->getMessage());
+  }
+
+  try {
+    $fallback = new PHPMailer\PHPMailer\PHPMailer(true);
+    $fallback->isMail();
+    $fallback->CharSet = 'UTF-8';
+    $fallback->setFrom(SMTP_FROM, SMTP_FROM_NAME);
+    $fallback->addAddress($toEmail);
+    $fallback->isHTML(true);
+    $fallback->Subject = 'TrainerApp: nový ' . $kind;
+    $fallback->Body = "<p>Ahoj <strong>{$safeName}</strong>,</p><p>v aplikaci TrainerApp je pro vás {$kindWithArticle}: <strong>{$safeTitle}</strong>.</p><p><a href=\"{$link}\">Otevřít v aplikaci</a></p>";
+    $fallback->AltBody = "V aplikaci TrainerApp je pro vás {$kindWithArticle}: {$surveyTitle}. Otevřít: {$link}";
+    $fallback->send();
+    return true;
+  } catch (Throwable $e) {
+    error_log('sendSurveyNotificationEmail fallback error: ' . $e->getMessage());
+    return false;
+  }
 }
 
 function isInlineCalendarSyncEnabled(): bool {

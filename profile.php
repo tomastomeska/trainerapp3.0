@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/surveys.php';
 require_once __DIR__ . '/includes/header.php';
 
 requireLogin();
@@ -479,6 +480,11 @@ renderHeader('Můj profil', false, true);
     <?php endif; ?>
         <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-brain me-1"></i>MyCoach <span class="badge rounded-pill <?= $mycoachAppUserCanAccess ? 'bg-success' : 'bg-warning text-dark' ?>"><?= $mycoachAppUserCanAccess ? 'Pro' : 'Brzy' ?></span></span>
         <span class="quick-tile__value"><i class="fas fa-<?= $mycoachAppUserCanAccess ? 'star' : 'rocket' ?>"></i></span>
+    </a>
+    <?php $coachSurveyPending = surveySchemaAvailable($pdo) && count(array_filter(surveyFetchForUser($pdo, 'coach', (int)$coachId), static fn(array $survey): bool => empty($survey['response_id']))) > 0; ?>
+    <a href="<?= BASE_URL ?>/surveys.php" class="quick-tile quick-tile-info <?= $coachSurveyPending ? 'survey-pending' : '' ?>">
+        <span class="quick-tile__label"><i class="fas fa-square-poll-vertical me-1"></i>Ankety</span>
+        <span class="quick-tile__value"><?= $coachSurveyPending ? '<span class="badge rounded-pill bg-danger">!</span>' : '<i class="fas fa-chevron-right"></i>' ?></span>
     </a>
     <a href="<?= BASE_URL ?>/coach_manual.php" class="quick-tile quick-tile-success">
         <span class="quick-tile__label"><i class="fas fa-circle-question me-1"></i>Návod</span>
