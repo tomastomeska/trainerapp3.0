@@ -36,6 +36,7 @@ function athleteCoachChatMessageToArray(array $m): array {
         'body' => (string)$m['body'],
         'attachment_url' => !empty($m['attachment_path']) ? BASE_URL . '/uploads/messages/' . rawurlencode((string)$m['attachment_path']) : null,
         'attachment_name' => $m['attachment_name'] ?? null,
+        'read_at' => $m['sender'] === 'coach' ? ($m['athlete_read_at'] ?? null) : ($m['coach_read_at'] ?? null),
         'created_at' => formatDateTime((string)$m['created_at']),
     ];
 }

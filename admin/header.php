@@ -278,6 +278,8 @@ function renderAdminHeader(string $title = ''): void {
 .admin-chat-bubble-row.from-user .admin-chat-bubble { background: #fff; }
 .admin-chat-bubble-row.from-admin .admin-chat-bubble { background: #dcf8c6; }
 .admin-chat-bubble-time { display: block; margin-top: 3px; font-size: 10.5px; color: #667781; text-align: right; }
+.admin-chat-read-status { margin-left: 4px; font-weight: 700; letter-spacing: -1px; }
+.admin-chat-read-status.is-read { color: #128c7e; }
 .admin-chat-panel-footer { display: flex; gap: 8px; padding: 10px; background: #f0f0f0; border-top: 1px solid #ddd; }
 @media (max-width: 768px) {
 	.admin-chat-panel { right: 12px; bottom: 82px; width: calc(100vw - 24px); }
@@ -323,12 +325,15 @@ function renderAdminHeader(string $title = ''): void {
 
 	const renderMessage = (m) => {
 		const row = document.createElement('div');
-		row.className = 'admin-chat-bubble-row from-' + (m.sender === 'admin' ? 'admin' : 'user');
+		const isMine = m.sender === 'admin';
+		row.className = 'admin-chat-bubble-row from-' + (isMine ? 'admin' : 'user');
 		let html = '<div class="admin-chat-bubble">' + escapeHtml(m.body).replace(/\n/g, '<br>');
 		if (m.attachment_url) {
 			html += '<div class="mt-1"><a href="' + m.attachment_url + '" target="_blank" rel="noopener"><i class="fas fa-paperclip"></i> ' + escapeHtml(m.attachment_name || 'Příloha') + '</a></div>';
 		}
-		html += '<span class="admin-chat-bubble-time">' + escapeHtml(m.created_at) + '</span></div>';
+		html += '<span class="admin-chat-bubble-time">' + escapeHtml(m.created_at)
+			+ (isMine ? '<span class="admin-chat-read-status' + (m.read_at ? ' is-read' : '') + '" title="' + (m.read_at ? 'Přečteno' : 'Odesláno') + '">' + (m.read_at ? '✓✓' : '✓') + '</span>' : '')
+			+ '</span></div>';
 		row.innerHTML = html;
 		body.appendChild(row);
 		if (Number(m.id) > lastId) { lastId = Number(m.id); }

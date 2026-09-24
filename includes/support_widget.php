@@ -498,6 +498,14 @@ function renderSupportWidget(string $userType = 'coach'): void {
     color: #667781;
     text-align: right;
 }
+.admin-chat-read-status {
+    margin-left: 4px;
+    font-weight: 700;
+    letter-spacing: -1px;
+}
+.admin-chat-read-status.is-read {
+    color: #128c7e;
+}
 .admin-chat-panel-footer {
     display: flex;
     gap: 8px;
@@ -676,13 +684,16 @@ function renderSupportWidget(string $userType = 'coach'): void {
 
     const renderMessage = (m) => {
         const row = document.createElement('div');
-        row.className = 'admin-chat-bubble-row from-' + (messageIsMine(m) ? 'athlete' : 'admin');
+        const isMine = messageIsMine(m);
+        row.className = 'admin-chat-bubble-row from-' + (isMine ? 'athlete' : 'admin');
         let html = '<div class="admin-chat-bubble">' + escapeHtml(m.body).replace(/\n/g, '<br>');
         if (m.attachment_url) {
             html += '<div class="mt-1"><a href="' + m.attachment_url + '" target="_blank" rel="noopener">'
                 + '<i class="fas fa-paperclip"></i> ' + escapeHtml(m.attachment_name || 'Příloha') + '</a></div>';
         }
-        html += '<span class="admin-chat-bubble-time">' + escapeHtml(m.created_at) + '</span></div>';
+        html += '<span class="admin-chat-bubble-time">' + escapeHtml(m.created_at)
+            + (isMine ? '<span class="admin-chat-read-status' + (m.read_at ? ' is-read' : '') + '" title="' + (m.read_at ? 'Přečteno' : 'Odesláno') + '">' + (m.read_at ? '✓✓' : '✓') + '</span>' : '')
+            + '</span></div>';
         row.innerHTML = html;
         chatBody.appendChild(row);
         if (Number(m.id) > lastId) {
