@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>TrainerApp – Test API</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            margin: 0;
+            padding: 30px;
+        }
+
+        .box {
+            max-width: 500px;
+            margin: 40px auto;
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+
+        h1 {
+            color: #071d4f;
+            margin-top: 0;
+        }
+
+        label {
+            display: block;
+            margin-top: 20px;
+            margin-bottom: 7px;
+            font-weight: bold;
+        }
+
+        input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 14px;
+            border: 1px solid #aaa;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+
+        button {
+            width: 100%;
+            margin-top: 25px;
+            padding: 15px;
+            border: 0;
+            border-radius: 8px;
+            background: #ffc107;
+            color: #071d4f;
+            font-size: 17px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+        }
+
+        #result {
+            margin-top: 25px;
+            padding: 15px;
+            background: #f1f3f5;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .success {
+            background: #e7f7ed !important;
+            color: #146c2e;
+        }
+
+        .error {
+            background: #fdeaea !important;
+            color: #a61b1b;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="box">
+
+    <h1>TrainerApp – test API</h1>
+
+    <p>
+        Tento formulář pouze otestuje přihlášení mobilního API.
+    </p>
+
+    <form id="loginForm">
+
+        <label for="username">
+            Uživatelské jméno
+        </label>
+
+        <input
+            type="text"
+            id="username"
+            autocomplete="username"
+            required
+        >
+
+        <label for="password">
+            Heslo
+        </label>
+
+        <input
+            type="password"
+            id="password"
+            autocomplete="current-password"
+            required
+        >
+
+        <button type="submit" id="submitButton">
+            TEST PŘIHLÁŠENÍ
+        </button>
+
+    </form>
+
+    <div id="result">
+        Zatím nebyl proveden žádný test.
+    </div>
+
+</div>
+
+<script>
+
+const form = document.getElementById("loginForm");
+const result = document.getElementById("result");
+const button = document.getElementById("submitButton");
+
+form.addEventListener("submit", async function(event) {
+
+    event.preventDefault();
+
+    const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value;
+
+    result.className = "";
+    result.textContent = "Testuji přihlášení...";
+    button.disabled = true;
+
+    try {
+
+        const response = await fetch(
+            "/api/mobile/login.php",
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                body: JSON.stringify({
+                    username: username,
+                    password: password
+                })
+            }
+        );
+
+        const data = await response.json();
+
+        console.log("API odpověď:", data);
+
+        if (data.success === true) {
+
+            result.className = "success";
+
+            result.textContent =
+                "PŘIHLÁŠENÍ FUNGUJE!\n\n" +
+                "Trenér:\n" +
+                (data.coach?.name || "") +
+                "\n\n" +
+                "Uživatelské jméno:\n" +
+                (data.coach?.username || "") +
+                "\n\n" +
+                "ID trenéra:\n" +
+                (data.coach?.id || "") +
+                "\n\n" +
+                "Token byl úspěšně vytvořen.\n" +
+                "Platnost: " +
+                (data.expires_in_days || "") +
+                " dní.";
+
+        } else {
+
+            result.className = "error";
+
+            result.textContent =
+                "PŘIHLÁŠENÍ SELHALO\n\n" +
+                (data.error || "Neznámá chyba.");
+        }
+
+    } catch (error) {
+
+        console.error(error);
+
+        result.className = "error";
+
+        result.textContent =
+            "CHYBA KOMUNIKACE S API\n\n" +
+            error.message;
+    }
+
+    button.disabled = false;
+
+});
+
+</script>
+
+</body>
+</html>
