@@ -3,20 +3,93 @@ declare(strict_types=1);
 
 function instaGetProfiles(): array
 {
-	return [
+	$defaults = [
 		'profile_1' => [
 			'label' => 'Denisa',
+			'description' => '',
 			'url' => 'https://www.instagram.com/deni_ska1990',
 			'profile_image' => 'https://unavatar.io/instagram/deni_ska1990',
 			'qr_file' => 'WhatsApp Image 2026-07-21 at 14.37.20.jpeg',
 		],
 		'profile_2' => [
 			'label' => 'Tomáš',
+			'description' => '',
 			'url' => 'https://www.instagram.com/tomastomeska/',
 			'profile_image' => 'https://unavatar.io/instagram/tomastomeska',
 			'qr_file' => 'WhatsApp Image 2026-07-21 at 14.37.20 (1).jpeg',
 		],
 	];
+
+	$raw = @file_get_contents(instaGetProfilesPath());
+	$saved = is_string($raw) && $raw !== '' ? json_decode($raw, true) : null;
+	if (!is_array($saved)) {
+		return $defaults;
+	}
+
+	$profiles = [];
+	foreach ($saved as $profileId => $profile) {
+		if (!is_string($profileId) || !preg_match('/^[a-zA-Z0-9_-]{1,40}$/', $profileId) || !is_array($profile)) {
+			continue;
+		}
+		$label = trim((string)($profile['label'] ?? ''));
+		$url = trim((string)($profile['url'] ?? ''));
+		if ($label === '' || !instaIsValidInstagramProfileUrl($url)) {
+			continue;
+		}
+		$profiles[$profileId] = [
+			'label' => $label,
+			'description' => trim((string)($profile['description'] ?? '')),
+			'url' => $url,
+			'profile_image' => (string)($profile['profile_image'] ?? ($defaults[$profileId]['profile_image'] ?? '')),
+			'qr_file' => (string)($profile['qr_file'] ?? ($defaults[$profileId]['qr_file'] ?? '')),
+		];
+	}
+
+	return $profiles !== [] ? $profiles : $defaults;
+}
+
+function instaGetProfilesPath(): string
+{
+	return dirname(__DIR__) . '/uploads/insta/profiles.json';
+}
+
+function instaSaveProfiles(array $profiles): bool
+{
+	$path = instaGetProfilesPath();
+	$directory = dirname($path);
+	if (!is_dir($directory) && !@mkdir($directory, 0775, true) && !is_dir($directory)) {
+		return false;
+	}
+
+	$handle = @fopen($path, 'c+');
+	if (!$handle || !flock($handle, LOCK_EX)) {
+		if (is_resource($handle)) {
+			fclose($handle);
+		}
+		return false;
+	}
+
+	$encoded = json_encode($profiles, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+	$written = is_string($encoded) && ftruncate($handle, 0) && rewind($handle) && fwrite($handle, $encoded) !== false && fflush($handle);
+	flock($handle, LOCK_UN);
+	fclose($handle);
+	return $written;
+}
+
+function instaIsValidInstagramProfileUrl(string $url): bool
+{
+	$parts = parse_url($url);
+	if (!is_array($parts)) {
+		return false;
+	}
+	$host = strtolower((string)($parts['host'] ?? ''));
+	$username = instaGetInstagramUsernameFromUrl($url);
+	return strtolower((string)($parts['scheme'] ?? '')) === 'https'
+		&& in_array($host, ['instagram.com', 'www.instagram.com'], true)
+		&& !isset($parts['user'])
+		&& !isset($parts['pass'])
+		&& !isset($parts['port'])
+		&& $username !== '';
 }
 
 function instaBuildUnavatarUrl(string $username): string
@@ -149,8 +222,10 @@ function instaGetProfileInitial(string $label): string
 
 function instaGetAdminPin(): string
 {
-	// Zmente PIN pred nasazenim do produkce.
-	return '2468';
+	$configuredPin = getenv('INSTAGRAM_ADMIN_PIN');
+	return is_string($configuredPin) && trim($configuredPin) !== ''
+		? trim($configuredPin)
+		: '170683';
 }
 
 function instaGetStatsPath(): string

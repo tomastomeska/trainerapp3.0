@@ -27,7 +27,7 @@ function mobileInput(): array
 
 function mobileBearerToken(): string
 {
-    $header = trim((string)($_SERVER['HTTP_AUTHORIZATION'] ?? ''));
+    $header = trim((string)($_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? ''));
     if ($header === '' && function_exists('getallheaders')) {
         $headers = getallheaders();
         $header = trim((string)($headers['Authorization'] ?? $headers['authorization'] ?? ''));
@@ -35,6 +35,25 @@ function mobileBearerToken(): string
     if (preg_match('/^Bearer\s+(.+)$/i', $header, $m)) {
         return trim($m[1]);
     }
+
+    if (!empty($_SERVER['HTTP_X_TOKEN'])) {
+        return trim((string)$_SERVER['HTTP_X_TOKEN']);
+    }
+    if (!empty($_GET['token'])) {
+        return trim((string)$_GET['token']);
+    }
+    if (!empty($_GET['access_token'])) {
+        return trim((string)$_GET['access_token']);
+    }
+
+    $input = mobileInput();
+    if (!empty($input['token'])) {
+        return trim((string)$input['token']);
+    }
+    if (!empty($input['access_token'])) {
+        return trim((string)$input['access_token']);
+    }
+
     return '';
 }
 
