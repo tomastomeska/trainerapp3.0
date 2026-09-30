@@ -68,7 +68,7 @@ function mobileRequireCoach(): array
     $hash = hash('sha256', $token);
     $stmt = $pdo->prepare(
         'SELECT t.id AS token_id, t.user_id, t.expires_at,
-                c.id, c.username, c.name, c.email, c.is_active
+                c.id, c.username, c.name, c.email, c.is_active, c.mobile_app_enabled
          FROM mobile_api_tokens t
          JOIN coaches c ON c.id = t.user_id
          WHERE t.token_hash = ?
@@ -83,8 +83,11 @@ function mobileRequireCoach(): array
     if (!$coach || !(int)$coach['is_active']) {
         mobileJson(['success' => false, 'error' => 'Neplatný nebo prošlý přístupový token.'], 401);
     }
+    if (!(int)$coach['mobile_app_enabled']) {
+        mobileJson(['success' => false, 'error' => 'Přístup do aplikace není povolený.'], 403);
+    }
 
-    $pdo->prepare('UPDATE mobile_api_tokens SET last_used_at = NOW() WHERE id = ?')
+    $pdo->prepare('UPDATE mobile_api_tokens SET last_used_at = NOW() WHERE id = ? AND (last_used_at IS NULL OR last_used_at <= DATE_SUB(NOW(), INTERVAL 15 MINUTE))')
         ->execute([(int)$coach['token_id']]);
 
     return [
@@ -96,7 +99,7 @@ function mobileRequireCoach(): array
     ];
 }
 
-function mobileIssueToken(PDO $pdo, int $userId, string $accountType = 'coach', int $days = 30): string
+function mobileIssueToken(PDO $pdo, int $userId, string $accountType = 'coach', int $days = 30, string $platform = 'android', string $appVersion = ''): string
 {
     if ($accountType !== 'coach' && $accountType !== 'athlete') {
         $accountType = 'coach';
@@ -104,12 +107,17 @@ function mobileIssueToken(PDO $pdo, int $userId, string $accountType = 'coach', 
     $token = rtrim(strtr(base64_encode(random_bytes(48)), '+/', '-_'), '=');
     $hash = hash('sha256', $token);
     $expires = (new DateTimeImmutable('now'))->modify('+' . $days . ' days')->format('Y-m-d H:i:s');
+    $platform = strtolower(trim($platform));
+    if (!in_array($platform, ['android', 'ios'], true)) {
+        $platform = 'android';
+    }
+    $appVersion = mb_substr(trim($appVersion), 0, 100, 'UTF-8');
 
     $pdo->prepare(
         'INSERT INTO mobile_api_tokens
-            (account_type, user_id, token_hash, expires_at, created_at, last_used_at)
-         VALUES (?, ?, ?, ?, NOW(), NOW())'
-    )->execute([$accountType, $userId, $hash, $expires]);
+            (account_type, user_id, token_hash, expires_at, platform, app_version, created_at, last_used_at)
+         VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())'
+    )->execute([$accountType, $userId, $hash, $expires, $platform, $appVersion !== '' ? $appVersion : null]);
 
     return $token;
 }
@@ -141,7 +149,7 @@ function mobileRequireAthlete(): array
     $hash = hash('sha256', $token);
     $stmt = $pdo->prepare(
         'SELECT t.id AS token_id, t.user_id, t.expires_at,
-                a.id, a.coach_id, a.email, a.first_name, a.last_name, a.login_enabled
+                a.id, a.coach_id, a.email, a.first_name, a.last_name, a.mobile_app_enabled
          FROM mobile_api_tokens t
          JOIN athletes a ON a.id = t.user_id
          WHERE t.token_hash = ?
@@ -153,11 +161,14 @@ function mobileRequireAthlete(): array
     $stmt->execute([$hash]);
     $athlete = $stmt->fetch();
 
-    if (!$athlete || !(int)$athlete['login_enabled']) {
+    if (!$athlete) {
         mobileJson(['success' => false, 'error' => 'Neplatný nebo prošlý přístupový token.'], 401);
     }
+    if (!(int)$athlete['mobile_app_enabled']) {
+        mobileJson(['success' => false, 'error' => 'Přístup do aplikace není povolený.'], 403);
+    }
 
-    $pdo->prepare('UPDATE mobile_api_tokens SET last_used_at = NOW() WHERE id = ?')
+    $pdo->prepare('UPDATE mobile_api_tokens SET last_used_at = NOW() WHERE id = ? AND (last_used_at IS NULL OR last_used_at <= DATE_SUB(NOW(), INTERVAL 15 MINUTE))')
         ->execute([(int)$athlete['token_id']]);
 
     $name = trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']);

@@ -374,6 +374,22 @@ if ($configuredSublogoPath !== '') {
         $sublogoUrl = BASE_URL . '/' . ltrim($configuredSublogoPath, '/');
     }
 }
+$androidMarketUrl = trim(getAppSetting('mobile_app_android_market_url', ''));
+$androidApkPath = trim(getAppSetting('mobile_app_android_apk_path', ''));
+$iosMarketUrl = trim(getAppSetting('mobile_app_ios_market_url', ''));
+$androidApkUrl = '';
+if (str_starts_with($androidApkPath, 'uploads/apps/android/') && !str_contains($androidApkPath, '..')) {
+    $androidApkAbsolutePath = __DIR__ . '/' . $androidApkPath;
+    if (is_file($androidApkAbsolutePath)) {
+        $androidApkUrl = BASE_URL . '/' . implode('/', array_map('rawurlencode', explode('/', $androidApkPath)));
+    }
+}
+$androidStoreUrl = filter_var($androidMarketUrl, FILTER_VALIDATE_URL) && strtolower((string)parse_url($androidMarketUrl, PHP_URL_SCHEME)) === 'https'
+    ? $androidMarketUrl
+    : $androidApkUrl;
+$iosStoreUrl = filter_var($iosMarketUrl, FILTER_VALIDATE_URL) && strtolower((string)parse_url($iosMarketUrl, PHP_URL_SCHEME)) === 'https'
+    ? $iosMarketUrl
+    : '';
 $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
 ?>
 <!DOCTYPE html>
@@ -384,6 +400,7 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Přihlášení – <?= APP_NAME ?></title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <style>
         :root {
             --brand-dark: #101f46;
@@ -481,6 +498,91 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
 
         .intro-actions .btn-login {
             width: min(92vw, 380px);
+        }
+
+        .app-store-links {
+            display: flex;
+            justify-content: center;
+            width: min(92vw, 380px);
+            gap: 10px;
+            margin: 38px auto 0;
+            transition: opacity .42s ease, transform .42s ease, height .42s ease, margin .42s ease;
+        }
+
+        .app-store-badge {
+            flex: 1 1 0;
+            min-width: 0;
+            min-height: 66px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 8px 14px;
+            border: 2px solid #87909e;
+            border-radius: 11px;
+            background: #050505;
+            color: #fff;
+            text-decoration: none;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, .28);
+            transition: transform .16s ease, border-color .16s ease, background .16s ease;
+        }
+
+        a.app-store-badge:hover {
+            color: #fff;
+            border-color: #fff;
+            transform: translateY(-2px);
+        }
+
+        .app-store-badge i {
+            flex: 0 0 auto;
+            font-size: 2rem;
+        }
+
+        .app-store-badge .google-play-icon {
+            color: #42d982;
+        }
+
+        .app-store-copy {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            line-height: 1.05;
+            white-space: nowrap;
+        }
+
+        .app-store-copy small {
+            font-size: .67rem;
+            font-weight: 500;
+        }
+
+        .app-store-copy strong {
+            font-size: 1.23rem;
+            font-weight: 600;
+        }
+
+        .app-store-badge.is-disabled {
+            border-color: #667080;
+            background: #323945;
+            color: #b5bbc4;
+            box-shadow: none;
+            cursor: default;
+        }
+
+        .app-store-badge.is-disabled i {
+            color: #a7adb6;
+        }
+
+        .app-store-badge.is-disabled .app-store-copy small {
+            color: #a7adb6;
+        }
+
+        .app-store-badge .development-label {
+            display: block;
+            margin: 5px 0 0;
+            color: #d1d5db;
+            font-size: .62rem;
+            line-height: 1;
+            text-transform: uppercase;
         }
 
         .btn-request-access {
@@ -665,6 +767,15 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
             overflow: hidden;
         }
 
+        body.show-form .app-store-links {
+            opacity: 0;
+            transform: translateY(-8px);
+            pointer-events: none;
+            height: 0;
+            margin: 0;
+            overflow: hidden;
+        }
+
         body.show-form .login-card {
             opacity: 1;
             transform: translateY(0);
@@ -698,6 +809,34 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
                 max-width: min(82vw, 300px);
                 max-height: 118px;
             }
+
+            .app-store-links {
+                width: min(92vw, 380px);
+                gap: 8px;
+                margin-top: 28px;
+            }
+
+            .app-store-badge {
+                min-height: 58px;
+                gap: 6px;
+                padding: 7px 5px;
+            }
+
+            .app-store-badge i {
+                font-size: 1.65rem;
+            }
+
+            .app-store-copy small {
+                font-size: .58rem;
+            }
+
+            .app-store-copy strong {
+                font-size: 1.02rem;
+            }
+
+            .app-store-badge .development-label {
+                font-size: .52rem;
+            }
         }
     </style>
 </head>
@@ -727,6 +866,26 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
         <div class="intro-actions">
             <button type="button" id="btnShowLogin" class="btn btn-login">Přihlášení</button>
             <button type="button" class="btn btn-request-access" data-bs-toggle="modal" data-bs-target="#coachAccessModal">Žádost o přístup trenéra</button>
+        </div>
+
+        <div class="app-store-links" aria-label="Mobilní aplikace">
+            <?php if ($iosStoreUrl !== ''): ?>
+                <a class="app-store-badge" href="<?= h($iosStoreUrl) ?>" target="_blank" rel="noopener noreferrer" aria-label="Stáhnout TrainerApp z App Store">
+            <?php else: ?>
+                <span class="app-store-badge is-disabled" aria-disabled="true" aria-label="Aplikace pro iPhone je ve vývoji">
+            <?php endif; ?>
+                <i class="fab fa-apple" aria-hidden="true"></i>
+                <span class="app-store-copy"><small>Download on the</small><strong>App Store</strong><?php if ($iosStoreUrl === ''): ?><span class="development-label">Ve vývoji</span><?php endif; ?></span>
+            <?php if ($iosStoreUrl !== ''): ?></a><?php else: ?></span><?php endif; ?>
+
+            <?php if ($androidStoreUrl !== ''): ?>
+                <a class="app-store-badge" href="<?= h($androidStoreUrl) ?>" <?= $androidStoreUrl === $androidApkUrl ? 'download="' . h(basename($androidApkPath)) . '"' : 'target="_blank" rel="noopener noreferrer"' ?> aria-label="Stáhnout TrainerApp pro Android">
+            <?php else: ?>
+                <span class="app-store-badge is-disabled" aria-disabled="true" aria-label="Aplikace pro Android je ve vývoji">
+            <?php endif; ?>
+                <i class="fab fa-google-play google-play-icon" aria-hidden="true"></i>
+                <span class="app-store-copy"><small>GET IT ON</small><strong>Google Play</strong><?php if ($androidStoreUrl === ''): ?><span class="development-label">Ve vývoji</span><?php endif; ?></span>
+            <?php if ($androidStoreUrl !== ''): ?></a><?php else: ?></span><?php endif; ?>
         </div>
 
         <div class="card login-card">

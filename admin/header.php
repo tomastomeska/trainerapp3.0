@@ -139,6 +139,15 @@ function renderAdminHeader(string $title = ''): void {
 				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'mycoach_content.php' ? 'active' : '' ?>" style="padding-left:2.2rem;font-size:.87rem;">
 					<i class="fas fa-layer-group me-2"></i>MyCoach obsah
 				</a>
+				<div class="text-uppercase small fw-semibold mt-3 mb-1" style="padding:.5rem .75rem .25rem;color:rgba(255,255,255,.68);font-size:.72rem;">Aplikace</div>
+				<a href="<?= BASE_URL ?>/admin/apps.php?platform=android"
+				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'apps.php' && ($_GET['platform'] ?? 'android') !== 'ios' ? 'active' : '' ?>" style="padding-left:2.2rem;font-size:.87rem;">
+					<i class="fab fa-android me-2"></i>Android
+				</a>
+				<a href="<?= BASE_URL ?>/admin/apps.php?platform=ios"
+				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'apps.php' && ($_GET['platform'] ?? '') === 'ios' ? 'active' : '' ?>" style="padding-left:2.2rem;font-size:.87rem;">
+					<i class="fab fa-apple me-2"></i>Apple
+				</a>
 				<a href="<?= BASE_URL ?>/admin/manual.php"
 				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'manual.php' ? 'active' : '' ?>">
 					<i class="fas fa-book-open me-2"></i>Návod

@@ -16,7 +16,7 @@ if ($email === '' || $password === '') {
 
 $pdo = getDB();
 $stmt = $pdo->prepare(
-    'SELECT id, coach_id, email, password, first_name, last_name, login_enabled, force_password_change, photo
+    'SELECT id, coach_id, email, password, first_name, last_name, mobile_app_enabled, force_password_change, photo
      FROM athletes
      WHERE email = ?
      LIMIT 1'
@@ -24,18 +24,23 @@ $stmt = $pdo->prepare(
 $stmt->execute([$email]);
 $athlete = $stmt->fetch();
 
-if (!$athlete || !(int)$athlete['login_enabled']) {
+if (!$athlete) {
     usleep(250000);
-    mobileJson(['success' => false, 'error' => 'Účet sportovce ještě není aktivovaný. Kontaktujte trenéra.'], 403);
+    mobileJson(['success' => false, 'error' => 'Nesprávné přihlašovací údaje.'], 401);
 }
 
 if (empty($athlete['password']) || !password_verify($password, (string)$athlete['password'])) {
     usleep(250000);
     mobileJson(['success' => false, 'error' => 'Nesprávné přihlašovací údaje.'], 401);
 }
+if (!(int)$athlete['mobile_app_enabled']) {
+    mobileJson(['success' => false, 'error' => 'Přístup do aplikace není povolený.'], 403);
+}
 
 $remember = !empty($input['remember']);
-$token = mobileIssueToken($pdo, (int)$athlete['id'], 'athlete', $remember ? 3650 : 30);
+$platform = (string)($input['platform'] ?? $_SERVER['HTTP_X_APP_PLATFORM'] ?? 'android');
+$appVersion = (string)($input['app_version'] ?? $_SERVER['HTTP_X_APP_VERSION'] ?? '');
+$token = mobileIssueToken($pdo, (int)$athlete['id'], 'athlete', $remember ? 3650 : 30, $platform, $appVersion);
 try {
     $pdo->prepare('UPDATE athletes SET last_login = NOW() WHERE id = ?')->execute([(int)$athlete['id']]);
 } catch (Throwable $e) {

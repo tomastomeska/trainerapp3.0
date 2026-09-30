@@ -16,7 +16,7 @@ if ($username === '' || $password === '') {
 
 $pdo = getDB();
 $stmt = $pdo->prepare(
-    'SELECT id, password, name, username, email, is_active, force_password_change
+    'SELECT id, password, name, username, email, is_active, mobile_app_enabled, force_password_change
      FROM coaches WHERE username = ? LIMIT 1'
 );
 $stmt->execute([$username]);
@@ -30,9 +30,14 @@ if (!$coach || !password_verify($password, (string)$coach['password'])) {
 if (!(int)$coach['is_active']) {
     mobileJson(['success' => false, 'error' => 'Váš účet byl zablokován.'], 403);
 }
+if (!(int)$coach['mobile_app_enabled']) {
+    mobileJson(['success' => false, 'error' => 'Přístup do aplikace není povolený.'], 403);
+}
 
 $remember = !empty($input['remember']);
-$token = mobileIssueToken($pdo, (int)$coach['id'], 'coach', $remember ? 3650 : 30);
+$platform = (string)($input['platform'] ?? $_SERVER['HTTP_X_APP_PLATFORM'] ?? 'android');
+$appVersion = (string)($input['app_version'] ?? $_SERVER['HTTP_X_APP_VERSION'] ?? '');
+$token = mobileIssueToken($pdo, (int)$coach['id'], 'coach', $remember ? 3650 : 30, $platform, $appVersion);
 $photo = '';
 try {
     $photoStmt = $pdo->prepare('SELECT photo FROM coaches WHERE id = ? LIMIT 1');
