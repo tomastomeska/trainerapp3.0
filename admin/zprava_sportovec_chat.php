@@ -67,8 +67,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'send'
                  VALUES (?, "admin", ?, ?, ?, NOW())'
             );
             $ins->execute([$athleteId, $body, $attachmentPath, $attachmentName]);
+            $chatMessageId = (int)$pdo->lastInsertId();
 
-            if (!empty($athlete['email'])) {
+            if (!empty($athlete['email']) && isFirstChatMessageToday('admin_athlete_chat_messages', ['athlete_id' => $athleteId], 'admin', $chatMessageId)) {
                 if (sendAthleteMessageNotificationEmail((string)$athlete['email'], $athleteName !== '' ? $athleteName : 'sportovče', 'Nová zpráva od administrátora', $body)) {
                     processEmailNotificationQueue(200, 'athlete_message_notification');
                 }

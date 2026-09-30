@@ -14,13 +14,25 @@ if ($athleteId <= 0 || $workoutSetId <= 0) {
 
 $pdo = getDB();
 
-$athleteStmt = $pdo->prepare('SELECT id, first_name, last_name FROM athletes WHERE id = ? AND coach_id = ? LIMIT 1');
-$athleteStmt->execute([$athleteId, $coach['id']]);
+$athleteStmt = $pdo->prepare('SELECT id, first_name, last_name FROM athletes WHERE id = ? LIMIT 1');
+$athleteStmt->execute([$athleteId]);
 $athlete = $athleteStmt->fetch();
+
 if (!$athlete) mobileJson(['success' => false, 'error' => 'Sportovec nebyl nalezen.'], 404);
 
-$setStmt = $pdo->prepare('SELECT id, name FROM workout_sets WHERE id = ? AND coach_id = ? LIMIT 1');
-$setStmt->execute([$workoutSetId, $coach['id']]);
+$hasIsGlobal = false;
+try {
+    $chk = $pdo->query("SHOW COLUMNS FROM workout_sets LIKE 'is_global'");
+    if ($chk && $chk->fetch()) $hasIsGlobal = true;
+} catch (Throwable $e) {}
+
+if ($hasIsGlobal) {
+    $setStmt = $pdo->prepare('SELECT id, name FROM workout_sets WHERE id = ? AND (coach_id = ? OR is_global = 1) LIMIT 1');
+    $setStmt->execute([$workoutSetId, $coach['id']]);
+} else {
+    $setStmt = $pdo->prepare('SELECT id, name FROM workout_sets WHERE id = ? LIMIT 1');
+    $setStmt->execute([$workoutSetId]);
+}
 $set = $setStmt->fetch();
 if (!$set) mobileJson(['success' => false, 'error' => 'Tréninková sada nebyla nalezena.'], 404);
 
@@ -48,20 +60,39 @@ try {
     $insert->execute([$athleteId, $workoutSetId]);
     $sessionId = (int)$pdo->lastInsertId();
 
-    $copy = $pdo->prepare(
-        'INSERT INTO training_session_exercises
-            (session_id, exercise_id, exercise_order, exercise_name, sport_type)
-         SELECT ?, wse.exercise_id, wse.exercise_order, e.name, e.sport_type
-         FROM workout_set_exercises wse
-         JOIN exercises e ON e.id = wse.exercise_id
-         WHERE wse.workout_set_id = ?
-         ORDER BY wse.exercise_order ASC'
-    );
+    $hasIsTimed = false;
+    try {
+        $chk2 = $pdo->query("SHOW COLUMNS FROM exercises LIKE 'is_timed'");
+        if ($chk2 && $chk2->fetch()) $hasIsTimed = true;
+    } catch (Throwable $e) {}
+
+    if ($hasIsTimed) {
+        $copy = $pdo->prepare(
+            'INSERT INTO training_session_exercises
+                (session_id, exercise_id, exercise_order, exercise_name, sport_type, is_timed)
+             SELECT ?, wse.exercise_id, wse.exercise_order, e.name, e.sport_type, e.is_timed
+             FROM workout_set_exercises wse
+             JOIN exercises e ON e.id = wse.exercise_id
+             WHERE wse.workout_set_id = ?
+             ORDER BY wse.exercise_order ASC'
+        );
+    } else {
+        $copy = $pdo->prepare(
+            'INSERT INTO training_session_exercises
+                (session_id, exercise_id, exercise_order, exercise_name, sport_type)
+             SELECT ?, wse.exercise_id, wse.exercise_order, e.name, e.sport_type
+             FROM workout_set_exercises wse
+             JOIN exercises e ON e.id = wse.exercise_id
+             WHERE wse.workout_set_id = ?
+             ORDER BY wse.exercise_order ASC'
+        );
+    }
+
     $copy->execute([$sessionId, $workoutSetId]);
     $pdo->commit();
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
-    mobileJson(['success' => false, 'error' => 'Trénink se nepodařilo spustit.'], 500);
+    mobileJson(['success' => false, 'error' => 'Trénink se nepodařilo spustit: ' . $e->getMessage()], 500);
 }
 
 mobileJson([
@@ -69,7 +100,7 @@ mobileJson([
     'session' => [
         'id' => $sessionId,
         'athlete_id' => $athleteId,
-        'athlete_name' => trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']),
+        'athlete_name' => trim((string)($athlete['first_name'] ?? '') . ' ' . (string)($athlete['last_name'] ?? '')),
         'workout_set_id' => $workoutSetId,
         'workout_set_name' => (string)$set['name'],
         'started_at' => date('Y-m-d H:i:s'),

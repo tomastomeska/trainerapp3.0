@@ -53,7 +53,7 @@ if (($athlete || $target === 'admin') && $_SERVER['REQUEST_METHOD'] === 'POST' &
 
                 $athleteName = trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']);
                 if (!empty($athlete['email'])) {
-                    notifyAthleteAboutNewCoachChatMessage($athleteId, $newId, (string)$athlete['email'], $athleteName, $coachName, $body);
+                    notifyAthleteAboutNewCoachChatMessage($coachId, $athleteId, $newId, (string)$athlete['email'], $athleteName, $coachName, $body);
                 }
             }
         } catch (Throwable $e) {

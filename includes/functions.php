@@ -5919,7 +5919,7 @@ function sendAdminAthleteChatReplyOwnerEmail(int $athleteId, string $athleteName
     . "<p>v chatu je <strong>nová zpráva</strong> od sportovce <strong>" . $h($athleteName) . "</strong>.</p>"
     . "<p>" . nl2br($h($excerpt)) . "</p>"
     . "<p><a href=\"" . $h($link) . "\" style=\"background:#0d6efd;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none\">Otevřít chat</a></p>"
-    . "<hr><p style=\"color:#888;font-size:.85em\">TrainerApp – automatické notifikace. Dokud zprávu nepřečtete v chatu, o dalších zprávách od tohoto sportovce už znovu e-mailem neinformujeme.</p>";
+    . "<hr><p style=\"color:#888;font-size:.85em\">TrainerApp – automatické notifikace. O dalších chatových zprávách vás e-mailem informujeme nejvýše jednou denně.</p>";
   $altBody = "V chatu je nová zpráva od sportovce {$athleteName}.\n\n{$excerpt}\n\nOtevřít chat: {$link}";
 
   $mail = new PHPMailer\PHPMailer\PHPMailer(true);
@@ -5954,23 +5954,88 @@ function sendAdminAthleteChatReplyOwnerEmail(int $athleteId, string $athleteName
   }
 }
 
+function isFirstChatMessageToday(string $table, array $conversation, string $sender, int $messageId): bool {
+  $allowed = [
+    'admin_athlete_chat_messages' => ['athlete_id' => ['admin', 'athlete']],
+    'admin_coach_chat_messages' => ['coach_id' => ['admin', 'coach']],
+    'coach_athlete_chat_messages' => ['coach_id' => ['coach', 'athlete'], 'athlete_id' => ['coach', 'athlete']],
+  ];
+  if (!isset($allowed[$table]) || !in_array($sender, ['admin', 'coach', 'athlete'], true)) {
+    return false;
+  }
+
+  $fieldNames = array_keys($allowed[$table]);
+  if (array_diff(array_keys($conversation), $fieldNames) || array_diff($fieldNames, array_keys($conversation))) {
+    return false;
+  }
+
+  if ($table === 'admin_athlete_chat_messages' && $sender === 'admin') {
+    $recipientType = 'athlete';
+    $recipientId = (int)$conversation['athlete_id'];
+  } elseif ($table === 'admin_athlete_chat_messages' && $sender === 'athlete') {
+    $recipientType = 'admin';
+    $recipientId = 0;
+  } elseif ($table === 'admin_coach_chat_messages' && $sender === 'admin') {
+    $recipientType = 'coach';
+    $recipientId = (int)$conversation['coach_id'];
+  } elseif ($table === 'admin_coach_chat_messages' && $sender === 'coach') {
+    $recipientType = 'admin';
+    $recipientId = 0;
+  } elseif ($table === 'coach_athlete_chat_messages' && $sender === 'coach') {
+    $recipientType = 'athlete';
+    $recipientId = (int)$conversation['athlete_id'];
+  } elseif ($table === 'coach_athlete_chat_messages' && $sender === 'athlete') {
+    $recipientType = 'coach';
+    $recipientId = (int)$conversation['coach_id'];
+  } else {
+    return false;
+  }
+
+  $sources = match ($recipientType) {
+    'athlete' => [
+      ['admin_athlete_chat_messages', 'admin', 'athlete_id', $recipientId],
+      ['coach_athlete_chat_messages', 'coach', 'athlete_id', $recipientId],
+    ],
+    'coach' => [
+      ['admin_coach_chat_messages', 'admin', 'coach_id', $recipientId],
+      ['coach_athlete_chat_messages', 'athlete', 'coach_id', $recipientId],
+    ],
+    default => [
+      ['admin_athlete_chat_messages', 'athlete', null, null],
+      ['admin_coach_chat_messages', 'coach', null, null],
+      ['coach_athlete_chat_messages', 'athlete', null, null],
+    ],
+  };
+
+  $queries = [];
+  $params = [];
+  foreach ($sources as [$sourceTable, $sourceSender, $filterColumn, $filterId]) {
+    $conditions = ['sender = ?', 'created_at >= CURDATE()', 'created_at < CURDATE() + INTERVAL 1 DAY'];
+    $params[] = $sourceSender;
+    if ($filterColumn !== null) {
+      $conditions[] = $filterColumn . ' = ?';
+      $params[] = $filterId;
+    }
+    $queries[] = "SELECT '" . $sourceTable . "' AS source_table, id AS message_id, created_at FROM " . $sourceTable . ' WHERE ' . implode(' AND ', $conditions);
+  }
+
+  try {
+    $sql = 'SELECT source_table, message_id FROM (' . implode(' UNION ALL ', $queries) . ') AS todays_chat_messages ORDER BY created_at ASC, source_table ASC, message_id ASC LIMIT 1';
+    $stmt = getDB()->prepare($sql);
+    $stmt->execute($params);
+    $firstMessage = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $firstMessage && $firstMessage['source_table'] === $table && (int)$firstMessage['message_id'] === $messageId;
+  } catch (Throwable $e) {
+    error_log('isFirstChatMessageToday error: ' . $e->getMessage());
+    return false;
+  }
+}
+
 /**
- * Posle notifikaci adminovi jen jednou za neprectenou serii zprav od sportovce –
- * dokud admin chat neprecte (admin_read_at), na dalsi zpravy stejneho sportovce se uz mail neposila.
+ * Posle notifikaci adminovi nejvyse jednou denne.
  */
 function notifyAdminAboutNewAthleteChatMessage(int $athleteId, int $messageId, string $athleteName, string $message): void {
-  try {
-    $pdo = getDB();
-    $pendingStmt = $pdo->prepare(
-      "SELECT COUNT(*) FROM admin_athlete_chat_messages
-       WHERE athlete_id = ? AND sender = 'athlete' AND admin_read_at IS NULL AND admin_notified_at IS NOT NULL AND id != ?"
-    );
-    $pendingStmt->execute([$athleteId, $messageId]);
-    if ((int)$pendingStmt->fetchColumn() > 0) {
-      return;
-    }
-  } catch (Throwable $e) {
-    error_log('notifyAdminAboutNewAthleteChatMessage check error: ' . $e->getMessage());
+  if (!isFirstChatMessageToday('admin_athlete_chat_messages', ['athlete_id' => $athleteId], 'athlete', $messageId)) {
     return;
   }
 
@@ -6016,7 +6081,7 @@ function sendAdminCoachChatReplyOwnerEmail(int $coachId, string $coachName, stri
     . "<p>v chatu je <strong>nová zpráva</strong> od trenéra <strong>" . $h($coachName) . "</strong>.</p>"
     . "<p>" . nl2br($h($excerpt)) . "</p>"
     . "<p><a href=\"" . $h($link) . "\" style=\"background:#0d6efd;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none\">Otevřít chat</a></p>"
-    . "<hr><p style=\"color:#888;font-size:.85em\">TrainerApp – automatické notifikace. Dokud zprávu nepřečtete v chatu, o dalších zprávách od tohoto trenéra už znovu e-mailem neinformujeme.</p>";
+    . "<hr><p style=\"color:#888;font-size:.85em\">TrainerApp – automatické notifikace. O dalších zprávách v této konverzaci vás e-mailem informujeme nejvýše jednou denně.</p>";
   $altBody = "V chatu je nová zpráva od trenéra {$coachName}.\n\n{$excerpt}\n\nOtevřít chat: {$link}";
 
   $mail = new PHPMailer\PHPMailer\PHPMailer(true);
@@ -6052,22 +6117,10 @@ function sendAdminCoachChatReplyOwnerEmail(int $coachId, string $coachName, stri
 }
 
 /**
- * Posle notifikaci adminovi jen jednou za neprectenou serii zprav od trenera –
- * dokud admin chat neprecte (admin_read_at), na dalsi zpravy stejneho trenera se uz mail neposila.
+ * Posle notifikaci adminovi nejvyse jednou denne.
  */
 function notifyAdminAboutNewCoachChatMessage(int $coachId, int $messageId, string $coachName, string $message): void {
-  try {
-    $pdo = getDB();
-    $pendingStmt = $pdo->prepare(
-      "SELECT COUNT(*) FROM admin_coach_chat_messages
-       WHERE coach_id = ? AND sender = 'coach' AND admin_read_at IS NULL AND admin_notified_at IS NOT NULL AND id != ?"
-    );
-    $pendingStmt->execute([$coachId, $messageId]);
-    if ((int)$pendingStmt->fetchColumn() > 0) {
-      return;
-    }
-  } catch (Throwable $e) {
-    error_log('notifyAdminAboutNewCoachChatMessage check error: ' . $e->getMessage());
+  if (!isFirstChatMessageToday('admin_coach_chat_messages', ['coach_id' => $coachId], 'coach', $messageId)) {
     return;
   }
 
@@ -6171,7 +6224,7 @@ function sendCoachAthleteChatReplyEmail(string $toEmail, string $coachName, stri
     . "<p>v chatu je <strong>nová zpráva</strong> od sportovce <strong>" . $h($athleteName) . "</strong>.</p>"
     . "<p>" . nl2br($h($excerpt)) . "</p>"
     . "<p><a href=\"" . $h($link) . "\" style=\"background:#0d6efd;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none\">Otevřít chat</a></p>"
-    . "<hr><p style=\"color:#888;font-size:.85em\">TrainerApp – automatické notifikace. Dokud zprávu nepřečtete v chatu, o dalších zprávách od tohoto sportovce už znovu e-mailem neinformujeme.</p>";
+    . "<hr><p style=\"color:#888;font-size:.85em\">TrainerApp – automatické notifikace. O dalších chatových zprávách vás e-mailem informujeme nejvýše jednou denně.</p>";
   $altBody = "V chatu je nová zpráva od sportovce {$athleteName}.\n\n{$excerpt}\n\nOtevřít chat: {$link}";
 
   $mail = new PHPMailer\PHPMailer\PHPMailer(true);
@@ -6207,24 +6260,13 @@ function sendCoachAthleteChatReplyEmail(string $toEmail, string $coachName, stri
 }
 
 /**
- * Posle notifikaci trenerovi jen jednou za neprectenou serii zprav od sportovce (throttle stejny jako u admin chatu).
+ * Posle notifikaci trenerovi nejvyse jednou denne.
  */
 function notifyCoachAboutNewAthleteChatMessage(int $coachId, int $athleteId, int $messageId, string $coachEmail, string $coachName, string $athleteName, string $message): void {
   if ($coachEmail === '') {
     return;
   }
-  try {
-    $pdo = getDB();
-    $pendingStmt = $pdo->prepare(
-      "SELECT COUNT(*) FROM coach_athlete_chat_messages
-       WHERE coach_id = ? AND athlete_id = ? AND sender = 'athlete' AND coach_read_at IS NULL AND coach_notified_at IS NOT NULL AND id != ?"
-    );
-    $pendingStmt->execute([$coachId, $athleteId, $messageId]);
-    if ((int)$pendingStmt->fetchColumn() > 0) {
-      return;
-    }
-  } catch (Throwable $e) {
-    error_log('notifyCoachAboutNewAthleteChatMessage check error: ' . $e->getMessage());
+  if (!isFirstChatMessageToday('coach_athlete_chat_messages', ['coach_id' => $coachId, 'athlete_id' => $athleteId], 'athlete', $messageId)) {
     return;
   }
 
@@ -6238,24 +6280,13 @@ function notifyCoachAboutNewAthleteChatMessage(int $coachId, int $athleteId, int
 }
 
 /**
- * Posle notifikaci sportovci jen jednou za neprectenou serii zprav od trenera (throttle stejny jako u admin chatu).
+ * Posle notifikaci sportovci nejvyse jednou denne.
  */
-function notifyAthleteAboutNewCoachChatMessage(int $athleteId, int $messageId, string $athleteEmail, string $athleteName, string $coachName, string $message): void {
+function notifyAthleteAboutNewCoachChatMessage(int $coachId, int $athleteId, int $messageId, string $athleteEmail, string $athleteName, string $coachName, string $message): void {
   if ($athleteEmail === '') {
     return;
   }
-  try {
-    $pdo = getDB();
-    $pendingStmt = $pdo->prepare(
-      "SELECT COUNT(*) FROM coach_athlete_chat_messages
-       WHERE athlete_id = ? AND sender = 'coach' AND athlete_read_at IS NULL AND athlete_notified_at IS NOT NULL AND id != ?"
-    );
-    $pendingStmt->execute([$athleteId, $messageId]);
-    if ((int)$pendingStmt->fetchColumn() > 0) {
-      return;
-    }
-  } catch (Throwable $e) {
-    error_log('notifyAthleteAboutNewCoachChatMessage check error: ' . $e->getMessage());
+  if (!isFirstChatMessageToday('coach_athlete_chat_messages', ['coach_id' => $coachId, 'athlete_id' => $athleteId], 'coach', $messageId)) {
     return;
   }
 

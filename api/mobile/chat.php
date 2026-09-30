@@ -39,7 +39,7 @@ if ($action === 'conversations') {
 
     try {
         $stmt = $pdo->prepare(
-            "SELECT a.id, a.first_name, a.last_name, a.email,
+            "SELECT a.id, a.first_name, a.last_name, a.email, a.photo,
                     (SELECT body FROM coach_athlete_chat_messages WHERE coach_id = ? AND athlete_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) AS last_body,
                     (SELECT created_at FROM coach_athlete_chat_messages WHERE coach_id = ? AND athlete_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) AS last_at,
                     (SELECT COUNT(*) FROM coach_athlete_chat_messages WHERE coach_id = ? AND athlete_id = a.id AND sender = 'athlete' AND coach_read_at IS NULL) AS unread_count
@@ -58,6 +58,7 @@ if ($action === 'conversations') {
                 'name' => $fullName,
                 'subtitle' => !empty($row['email']) ? (string)$row['email'] : 'Sportovec',
                 'icon' => '👤',
+                'photo' => mobilePublicPhoto((string)($row['photo'] ?? ''), 'athletes'),
                 'is_admin' => false,
                 'last_message' => !empty($row['last_body']) ? (string)$row['last_body'] : 'Zatiaľ žádná zpráva',
                 'last_time' => !empty($row['last_at']) ? date('H:i', strtotime((string)$row['last_at'])) : '',
@@ -75,6 +76,12 @@ if ($action === 'thread') {
 
     if ($convId === 'admin') {
         try {
+            $unreadIds = [];
+            $unreadStmt = $pdo->prepare("SELECT id FROM admin_coach_chat_messages WHERE coach_id = ? AND sender = 'admin' AND coach_read_at IS NULL");
+            $unreadStmt->execute([$coach['id']]);
+            foreach ($unreadStmt->fetchAll(PDO::FETCH_COLUMN) as $unreadId) {
+                $unreadIds[(int)$unreadId] = true;
+            }
             $pdo->prepare("UPDATE admin_coach_chat_messages SET coach_read_at = NOW() WHERE coach_id = ? AND sender = 'admin' AND coach_read_at IS NULL")
                 ->execute([$coach['id']]);
 
@@ -90,6 +97,7 @@ if ($action === 'thread') {
                     'sender_name' => $isMe ? 'Trenér (Vy)' : 'Administrátor',
                     'is_me' => $isMe,
                     'is_read' => $isRead,
+                    'coach_unread' => isset($unreadIds[(int)$m['id']]),
                     'text' => (string)$m['body'],
                     'time' => date('H:i', strtotime((string)$m['created_at'])),
                 ];
@@ -98,6 +106,12 @@ if ($action === 'thread') {
     } else {
         $athleteId = (int)$convId;
         try {
+            $unreadIds = [];
+            $unreadStmt = $pdo->prepare("SELECT id FROM coach_athlete_chat_messages WHERE coach_id = ? AND athlete_id = ? AND sender = 'athlete' AND coach_read_at IS NULL");
+            $unreadStmt->execute([$coach['id'], $athleteId]);
+            foreach ($unreadStmt->fetchAll(PDO::FETCH_COLUMN) as $unreadId) {
+                $unreadIds[(int)$unreadId] = true;
+            }
             $pdo->prepare("UPDATE coach_athlete_chat_messages SET coach_read_at = NOW() WHERE coach_id = ? AND athlete_id = ? AND sender = 'athlete' AND coach_read_at IS NULL")
                 ->execute([$coach['id'], $athleteId]);
 
@@ -122,6 +136,7 @@ if ($action === 'thread') {
                     'sender_name' => $isMe ? 'Trenér (Vy)' : $athName,
                     'is_me' => $isMe,
                     'is_read' => $isRead,
+                    'coach_unread' => isset($unreadIds[(int)$m['id']]),
                     'text' => (string)$m['body'],
                     'time' => date('H:i', strtotime((string)$m['created_at'])),
                 ];

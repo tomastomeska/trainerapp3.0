@@ -96,24 +96,77 @@ function mobileRequireCoach(): array
     ];
 }
 
-function mobileIssueToken(PDO $pdo, int $coachId, int $days = 30): string
+function mobileIssueToken(PDO $pdo, int $userId, string $accountType = 'coach', int $days = 30): string
 {
+    if ($accountType !== 'coach' && $accountType !== 'athlete') {
+        $accountType = 'coach';
+    }
     $token = rtrim(strtr(base64_encode(random_bytes(48)), '+/', '-_'), '=');
     $hash = hash('sha256', $token);
     $expires = (new DateTimeImmutable('now'))->modify('+' . $days . ' days')->format('Y-m-d H:i:s');
 
-    // Jednoduché pravidlo: při novém přihlášení zrušíme starší tokeny stejného trenéra.
-    $pdo->prepare(
-        "UPDATE mobile_api_tokens
-         SET revoked_at = NOW()
-         WHERE account_type = 'coach' AND user_id = ? AND revoked_at IS NULL"
-    )->execute([$coachId]);
-
     $pdo->prepare(
         'INSERT INTO mobile_api_tokens
             (account_type, user_id, token_hash, expires_at, created_at, last_used_at)
-         VALUES (\'coach\', ?, ?, ?, NOW(), NOW())'
-    )->execute([$coachId, $hash, $expires]);
+         VALUES (?, ?, ?, ?, NOW(), NOW())'
+    )->execute([$accountType, $userId, $hash, $expires]);
 
     return $token;
+}
+
+function mobilePublicPhoto(?string $filename, string $subDir): string
+{
+    $filename = trim((string)$filename);
+    if ($filename === '') {
+        return '';
+    }
+    if (preg_match('#^https?://#i', $filename)) {
+        return $filename;
+    }
+    $path = function_exists('photoUrl') ? photoUrl($filename, $subDir) : ('/uploads/' . $subDir . '/' . rawurlencode($filename));
+    if (preg_match('#^https?://#i', $path)) {
+        return $path;
+    }
+    return 'https://www.reservio.online' . (str_starts_with($path, '/') ? $path : '/' . $path);
+}
+
+function mobileRequireAthlete(): array
+{
+    $token = mobileBearerToken();
+    if ($token === '') {
+        mobileJson(['success' => false, 'error' => 'Chybí přístupový token.'], 401);
+    }
+
+    $pdo = getDB();
+    $hash = hash('sha256', $token);
+    $stmt = $pdo->prepare(
+        'SELECT t.id AS token_id, t.user_id, t.expires_at,
+                a.id, a.coach_id, a.email, a.first_name, a.last_name, a.login_enabled
+         FROM mobile_api_tokens t
+         JOIN athletes a ON a.id = t.user_id
+         WHERE t.token_hash = ?
+           AND t.account_type = \'athlete\'
+           AND t.revoked_at IS NULL
+           AND t.expires_at > NOW()
+         LIMIT 1'
+    );
+    $stmt->execute([$hash]);
+    $athlete = $stmt->fetch();
+
+    if (!$athlete || !(int)$athlete['login_enabled']) {
+        mobileJson(['success' => false, 'error' => 'Neplatný nebo prošlý přístupový token.'], 401);
+    }
+
+    $pdo->prepare('UPDATE mobile_api_tokens SET last_used_at = NOW() WHERE id = ?')
+        ->execute([(int)$athlete['token_id']]);
+
+    $name = trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']);
+
+    return [
+        'token_id' => (int)$athlete['token_id'],
+        'id' => (int)$athlete['id'],
+        'coach_id' => (int)$athlete['coach_id'],
+        'email' => (string)$athlete['email'],
+        'name' => $name !== '' ? $name : 'Sportovec',
+    ];
 }

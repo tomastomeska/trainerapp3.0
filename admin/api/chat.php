@@ -180,8 +180,9 @@ if ($action === 'send' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         $pdo->prepare('INSERT INTO admin_athlete_chat_messages (athlete_id, sender, body, admin_read_at) VALUES (?, "admin", ?, NOW())')->execute([$targetId, $body]);
+        $chatMessageId = (int)$pdo->lastInsertId();
         $athleteName = trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']);
-        if (!empty($athlete['email'])) {
+        if (!empty($athlete['email']) && isFirstChatMessageToday('admin_athlete_chat_messages', ['athlete_id' => $targetId], 'admin', $chatMessageId)) {
             if (sendAthleteMessageNotificationEmail((string)$athlete['email'], $athleteName !== '' ? $athleteName : 'sportovče', 'Nová zpráva od administrátora', $body)) {
                 processEmailNotificationQueue(200, 'athlete_message_notification');
             }
@@ -196,13 +197,14 @@ if ($action === 'send' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         $pdo->prepare('INSERT INTO admin_coach_chat_messages (coach_id, sender, body, admin_read_at) VALUES (?, "admin", ?, NOW())')->execute([$targetId, $body]);
-        if (!empty($coach['email'])) {
+        $chatMessageId = (int)$pdo->lastInsertId();
+        if (!empty($coach['email']) && isFirstChatMessageToday('admin_coach_chat_messages', ['coach_id' => $targetId], 'admin', $chatMessageId)) {
             $coachName = ($coach['name'] ?? '') !== '' ? (string)$coach['name'] : (string)($coach['username'] ?? 'trenér');
             sendCoachChatMessageNotificationEmail((string)$coach['email'], $coachName, $body);
         }
     }
 
-    echo json_encode(['ok' => true, 'id' => (int)$pdo->lastInsertId()]);
+    echo json_encode(['ok' => true, 'id' => $chatMessageId]);
     exit;
 }
 

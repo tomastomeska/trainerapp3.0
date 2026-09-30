@@ -129,7 +129,7 @@ if ($action === 'send' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $coach = getCurrentCoach();
     $coachName = trim((string)($coach['name'] ?? '')) !== '' ? (string)$coach['name'] : trim((string)($coach['username'] ?? 'trenér'));
     if (!empty($athlete['email'])) {
-        notifyAthleteAboutNewCoachChatMessage($athleteId, $newId, (string)$athlete['email'], $athleteName, $coachName, $body);
+        notifyAthleteAboutNewCoachChatMessage($coachId, $athleteId, $newId, (string)$athlete['email'], $athleteName, $coachName, $body);
     }
 
     echo json_encode(['ok' => true, 'id' => $newId]);

@@ -101,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'send'
             if (!empty($athlete['email'])) {
                 $coach = getCurrentCoach();
                 $coachName = trim((string)($coach['name'] ?? '')) !== '' ? (string)$coach['name'] : trim((string)($coach['username'] ?? 'trenér'));
-                notifyAthleteAboutNewCoachChatMessage($athleteId, (int)$pdo->lastInsertId(), (string)$athlete['email'], $athleteName, $coachName, $body);
+                notifyAthleteAboutNewCoachChatMessage($coachId, $athleteId, (int)$pdo->lastInsertId(), (string)$athlete['email'], $athleteName, $coachName, $body);
             }
 
             redirect(BASE_URL . '/athlete_chat.php?id=' . $athleteId);

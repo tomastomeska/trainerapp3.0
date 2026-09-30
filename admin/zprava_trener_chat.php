@@ -67,8 +67,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'send'
                  VALUES (?, "admin", ?, ?, ?, NOW())'
             );
             $ins->execute([$coachId, $body, $attachmentPath, $attachmentName]);
+            $chatMessageId = (int)$pdo->lastInsertId();
 
-            if (!empty($coach['email'])) {
+            if (!empty($coach['email']) && isFirstChatMessageToday('admin_coach_chat_messages', ['coach_id' => $coachId], 'admin', $chatMessageId)) {
                 sendCoachChatMessageNotificationEmail((string)$coach['email'], $coachName, $body);
             }
 

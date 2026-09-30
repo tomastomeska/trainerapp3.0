@@ -31,19 +31,28 @@ if (!(int)$coach['is_active']) {
     mobileJson(['success' => false, 'error' => 'Váš účet byl zablokován.'], 403);
 }
 
-$token = mobileIssueToken($pdo, (int)$coach['id']);
+$remember = !empty($input['remember']);
+$token = mobileIssueToken($pdo, (int)$coach['id'], 'coach', $remember ? 3650 : 30);
+$photo = '';
+try {
+    $photoStmt = $pdo->prepare('SELECT photo FROM coaches WHERE id = ? LIMIT 1');
+    $photoStmt->execute([(int)$coach['id']]);
+    $photo = mobilePublicPhoto((string)($photoStmt->fetchColumn() ?: ''), 'coaches');
+} catch (Throwable $e) {
+}
 $pdo->prepare('UPDATE coaches SET last_login = NOW() WHERE id = ?')->execute([(int)$coach['id']]);
 
 mobileJson([
     'success' => true,
     'token' => $token,
     'token_type' => 'Bearer',
-    'expires_in_days' => 30,
+    'expires_in_days' => $remember ? 3650 : 30,
     'force_password_change' => (bool)((int)($coach['force_password_change'] ?? 0)),
     'coach' => [
         'id' => (int)$coach['id'],
         'username' => (string)$coach['username'],
         'name' => (string)$coach['name'],
         'email' => (string)$coach['email'],
+        'photo' => $photo,
     ],
 ]);

@@ -368,14 +368,20 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     if (!overdueTraining) return;
 
+    if (new URLSearchParams(window.location.search).get('finish_training') === '1') {
+        var completeModal = document.getElementById('completeModal');
+        if (completeModal) new bootstrap.Modal(completeModal).show();
+        return;
+    }
+
     unfinishedTrainingModal.querySelectorAll('[data-training-start]').forEach(function (item) {
         var startedAt = new Date(item.dataset.trainingStart.replace(' ', 'T')).getTime();
         item.classList.toggle('d-none', now - startedAt < warningDelay);
     });
 
     var target = overdueTraining.paired_session_id
-        ? '<?= BASE_URL ?>/training_paired_session.php?id=' + overdueTraining.paired_session_id
-        : '<?= BASE_URL ?>/training_session.php?id=' + overdueTraining.id;
+        ? '<?= BASE_URL ?>/training_paired_session.php?id=' + overdueTraining.paired_session_id + '&finish_training=1'
+        : '<?= BASE_URL ?>/training_session.php?id=' + overdueTraining.id + '&finish_training=1';
     document.getElementById('unfinishedTrainingOpenBtn').href = target;
 
     var modal = new bootstrap.Modal(unfinishedTrainingModal);
