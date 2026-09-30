@@ -3104,6 +3104,98 @@ document.addEventListener('DOMContentLoaded', () => {
         eventUseMakeupBtn.classList.add('d-none');
     });
 
+    function askBillingChoice(choice) {
+        const monthDate = new Date(`${choice.billing_month}T12:00:00`);
+        const formattedMonth = new Intl.DateTimeFormat('cs-CZ', { month: 'long', year: 'numeric' }).format(monthDate);
+        const monthLabel = formattedMonth.charAt(0).toLocaleUpperCase('cs-CZ') + formattedMonth.slice(1);
+        const nextMonthDate = new Date(`${choice.next_month}T12:00:00`);
+        const nextMonthLabel = new Intl.DateTimeFormat('cs-CZ', { month: 'long', year: 'numeric' }).format(nextMonthDate);
+        const monthNames = ['leden', 'únor', 'březen', 'duben', 'květen', 'červen', 'červenec', 'srpen', 'září', 'říjen', 'listopad', 'prosinec'];
+        const monthForms = ['lednové', 'únorové', 'březnové', 'dubnové', 'květnové', 'červnové', 'červencové', 'srpnové', 'zářijové', 'říjnové', 'listopadové', 'prosincové'];
+        const money = (value) => new Intl.NumberFormat('cs-CZ', { maximumFractionDigits: 0 }).format(Number(value || 0));
+        const isPending = choice.kind === 'pending';
+        const modalElement = document.createElement('div');
+        modalElement.className = 'modal fade';
+        modalElement.tabIndex = -1;
+        const dialog = document.createElement('div');
+        dialog.className = 'modal-dialog modal-dialog-centered';
+        const content = document.createElement('div');
+        content.className = 'modal-content';
+        const header = document.createElement('div');
+        header.className = 'modal-header';
+        const title = document.createElement('h5');
+        title.className = 'modal-title';
+        title.textContent = 'Zařazení tréninku do výzvy';
+        header.appendChild(title);
+        const body = document.createElement('div');
+        body.className = 'modal-body';
+        const message = document.createElement('p');
+        message.className = 'mb-0';
+        message.textContent = isPending
+            ? `${monthLabel} už má vystavenou výzvu na ${money(choice.current_amount)} Kč za ${Number(choice.current_sessions || 0)} tréninky. Tento trénink v ní není. Částka bude ${money(choice.next_amount)} Kč.`
+            : `${monthLabel} už je uhrazená výzva na ${money(choice.current_amount)} Kč. Tento trénink v ní není. Dodatečná výzva bude na ${money(choice.next_amount)} Kč.`;
+        body.appendChild(message);
+        const footer = document.createElement('div');
+        footer.className = 'modal-footer';
+        const firstButton = document.createElement('button');
+        firstButton.type = 'button';
+        firstButton.className = 'btn btn-primary';
+        firstButton.textContent = isPending
+            ? `Přidat do ${monthForms[monthDate.getMonth()]} výzvy`
+            : `Vystavit dodatečnou výzvu za ${monthNames[monthDate.getMonth()]}`;
+        const secondButton = document.createElement('button');
+        secondButton.type = 'button';
+        secondButton.className = 'btn btn-outline-secondary';
+        secondButton.textContent = isPending
+            ? 'Účtovat v dalším otevřeném měsíci'
+            : `Přesunout k výzvě za ${nextMonthLabel}`;
+        footer.append(firstButton, secondButton);
+        content.append(header, body, footer);
+        dialog.appendChild(content);
+        modalElement.appendChild(dialog);
+        document.body.appendChild(modalElement);
+
+        return new Promise((resolve) => {
+            const modal = new bootstrap.Modal(modalElement, { backdrop: 'static', keyboard: false });
+            const closeWith = (decision) => {
+                modalElement.addEventListener('hidden.bs.modal', () => {
+                    modal.dispose();
+                    modalElement.remove();
+                    resolve(decision);
+                }, { once: true });
+                modal.hide();
+            };
+            firstButton.addEventListener('click', () => closeWith(isPending ? 'include' : 'additional'), { once: true });
+            secondButton.addEventListener('click', () => closeWith('defer'), { once: true });
+            modal.show();
+        });
+    }
+
+    async function postCalendarWithBillingChoice(url, body) {
+        const request = () => fetchJson(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(body),
+        });
+        let payload = await request();
+        while (payload.billing_choice_required) {
+            body.billing_decisions = body.billing_decisions || {};
+            for (const choice of (payload.billing_choices || [payload.billing_choice])) {
+                if (!choice) continue;
+                const decision = await askBillingChoice(choice);
+                body.billing_decisions[choice.billing_month] = decision;
+                body.billing_decision = decision;
+            }
+            payload = await request();
+        }
+        return payload;
+    }
+
+    async function saveCalendarEvent(body) {
+        return postCalendarWithBillingChoice('<?= BASE_URL ?>/api/calendar_save_event.php', body);
+    }
+
     eventForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         clearError(eventError);
@@ -3225,25 +3317,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const isMakeupSession = eventIsMakeupInput.checked;
-
-            const payload = await fetchJson('<?= BASE_URL ?>/api/calendar_save_event.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify({
-                    csrf_token: csrfToken,
-                    event_id: eventIdInput.value ? Number(eventIdInput.value) : 0,
-                    athlete_id: athleteId,
-                    second_athlete_id: secondAthleteId,
-                    title_type: titleType,
-                    custom_title: customTitle,
-                    location: eventLocationInput.value.trim(),
-                    color_key: normalizeColorKey(eventColorInput.value),
-                    starts_at: startsAt,
-                    is_makeup_session: isMakeupSession,
-                    repeat_mode: repeatMode,
-                    repeat_until: repeatUntil,
-                }),
+            const payload = await saveCalendarEvent({
+                csrf_token: csrfToken,
+                event_id: eventIdInput.value ? Number(eventIdInput.value) : 0,
+                athlete_id: athleteId,
+                second_athlete_id: secondAthleteId,
+                title_type: titleType,
+                custom_title: customTitle,
+                location: eventLocationInput.value.trim(),
+                color_key: normalizeColorKey(eventColorInput.value),
+                starts_at: startsAt,
+                is_makeup_session: isMakeupSession,
+                repeat_mode: repeatMode,
+                repeat_until: repeatUntil,
             });
 
             if (!payload.success) {
@@ -3272,25 +3358,20 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             syncEventStartFromControls();
 
-            const payload = await fetchJson('<?= BASE_URL ?>/api/calendar_save_event.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify({
-                    csrf_token: csrfToken,
-                    event_id: eventId,
-                    athlete_id: eventAthleteInput.value ? Number(eventAthleteInput.value) : 0,
-                    second_athlete_id: eventSecondAthleteInput.value ? Number(eventSecondAthleteInput.value) : 0,
-                    title_type: getSelectedEventTitleType(),
-                    custom_title: eventCustomTitleInput.value.trim(),
-                    location: eventLocationInput.value.trim(),
-                    color_key: normalizeColorKey(eventColorInput.value),
-                    starts_at: eventStartInput.value,
-                    is_makeup_session: eventIsMakeupInput.checked,
-                    repeat_mode: 'none',
-                    repeat_until: '',
-                    approval_action: 'approve',
-                }),
+            const payload = await saveCalendarEvent({
+                csrf_token: csrfToken,
+                event_id: eventId,
+                athlete_id: eventAthleteInput.value ? Number(eventAthleteInput.value) : 0,
+                second_athlete_id: eventSecondAthleteInput.value ? Number(eventSecondAthleteInput.value) : 0,
+                title_type: getSelectedEventTitleType(),
+                custom_title: eventCustomTitleInput.value.trim(),
+                location: eventLocationInput.value.trim(),
+                color_key: normalizeColorKey(eventColorInput.value),
+                starts_at: eventStartInput.value,
+                is_makeup_session: eventIsMakeupInput.checked,
+                repeat_mode: 'none',
+                repeat_until: '',
+                approval_action: 'approve',
             });
 
             if (!payload.success) {
@@ -3320,15 +3401,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const originalHtml = approveBtn.innerHTML;
         approveBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Schvaluji';
 
-        const payload = await fetchJson('<?= BASE_URL ?>/api/calendar_approve_event.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify({
+        const payload = await postCalendarWithBillingChoice('<?= BASE_URL ?>/api/calendar_approve_event.php', {
                 csrf_token: csrfToken,
                 event_id: eventId,
-            }),
-        });
+            });
 
         if (!payload.success) {
             alert(payload.error || 'Schválení se nepodařilo.');
@@ -3347,15 +3423,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!eventId) return;
 
         if (cancelBtn && !confirm('Opravdu chcete tento trénink zrušit?')) return;
-        const endpoint = approveBtn ? 'calendar_approve_event.php' : 'calendar_delete_event.php';
         const body = { csrf_token: csrfToken, event_id: eventId };
         if (cancelBtn) body.delete_scope = 'single';
-        const payload = await fetchJson(`<?= BASE_URL ?>/api/${endpoint}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify(body),
-        });
+        const payload = approveBtn
+            ? await postCalendarWithBillingChoice('<?= BASE_URL ?>/api/calendar_approve_event.php', body)
+            : await fetchJson('<?= BASE_URL ?>/api/calendar_delete_event.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify(body),
+            });
         if (!payload.success) {
             alert(payload.error || 'Akci se nepodařilo provést.');
             return;

@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/payment_billing.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -234,40 +235,6 @@ function extractRescheduleTargetEventId(?string $seriesId): int
 
 function resolveOpenBillingMonth(PDO $pdo, int $coachId, int $athleteId, string $targetMonthSql): string
 {
-    if ($athleteId <= 0) {
-        return $targetMonthSql;
-    }
-
-    $hasPaymentsTable = saveEventTableExists($pdo, 'athlete_monthly_payments');
-    if (!$hasPaymentsTable) {
-        return $targetMonthSql;
-    }
-
-    $month = DateTime::createFromFormat('Y-m-d', $targetMonthSql) ?: new DateTime($targetMonthSql);
-    if (!$month) {
-        return $targetMonthSql;
-    }
-
-    $checkStmt = $pdo->prepare(
-        'SELECT status
-         FROM athlete_monthly_payments
-         WHERE coach_id = ?
-           AND athlete_id = ?
-           AND billing_month = ?
-         LIMIT 1'
-    );
-
-    for ($i = 0; $i < 24; $i++) {
-        $monthSql = $month->format('Y-m-01');
-        $checkStmt->execute([$coachId, $athleteId, $monthSql]);
-        $status = (string)($checkStmt->fetchColumn() ?: '');
-        if ($status !== 'paid') {
-            return $monthSql;
-        }
-
-        $month->modify('first day of next month');
-    }
-
     return $targetMonthSql;
 }
 
@@ -401,6 +368,8 @@ if ($eventId > 0) {
                 e.coach_modified_at,
                 e.is_makeup_session,
                 e.billing_month,
+                e.billing_issue_number,
+                e.billing_transfer_reason,
                 e.title_type,
                 e.custom_title,
                 e.location,
@@ -429,6 +398,9 @@ $startSql = $start->format('Y-m-d H:i:s');
 $endSql = $end->format('Y-m-d H:i:s');
 $targetMonthSql = $start->format('Y-m-01');
 $billingMonthSql = $targetMonthSql;
+$billingIssueNumberSql = $eventId > 0 ? max(1, (int)($existingEvent['billing_issue_number'] ?? 1)) : 1;
+$billingTransferReasonSql = $eventId > 0 ? ($existingEvent['billing_transfer_reason'] ?? null) : null;
+$billingAssignment = null;
 $repeatUntilForUpdate = null;
 $shouldCreateRecurrenceFromUpdate = false;
 
@@ -445,13 +417,46 @@ if ($isMakeupSession) {
 
     $excludeEventId = $eventId > 0 ? $eventId : null;
     try {
-        $billingMonthSql = requireAutoMakeupBillingMonth($pdo, $coachId, (int)$athleteId, $targetMonthSql, $excludeEventId);
+        requireAutoMakeupBillingMonth($pdo, $coachId, (int)$athleteId, $targetMonthSql, $excludeEventId);
+        $billingMonthSql = $targetMonthSql;
     } catch (RuntimeException $e) {
         echo json_encode(['success' => false, 'error' => $e->getMessage()]);
         exit;
     }
 } elseif ($athleteId > 0) {
     $billingMonthSql = resolveOpenBillingMonth($pdo, $coachId, (int)$athleteId, $targetMonthSql);
+}
+
+$isNewAthleteApproval = $eventId > 0
+    && (string)($existingEvent['approval_status'] ?? '') === 'pending'
+    && (int)($existingEvent['requested_by_athlete_id'] ?? 0) > 0
+    && extractRescheduleTargetEventId((string)($existingEvent['series_id'] ?? '')) === 0
+    && !$isMakeupSession;
+if ($isNewAthleteApproval) {
+    $decisionMap = is_array($input['billing_decisions'] ?? null) ? $input['billing_decisions'] : [];
+    $decision = (string)($decisionMap[$targetMonthSql] ?? $input['billing_decision'] ?? '');
+    $billingAssignment = paymentResolveTrainingAssignment(
+        $pdo,
+        $coachId,
+        [(int)($athleteId ?? 0), (int)($secondAthleteId ?? 0)],
+        $targetMonthSql,
+        $decision
+    );
+    if (isset($billingAssignment['error'])) {
+        echo json_encode(['success' => false, 'error' => $billingAssignment['error']], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if (!empty($billingAssignment['requires_choice'])) {
+        echo json_encode([
+            'success' => false,
+            'billing_choice_required' => true,
+            'billing_choices' => [$billingAssignment['choice']],
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    $billingMonthSql = (string)$billingAssignment['billing_month'];
+    $billingIssueNumberSql = (int)$billingAssignment['issue_number'];
+    $billingTransferReasonSql = $billingAssignment['billing_transfer_reason'] ?? null;
 }
 
 if ($eventId > 0 && $repeatMode !== 'none') {
@@ -519,6 +524,8 @@ if ($eventId > 0) {
              coach_modified_at = ?,
              is_makeup_session = ?,
              billing_month = ?,
+             billing_issue_number = ?,
+             billing_transfer_reason = ?,
              color_key = ?,
              title_type = ?,
              custom_title = ?,
@@ -537,6 +544,7 @@ if ($eventId > 0) {
     $oldTitle = (string)($existingEvent['custom_title'] ?? '');
     $oldIsMakeup = (int)($existingEvent['is_makeup_session'] ?? 0);
     $oldBillingMonth = (string)($existingEvent['billing_month'] ?? '');
+    $oldBillingIssueNumber = max(1, (int)($existingEvent['billing_issue_number'] ?? 1));
     $newSeriesId = $oldSeriesId !== '' ? $oldSeriesId : null;
     if ($shouldCreateRecurrenceFromUpdate) {
         $newSeriesId = generateUuidV4();
@@ -549,7 +557,9 @@ if ($eventId > 0) {
         || ($oldTitleType !== $titleType)
         || ($oldTitle !== (string)$customTitle)
         || ($oldIsMakeup !== (int)$isMakeupSession)
-        || ($oldBillingMonth !== $billingMonthSql);
+        || ($oldBillingMonth !== $billingMonthSql)
+        || ($oldBillingIssueNumber !== $billingIssueNumberSql)
+        || (($existingEvent['billing_transfer_reason'] ?? null) !== $billingTransferReasonSql);
 
     if ($isPendingRequest && $rescheduleSourceEventId > 0) {
         $sourceStmt = $pdo->prepare(
@@ -563,6 +573,8 @@ if ($eventId > 0) {
                     e.location,
                     e.is_makeup_session,
                     e.billing_month,
+                    e.billing_issue_number,
+                    e.billing_transfer_reason,
                     a.email AS athlete_email,
                     a.first_name,
                     a.last_name,
@@ -586,6 +598,8 @@ if ($eventId > 0) {
         $billingMonthSql = !empty($sourceEvent['billing_month'])
             ? (string)$sourceEvent['billing_month']
             : date('Y-m-01', strtotime((string)($sourceEvent['starts_at'] ?? $startSql)));
+        $billingIssueNumberSql = max(1, (int)($sourceEvent['billing_issue_number'] ?? 1));
+        $billingTransferReasonSql = $sourceEvent['billing_transfer_reason'] ?? null;
 
         $sourceOldStart = (string)($sourceEvent['starts_at'] ?? '');
         $sourceOldEnd = (string)($sourceEvent['ends_at'] ?? '');
@@ -613,6 +627,8 @@ if ($eventId > 0) {
                  coach_modified_at = ?,
                  is_makeup_session = ?,
                  billing_month = ?,
+                 billing_issue_number = ?,
+                 billing_transfer_reason = ?,
                  color_key = ?,
                  title_type = ?,
                  custom_title = ?,
@@ -647,6 +663,8 @@ if ($eventId > 0) {
                 $sourceChanged ? date('Y-m-d H:i:s') : null,
                 (int)$isMakeupSession,
                 $billingMonthSql,
+                $billingIssueNumberSql,
+                $billingTransferReasonSql,
                 $colorKey,
                 $titleType,
                 $customTitle,
@@ -742,7 +760,7 @@ if ($eventId > 0) {
     try {
         $pdo->beginTransaction();
 
-        $upd->execute([$athleteId, $secondAthleteId, $newSeriesId, $nextApprovalStatus, $coachModifiedAt, (int)$isMakeupSession, $billingMonthSql, $colorKey, $titleType, $customTitle, $location, $startSql, $endSql, $eventId, $coachId]);
+        $upd->execute([$athleteId, $secondAthleteId, $newSeriesId, $nextApprovalStatus, $coachModifiedAt, (int)$isMakeupSession, $billingMonthSql, $billingIssueNumberSql, $billingTransferReasonSql, $colorKey, $titleType, $customTitle, $location, $startSql, $endSql, $eventId, $coachId]);
 
         if ($shouldCreateRecurrenceFromUpdate && $repeatUntilForUpdate instanceof DateTime) {
             $lockStmtFuture = $pdo->prepare(
@@ -764,8 +782,8 @@ if ($eventId > 0) {
             );
 
             $insertStmtFuture = $pdo->prepare(
-                'INSERT INTO coach_calendar_events (coach_id, athlete_id, second_athlete_id, requested_by_athlete_id, approval_status, coach_modified_at, is_makeup_session, billing_month, series_id, color_key, title_type, custom_title, location, starts_at, ends_at)
-                 VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                'INSERT INTO coach_calendar_events (coach_id, athlete_id, second_athlete_id, requested_by_athlete_id, approval_status, coach_modified_at, is_makeup_session, billing_month, billing_issue_number, billing_transfer_reason, series_id, color_key, title_type, custom_title, location, starts_at, ends_at)
+                 VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, 1, NULL, ?, ?, ?, ?, ?, ?, ?)'
             );
 
             $cursor = clone $start;
@@ -811,6 +829,15 @@ if ($eventId > 0) {
                     $occurrenceEndSql,
                 ]);
                 $syncedEventIds[] = (int)$pdo->lastInsertId();
+            }
+        }
+
+        if (is_array($billingAssignment)) {
+            foreach ($billingAssignment['refresh_athletes'] ?? [] as $refreshAthleteId) {
+                paymentRefreshPendingIssue($pdo, $coachId, (int)$refreshAthleteId, $billingMonthSql, $billingIssueNumberSql);
+            }
+            foreach ($billingAssignment['additional_athletes'] ?? [] as $additionalAthleteId) {
+                paymentCreateAdditionalIssue($pdo, $coachId, (int)$additionalAthleteId, $billingMonthSql, $billingIssueNumberSql, $billingAssignment['session_rates'][(int)$additionalAthleteId] ?? $billingAssignment['session_rate'] ?? null);
             }
         }
 
@@ -892,6 +919,42 @@ while (true) {
     }
 }
 
+$billingDecisions = is_array($input['billing_decisions'] ?? null) ? $input['billing_decisions'] : [];
+$billingAssignmentsByMonth = [];
+$billingChoices = [];
+if ((int)($athleteId ?? 0) > 0) {
+    foreach ($occurrences as $occurrenceStart) {
+        $month = $occurrenceStart->format('Y-m-01');
+        if (isset($billingAssignmentsByMonth[$month])) {
+            continue;
+        }
+        $assignment = paymentResolveTrainingAssignment(
+            $pdo,
+            $coachId,
+            [(int)$athleteId, (int)($secondAthleteId ?? 0)],
+            $month,
+            (string)($billingDecisions[$month] ?? '')
+        );
+        if (isset($assignment['error'])) {
+            echo json_encode(['success' => false, 'error' => $assignment['error']], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        if (!empty($assignment['requires_choice'])) {
+            $billingChoices[$month] = $assignment['choice'];
+        } else {
+            $billingAssignmentsByMonth[$month] = $assignment;
+        }
+    }
+    if ($billingChoices !== []) {
+        echo json_encode([
+            'success' => false,
+            'billing_choice_required' => true,
+            'billing_choices' => array_values($billingChoices),
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+}
+
 $lockStmt = $pdo->prepare(
     'SELECT id
      FROM coach_calendar_locks
@@ -911,8 +974,8 @@ $overlapStmt = $pdo->prepare(
 );
 
 $insertStmt = $pdo->prepare(
-    'INSERT INTO coach_calendar_events (coach_id, athlete_id, second_athlete_id, requested_by_athlete_id, approval_status, coach_modified_at, is_makeup_session, billing_month, series_id, color_key, title_type, custom_title, location, starts_at, ends_at)
-     VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO coach_calendar_events (coach_id, athlete_id, second_athlete_id, requested_by_athlete_id, approval_status, coach_modified_at, is_makeup_session, billing_month, billing_issue_number, billing_transfer_reason, series_id, color_key, title_type, custom_title, location, starts_at, ends_at)
+     VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 
 $seriesId = $repeatMode === 'none' ? null : generateUuidV4();
@@ -938,9 +1001,16 @@ try {
             throw new RuntimeException('V tomto čase už máte trénink: ' . $occurrenceStart->format('d.m.Y H:i'));
         }
 
-        $occurrenceBillingMonthSql = $isMakeupSession
-            ? $billingMonthSql
-            : resolveOpenBillingMonth($pdo, $coachId, (int)($athleteId ?? 0), $occurrenceStart->format('Y-m-01'));
+        $calendarMonth = $occurrenceStart->format('Y-m-01');
+        $assignment = $billingAssignmentsByMonth[$calendarMonth] ?? [
+            'billing_month' => $calendarMonth,
+            'issue_number' => 1,
+            'refresh_athletes' => [],
+            'additional_athletes' => [],
+        ];
+        $occurrenceBillingMonthSql = (string)$assignment['billing_month'];
+        $occurrenceIssueNumber = (int)$assignment['issue_number'];
+        $occurrenceTransferReason = $assignment['billing_transfer_reason'] ?? null;
 
         $insertStmt->execute([
             $coachId,
@@ -949,6 +1019,8 @@ try {
             'approved',
             (int)$isMakeupSession,
             $occurrenceBillingMonthSql,
+            $occurrenceIssueNumber,
+            $occurrenceTransferReason,
             $seriesId,
             $colorKey,
             $titleType,
@@ -958,6 +1030,15 @@ try {
             $occurrenceEndSql,
         ]);
         $createdIds[] = (int)$pdo->lastInsertId();
+    }
+
+    foreach ($billingAssignmentsByMonth as $month => $assignment) {
+        foreach ($assignment['refresh_athletes'] ?? [] as $refreshAthleteId) {
+            paymentRefreshPendingIssue($pdo, $coachId, (int)$refreshAthleteId, (string)$assignment['billing_month'], (int)$assignment['issue_number']);
+        }
+        foreach ($assignment['additional_athletes'] ?? [] as $additionalAthleteId) {
+            paymentCreateAdditionalIssue($pdo, $coachId, (int)$additionalAthleteId, (string)$assignment['billing_month'], (int)$assignment['issue_number'], $assignment['session_rates'][(int)$additionalAthleteId] ?? $assignment['session_rate'] ?? null);
+        }
     }
 
     $pdo->commit();

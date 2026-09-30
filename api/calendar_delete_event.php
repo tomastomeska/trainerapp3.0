@@ -136,6 +136,7 @@ if ($deleteScope === 'future' && !empty($event['series_id'])) {
 }
 
 $hasBillingMonth = coachDeleteHasColumn($pdo, 'coach_calendar_events', 'billing_month');
+$hasBillingIssue = coachDeleteHasColumn($pdo, 'coach_calendar_events', 'billing_issue_number');
 $hasPayments = false;
 try {
     $hasPaymentsStmt = $pdo->query("SHOW TABLES LIKE 'athlete_monthly_payments'");
@@ -159,6 +160,7 @@ if ($hasPayments) {
               AND p.athlete_id = e.athlete_id
               AND p.status = 'paid'
               AND p.billing_month = {$billingExpr}
+              AND p.issue_number = " . ($hasBillingIssue ? 'COALESCE(e.billing_issue_number, 1)' : '1') . "
              WHERE e.coach_id = ?
                AND e.series_id = ?
                AND e.starts_at >= ?
@@ -169,9 +171,13 @@ if ($hasPayments) {
     } else {
         $billingMonthSql = date('Y-m-01', strtotime((string)$event['starts_at']));
         if ($hasBillingMonth) {
-            $billingMonthStmt = $pdo->prepare('SELECT DATE_FORMAT(COALESCE(billing_month, starts_at), "%Y-%m-01") AS billing_month FROM coach_calendar_events WHERE id = ? LIMIT 1');
+            $billingMonthStmt = $pdo->prepare('SELECT DATE_FORMAT(COALESCE(billing_month, starts_at), "%Y-%m-01") AS billing_month, ' . ($hasBillingIssue ? 'billing_issue_number' : '1 AS billing_issue_number') . ' FROM coach_calendar_events WHERE id = ? LIMIT 1');
             $billingMonthStmt->execute([$eventId]);
-            $billingMonthSql = (string)($billingMonthStmt->fetchColumn() ?: $billingMonthSql);
+            $billingEvent = $billingMonthStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+            $billingMonthSql = (string)($billingEvent['billing_month'] ?? $billingMonthSql);
+            $billingIssueNumber = max(1, (int)($billingEvent['billing_issue_number'] ?? 1));
+        } else {
+            $billingIssueNumber = 1;
         }
 
         if (!empty($event['athlete_id'])) {
@@ -181,9 +187,10 @@ if ($hasPayments) {
                  WHERE coach_id = ?
                    AND athlete_id = ?
                    AND billing_month = ?
+                     AND issue_number = ?
                    AND status = "paid"'
             );
-            $paidAffectedStmt->execute([$coachId, (int)$event['athlete_id'], $billingMonthSql]);
+                 $paidAffectedStmt->execute([$coachId, (int)$event['athlete_id'], $billingMonthSql, $billingIssueNumber]);
             $paidAffectedCount = (int)$paidAffectedStmt->fetchColumn();
         }
     }

@@ -31,6 +31,7 @@ $eventsStmt = $pdo->prepare(
             e.coach_modified_at,
             e.is_makeup_session,
             e.billing_month,
+            e.billing_issue_number,
             ' . $eventTitleTypeSelect . ',
             e.custom_title,
             e.location,
@@ -54,7 +55,8 @@ $eventsStmt = $pdo->prepare(
      LEFT JOIN athlete_monthly_payments p
         ON p.coach_id = e.coach_id
        AND p.athlete_id = e.athlete_id
-       AND p.billing_month = COALESCE(e.billing_month, DATE_FORMAT(e.starts_at, "%Y-%m-01"))
+    AND p.billing_month = COALESCE(e.billing_month, DATE_FORMAT(e.starts_at, "%Y-%m-01"))
+    AND p.issue_number = COALESCE(e.billing_issue_number, 1)
                          LEFT JOIN coach_calendar_events reschedule_request
                              ON reschedule_request.coach_id = e.coach_id
                             AND reschedule_request.approval_status = "pending"

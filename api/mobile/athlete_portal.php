@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/../../includes/payment_billing.php';
 
 $athlete = mobileRequireAthlete();
 $pdo = getDB();
@@ -8,6 +9,7 @@ $input = mobileInput();
 $action = (string)($_REQUEST['action'] ?? $input['action'] ?? 'home');
 $athleteId = (int)$athlete['id'];
 $coachId = (int)$athlete['coach_id'];
+paymentEnsureBillingIssueSchema($pdo);
 
 function athletePortalStamp(string $raw): ?DateTime
 {
@@ -31,6 +33,83 @@ function athletePortalBusy(PDO $pdo, int $coachId, string $startSql, string $end
     return null;
 }
 
+function athletePortalRefreshPendingPayments(PDO $pdo, int $coachId, int $athleteId): void
+{
+    if (!athletePortalColumnExists($pdo, 'athlete_monthly_payments', 'issue_number')) {
+        return;
+    }
+    try {
+        $stmt = $pdo->prepare('SELECT billing_month, issue_number FROM athlete_monthly_payments WHERE coach_id = ? AND athlete_id = ? AND status = "pending"');
+        $stmt->execute([$coachId, $athleteId]);
+        foreach ($stmt->fetchAll() as $row) {
+            $month = substr((string)$row['billing_month'], 0, 10);
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $month)) {
+                continue;
+            }
+            try {
+                paymentRefreshPendingIssue($pdo, $coachId, $athleteId, $month, max(1, (int)($row['issue_number'] ?? 1)));
+            } catch (Throwable $e) {
+            }
+        }
+    } catch (Throwable $e) {
+    }
+}
+
+function athletePortalAscii(string $value): string
+{
+    $text = trim($value);
+    if ($text === '') {
+        return '';
+    }
+    $converted = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $text);
+    if ($converted !== false) {
+        $text = $converted;
+    }
+    $text = preg_replace('/[^A-Za-z0-9 .\/-]/', '', $text) ?? '';
+    $text = preg_replace('/\s+/', ' ', $text) ?? '';
+    return trim($text);
+}
+
+function athletePortalPaymentQrUrl(PDO $pdo, int $coachId, float $amount, string $monthSql, int $issueNumber): ?string
+{
+    if ($amount <= 0 || !athletePortalColumnExists($pdo, 'coaches', 'bank_account')) {
+        return null;
+    }
+    static $coaches = [];
+    if (!array_key_exists($coachId, $coaches)) {
+        $stmt = $pdo->prepare('SELECT name, username, bank_account FROM coaches WHERE id = ? LIMIT 1');
+        $stmt->execute([$coachId]);
+        $coaches[$coachId] = $stmt->fetch() ?: [];
+    }
+    $coach = $coaches[$coachId];
+    $raw = strtoupper(str_replace(' ', '', trim((string)($coach['bank_account'] ?? ''))));
+    $accountOk = preg_match('/^[A-Z]{2}[0-9A-Z]{13,32}$/', $raw) === 1
+        || preg_match('/^[0-9]{1,6}-[0-9]{2,10}\/[0-9]{4}$/', $raw) === 1
+        || preg_match('/^[0-9]{2,10}\/[0-9]{4}$/', $raw) === 1;
+    $account = $accountOk ? accountForSpd($raw) : null;
+    if ($account === null) {
+        return null;
+    }
+    $name = trim((string)($coach['name'] ?? ''));
+    if ($name === '') {
+        $name = trim((string)($coach['username'] ?? ''));
+    }
+    $parts = preg_split('/\s+/u', $name) ?: [];
+    $last = trim((string)end($parts));
+    if ($last === '') {
+        $last = 'Trener';
+    }
+    $note = athletePortalAscii($last . ' ' . date('m/Y', strtotime($monthSql)));
+    if ($issueNumber > 1) {
+        $note = trim($note . ' dodatecna');
+    }
+    $spd = ['SPD*1.0', 'ACC:' . $account, 'CC:CZK', 'AM:' . number_format($amount, 2, '.', '')];
+    if ($note !== '') {
+        $spd[] = 'MSG:' . str_replace('*', ' ', $note);
+    }
+    return 'https://quickchart.io/qr?size=440&text=' . rawurlencode(implode('*', $spd));
+}
+
 function athletePortalColumnExists(PDO $pdo, string $table, string $column): bool
 {
     try {
@@ -41,83 +120,54 @@ function athletePortalColumnExists(PDO $pdo, string $table, string $column): boo
     }
 }
 
-function athletePortalReceiptEvents(PDO $pdo, int $coachId, int $athleteId, string $monthSql): array
+function athletePortalReceiptEvents(PDO $pdo, int $coachId, int $athleteId, string $monthSql, int $issueNumber = 1): array
 {
     $hasSecond = athletePortalColumnExists($pdo, 'coach_calendar_events', 'second_athlete_id');
     $makeupSql = athletePortalColumnExists($pdo, 'coach_calendar_events', 'is_makeup_session') ? 'COALESCE(e.is_makeup_session, 0)' : '0';
+    $calendarSql = "DATE_FORMAT(e.starts_at, '%Y-%m-01')";
     $billingSql = athletePortalColumnExists($pdo, 'coach_calendar_events', 'billing_month')
         ? "DATE_FORMAT(COALESCE(e.billing_month, e.starts_at), '%Y-%m-01')"
-        : "DATE_FORMAT(e.starts_at, '%Y-%m-01')";
+        : $calendarSql;
+    $issueSql = athletePortalColumnExists($pdo, 'coach_calendar_events', 'billing_issue_number') ? 'COALESCE(e.billing_issue_number, 1)' : '1';
+    $transferReasonSql = athletePortalColumnExists($pdo, 'coach_calendar_events', 'billing_transfer_reason')
+        ? 'e.billing_transfer_reason'
+        : "''";
     $titleSql = athletePortalColumnExists($pdo, 'coach_calendar_events', 'custom_title') ? 'e.custom_title' : "''";
+    $memberSql = "(
+        ({$calendarSql} = ? AND ({$billingSql} = ? OR {$transferReasonSql} IS NULL OR {$transferReasonSql} = ''))
+        OR ({$billingSql} = ? AND {$transferReasonSql} IN ('pending_not_included', 'paid_not_paid') AND {$calendarSql} <> ?)
+    )";
     if ($hasSecond) {
-        $sql = "SELECT e.id, {$titleSql} AS custom_title, e.starts_at, e.ends_at, e.location, {$makeupSql} AS is_makeup_session, {$billingSql} AS billing_month,
+        $sql = "SELECT e.id, {$titleSql} AS custom_title, e.starts_at, e.ends_at, e.location, {$makeupSql} AS is_makeup_session, {$billingSql} AS billing_month, {$transferReasonSql} AS billing_transfer_reason,
                        CASE WHEN e.second_athlete_id IS NOT NULL THEN 1 ELSE 0 END AS is_paired
                 FROM coach_calendar_events e
-                WHERE e.coach_id = ? AND e.approval_status = 'approved' AND e.athlete_id = ? AND DATE_FORMAT(e.starts_at, '%Y-%m-01') = ?
+                WHERE e.coach_id = ? AND e.approval_status = 'approved' AND e.athlete_id = ? AND {$memberSql} AND {$issueSql} = ?
                 UNION ALL
-                SELECT e.id, {$titleSql}, e.starts_at, e.ends_at, e.location, {$makeupSql}, {$billingSql}, 1
+                SELECT e.id, {$titleSql}, e.starts_at, e.ends_at, e.location, {$makeupSql}, {$billingSql}, {$transferReasonSql}, 1
                 FROM coach_calendar_events e
-                WHERE e.coach_id = ? AND e.approval_status = 'approved' AND e.second_athlete_id = ? AND DATE_FORMAT(e.starts_at, '%Y-%m-01') = ?
+                WHERE e.coach_id = ? AND e.approval_status = 'approved' AND e.second_athlete_id = ? AND {$memberSql} AND {$issueSql} = ?
                 ORDER BY starts_at ASC";
-        $params = [$coachId, $athleteId, $monthSql, $coachId, $athleteId, $monthSql];
+        $params = [
+            $coachId, $athleteId, $monthSql, $monthSql, $monthSql, $monthSql, $issueNumber,
+            $coachId, $athleteId, $monthSql, $monthSql, $monthSql, $monthSql, $issueNumber,
+        ];
     } else {
-        $sql = "SELECT e.id, {$titleSql} AS custom_title, e.starts_at, e.ends_at, e.location, {$makeupSql} AS is_makeup_session, {$billingSql} AS billing_month, 0 AS is_paired
+        $sql = "SELECT e.id, {$titleSql} AS custom_title, e.starts_at, e.ends_at, e.location, {$makeupSql} AS is_makeup_session, {$billingSql} AS billing_month, {$transferReasonSql} AS billing_transfer_reason, 0 AS is_paired
                 FROM coach_calendar_events e
-                WHERE e.coach_id = ? AND e.approval_status = 'approved' AND e.athlete_id = ? AND DATE_FORMAT(e.starts_at, '%Y-%m-01') = ?
+                WHERE e.coach_id = ? AND e.approval_status = 'approved' AND e.athlete_id = ? AND {$memberSql} AND {$issueSql} = ?
                 ORDER BY starts_at ASC";
-        $params = [$coachId, $athleteId, $monthSql];
+        $params = [$coachId, $athleteId, $monthSql, $monthSql, $monthSql, $monthSql, $issueNumber];
     }
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     return $stmt->fetchAll() ?: [];
 }
 
-function athletePortalCarryoverBefore(PDO $pdo, int $coachId, int $athleteId, string $monthSql): int
-{
-    $hasSecond = athletePortalColumnExists($pdo, 'coach_calendar_events', 'second_athlete_id');
-    if ($hasSecond) {
-        $participants = 'SELECT DATE_FORMAT(e.starts_at, \'%Y-%m-01\') AS billing_month FROM coach_calendar_events e WHERE e.coach_id = ? AND e.approval_status = \'approved\' AND e.athlete_id = ?
-                         UNION ALL
-                         SELECT DATE_FORMAT(e.starts_at, \'%Y-%m-01\') FROM coach_calendar_events e WHERE e.coach_id = ? AND e.approval_status = \'approved\' AND e.second_athlete_id = ?';
-        $params = [$coachId, $athleteId, $coachId, $athleteId, $monthSql];
-    } else {
-        $participants = 'SELECT DATE_FORMAT(e.starts_at, \'%Y-%m-01\') AS billing_month FROM coach_calendar_events e WHERE e.coach_id = ? AND e.approval_status = \'approved\' AND e.athlete_id = ?';
-        $params = [$coachId, $athleteId, $monthSql];
-    }
-    $actualByMonth = [];
-    try {
-        $stmt = $pdo->prepare("SELECT t.billing_month, COUNT(*) AS billed_sessions FROM ({$participants}) t WHERE t.billing_month < ? GROUP BY t.billing_month");
-        $stmt->execute($params);
-        foreach ($stmt->fetchAll() as $row) {
-            $actualByMonth[(string)$row['billing_month']] = (int)$row['billed_sessions'];
-        }
-    } catch (Throwable $e) {
-        return 0;
-    }
-
-    $carryCol = athletePortalColumnExists($pdo, 'athlete_monthly_payments', 'carryover_used_sessions') ? 'carryover_used_sessions' : '0';
-    try {
-        $stmt = $pdo->prepare("SELECT billing_month, planned_sessions, {$carryCol} AS carryover_used_sessions FROM athlete_monthly_payments WHERE coach_id = ? AND athlete_id = ? AND status = 'paid' AND billing_month < ? ORDER BY billing_month ASC");
-        $stmt->execute([$coachId, $athleteId, $monthSql]);
-    } catch (Throwable $e) {
-        return 0;
-    }
-
-    $outstanding = 0;
-    foreach ($stmt->fetchAll() as $row) {
-        $month = substr((string)$row['billing_month'], 0, 7) . '-01';
-        $planned = max(0, (int)$row['planned_sessions']);
-        $actual = max(0, (int)($actualByMonth[$month] ?? $actualByMonth[(string)$row['billing_month']] ?? 0));
-        $outstanding += max(0, $planned - $actual);
-        $outstanding = max(0, $outstanding - max(0, (int)($row['carryover_used_sessions'] ?? 0)));
-    }
-    return $outstanding;
-}
-
 function athletePortalReceiptLines(PDO $pdo, int $coachId, int $athleteId, string $monthSql, array $payment): array
 {
+    $issueNumber = max(1, (int)($payment['issue_number'] ?? 1));
     try {
-        $events = athletePortalReceiptEvents($pdo, $coachId, $athleteId, $monthSql);
+        $events = athletePortalReceiptEvents($pdo, $coachId, $athleteId, $monthSql, $issueNumber);
     } catch (Throwable $e) {
         $events = [];
     }
@@ -145,21 +195,15 @@ function athletePortalReceiptLines(PDO $pdo, int $coachId, int $athleteId, strin
     if ($pairedRate === null) {
         $pairedRate = $singleRate;
     }
-
-    $transferred = 0;
-    foreach ($events as $event) {
-        $billed = substr((string)($event['billing_month'] ?? ''), 0, 10);
-        if ($billed !== '' && $billed !== $monthSql) {
-            $transferred++;
-        }
+    if (isset($payment['session_rate']) && $payment['session_rate'] !== null && $payment['session_rate'] !== '') {
+        $singleRate = (float)$payment['session_rate'];
+        $pairedRate = $singleRate;
     }
-    $total = count($events);
-    $outstanding = athletePortalCarryoverBefore($pdo, $coachId, $athleteId, $monthSql);
-    $carryover = $total === 0 ? 0 : max(min($outstanding, $total), min($transferred, $total));
+
     if ((string)($payment['status'] ?? '') === 'paid' && athletePortalColumnExists($pdo, 'athlete_monthly_payments', 'receipt_snapshot_json')) {
         try {
-            $snapStmt = $pdo->prepare('SELECT receipt_snapshot_json FROM athlete_monthly_payments WHERE coach_id = ? AND athlete_id = ? AND billing_month = ? LIMIT 1');
-            $snapStmt->execute([$coachId, $athleteId, (string)($payment['billing_month'] ?? $monthSql)]);
+            $snapStmt = $pdo->prepare('SELECT receipt_snapshot_json FROM athlete_monthly_payments WHERE coach_id = ? AND athlete_id = ? AND billing_month = ? AND issue_number = ? LIMIT 1');
+            $snapStmt->execute([$coachId, $athleteId, (string)($payment['billing_month'] ?? $monthSql), $issueNumber]);
             $snapshot = json_decode((string)($snapStmt->fetchColumn() ?: ''), true);
             if (is_array($snapshot) && isset($snapshot['event_rows']) && is_array($snapshot['event_rows'])) {
                 $events = [];
@@ -167,73 +211,94 @@ function athletePortalReceiptLines(PDO $pdo, int $coachId, int $athleteId, strin
                     if (!is_array($snapshotEvent)) {
                         continue;
                     }
+                    $snapshotStart = (string)($snapshotEvent['starts_at'] ?? '');
+                    $snapshotBillingMonth = (string)($snapshotEvent['billing_month'] ?? '');
+                    $snapshotIssue = max(1, (int)($snapshotEvent['billing_issue_number'] ?? $issueNumber));
+                    if ($snapshotStart === ''
+                        || ($snapshotBillingMonth !== '' && substr($snapshotBillingMonth, 0, 10) !== $monthSql)
+                        || $snapshotIssue !== $issueNumber) {
+                        continue;
+                    }
                     $events[] = [
                         'id' => (int)($snapshotEvent['id'] ?? 0),
                         'custom_title' => '',
-                        'starts_at' => (string)($snapshotEvent['starts_at'] ?? ''),
+                        'starts_at' => $snapshotStart,
                         'ends_at' => (string)($snapshotEvent['ends_at'] ?? ''),
                         'location' => (string)($snapshotEvent['location'] ?? ''),
-                        'billing_month' => (string)($snapshotEvent['billing_month'] ?? ''),
+                        'billing_month' => $snapshotBillingMonth,
+                        'billing_issue_number' => $snapshotIssue,
+                        'billing_transfer_reason' => (string)($snapshotEvent['billing_transfer_reason'] ?? ''),
                         'is_makeup_session' => (int)($snapshotEvent['is_makeup_session'] ?? 0),
                         'is_paired' => (int)($snapshotEvent['is_paired'] ?? 0),
                     ];
-                }
-                $snapshotBreakdown = $snapshot['breakdown'] ?? null;
-                if (is_array($snapshotBreakdown)) {
-                    $carryover = (int)($snapshotBreakdown['carryover_used'] ?? $snapshotBreakdown['carryover_applied'] ?? $carryover);
                 }
             }
         } catch (Throwable $e) {
         }
     }
     $directOrigins = [];
-    $fallbackOrigins = [];
     try {
         if (athletePortalColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_event_id')
             && athletePortalColumnExists($pdo, 'coach_calendar_event_cancellations', 'starts_at')) {
-            $originOrder = athletePortalColumnExists($pdo, 'coach_calendar_event_cancellations', 'canceled_at') ? 'canceled_at ASC, id ASC' : 'id ASC';
-            $originStmt = $pdo->prepare("SELECT replacement_event_id, starts_at FROM coach_calendar_event_cancellations WHERE coach_id = ? ORDER BY {$originOrder}");
+            $originBillingField = athletePortalColumnExists($pdo, 'coach_calendar_event_cancellations', 'billing_month')
+                ? 'billing_month'
+                : 'NULL AS billing_month';
+            $originStatusField = athletePortalColumnExists($pdo, 'coach_calendar_event_cancellations', 'payment_status_snapshot')
+                ? 'payment_status_snapshot'
+                : '"none" AS payment_status_snapshot';
+            $originStmt = $pdo->prepare("SELECT replacement_event_id, starts_at, {$originBillingField}, {$originStatusField} FROM coach_calendar_event_cancellations WHERE coach_id = ? AND replacement_event_id IS NOT NULL ORDER BY id ASC");
             $originStmt->execute([$coachId]);
             foreach ($originStmt->fetchAll() as $originRow) {
                 $replacementId = (int)($originRow['replacement_event_id'] ?? 0);
-                $originStart = (string)($originRow['starts_at'] ?? '');
                 if ($replacementId > 0 && !isset($directOrigins[$replacementId])) {
-                    $directOrigins[$replacementId] = $originStart;
-                    continue;
-                }
-                if ($originStart !== '') {
-                    $fallbackOrigins[] = $originStart;
+                    $directOrigins[$replacementId] = [
+                        'starts_at' => (string)($originRow['starts_at'] ?? ''),
+                        'billing_month' => (string)($originRow['billing_month'] ?? ''),
+                        'payment_status_snapshot' => (string)($originRow['payment_status_snapshot'] ?? 'none'),
+                    ];
                 }
             }
         }
     } catch (Throwable $e) {
     }
-    $carryLeft = $carryover;
-    $paidAt = trim((string)($payment['paid_at'] ?? ''));
     $lines = [];
     foreach ($events as $event) {
         $paired = (int)($event['is_paired'] ?? 0) === 1;
         $rate = $paired ? ($pairedRate ?? $singleRate) : $singleRate;
         $notes = [];
-        $amount = 0.0;
-        if ($carryLeft > 0) {
-            $paidLabel = $paidAt !== '' ? ' (' . date('m/Y', strtotime($paidAt)) . ')' : '';
-            $notes[] = 'Hrazeno v předešlém období' . $paidLabel;
-        } elseif ($rate !== null) {
-            $amount = $rate;
+        $origin = $directOrigins[(int)($event['id'] ?? 0)] ?? null;
+        $isPaidReplacement = is_array($origin)
+            && (string)($origin['payment_status_snapshot'] ?? '') === 'paid';
+        $amount = $isPaidReplacement ? 0.0 : ($rate !== null ? $rate : 0.0);
+        if ($isPaidReplacement) {
+            $originMonth = trim((string)($origin['billing_month'] ?? ''));
+            if ($originMonth === '') {
+                $originMonth = (string)($origin['starts_at'] ?? '');
+            }
+            if ($originMonth !== '' && strtotime($originMonth) !== false) {
+                $notes[] = 'Hrazeno v ' . date('m/Y', strtotime($originMonth));
+            }
         }
-        $originStart = (string)($directOrigins[(int)($event['id'] ?? 0)] ?? '');
-        if ($originStart === '' && (int)($event['is_makeup_session'] ?? 0) === 1 && $fallbackOrigins !== []) {
-            $originStart = (string)array_shift($fallbackOrigins);
+        $originStart = is_array($origin) ? (string)($origin['starts_at'] ?? '') : '';
+        $originTs = $originStart !== '' ? strtotime($originStart) : false;
+        if ($originTs !== false) {
+            $notes[] = 'Původní termín: ' . date('d.m.Y', $originTs);
         }
-        if ($originStart !== '') {
-            $notes[] = 'Původní termín: ' . date('d.m.Y', strtotime($originStart));
+        $startTs = strtotime((string)$event['starts_at']);
+        if ($startTs === false) {
+            continue;
         }
-        if ($carryLeft > 0) {
-            $carryLeft--;
+        $calendarMonth = date('Y-m-01', $startTs);
+        $billingTs = strtotime((string)($event['billing_month'] ?? ''));
+        $assignedMonth = $billingTs !== false ? date('Y-m-01', $billingTs) : $calendarMonth;
+        if ($calendarMonth !== $assignedMonth) {
+            $calendarDay = date('j. n. Y', strtotime((string)$event['starts_at']));
+            if ((string)($event['billing_transfer_reason'] ?? '') === 'pending_not_included') {
+                $notes[] = 'Tento trénink proběhl ' . $calendarDay . ' a nebyl zahrnut do ' . paymentBillingMonthAdjective($calendarMonth) . ' výzvy.';
+            } elseif ((string)($event['billing_transfer_reason'] ?? '') === 'paid_not_paid') {
+                $notes[] = 'Tento trénink proběhl ' . $calendarDay . ' a nebyl uhrazen v ' . paymentBillingMonthGenitive($calendarMonth) . '.';
+            }
         }
-        $billed = substr((string)($event['billing_month'] ?? ''), 0, 10);
-        $defaultNote = ($billed !== '' && $billed !== $monthSql) ? 'Převod z předchozího období' : '';
         $lines[] = [
             'title' => trim((string)($event['custom_title'] ?? '')) !== '' ? (string)$event['custom_title'] : 'Trénink',
             'location' => (string)($event['location'] ?? ''),
@@ -242,7 +307,7 @@ function athletePortalReceiptLines(PDO $pdo, int $coachId, int $athleteId, strin
             'is_paired' => $paired,
             'is_makeup' => (int)($event['is_makeup_session'] ?? 0) === 1,
             'amount' => $amount,
-            'note' => $notes !== [] ? implode('; ', $notes) : $defaultNote,
+            'note' => implode('; ', $notes),
         ];
     }
     return $lines;
@@ -273,18 +338,27 @@ if ($action === 'home') {
 
     $payments = [];
     try {
+        athletePortalRefreshPendingPayments($pdo, $coachId, $athleteId);
+        $hasIssue = athletePortalColumnExists($pdo, 'athlete_monthly_payments', 'issue_number');
+        $issueSelect = $hasIssue ? 'issue_number' : '1 AS issue_number';
+        $issueOrder = $hasIssue ? 'issue_number ASC' : 'billing_month ASC';
         $pay = $pdo->prepare(
-            'SELECT billing_month, planned_sessions, billed_amount, status, paid_at
+            "SELECT billing_month, {$issueSelect}, planned_sessions, billed_amount, status, paid_at, session_rate
              FROM athlete_monthly_payments
              WHERE athlete_id = ? AND coach_id = ?
-             ORDER BY billing_month DESC
-             LIMIT 12'
+             ORDER BY billing_month DESC, {$issueOrder}
+             LIMIT 12"
         );
         $pay->execute([$athleteId, $coachId]);
         foreach ($pay->fetchAll() as $row) {
+            $monthRaw = (string)$row['billing_month'];
+            $monthSql = substr($monthRaw, 0, 7) . '-01';
+            $trainings = athletePortalReceiptLines($pdo, $coachId, $athleteId, $monthSql, $row);
             $payments[] = [
-                'month' => (string)$row['billing_month'],
-                'sessions' => (int)($row['planned_sessions'] ?? 0),
+                'month' => $monthRaw,
+                'issue_number' => max(1, (int)($row['issue_number'] ?? 1)),
+                'label' => max(1, (int)($row['issue_number'] ?? 1)) > 1 ? date('m/Y', strtotime($monthRaw)) . ' — dodatečná výzva' : date('m/Y', strtotime($monthRaw)),
+                'sessions' => count($trainings),
                 'amount' => $row['billed_amount'] !== null ? (float)$row['billed_amount'] : null,
                 'status' => (string)($row['status'] ?? 'pending'),
                 'paid_at' => (string)($row['paid_at'] ?? ''),
@@ -403,6 +477,7 @@ if ($action === 'calendar') {
             'is_mine' => $mine || $requested,
             'is_foreign' => $foreign,
             'can_request_change' => $mine && (string)$row['approval_status'] === 'approved' && strtotime($starts) > time(),
+            'can_cancel_event' => $mine && (string)$row['approval_status'] === 'approved' && strtotime($starts) > time(),
             'can_cancel_request' => $requested && (string)$row['approval_status'] === 'pending',
             'can_edit' => $requested && (string)$row['approval_status'] === 'pending' && strtotime($starts) > time() && !str_starts_with((string)($row['series_id'] ?? ''), 'reschedule:'),
             'series_id' => (string)($row['series_id'] ?? ''),
@@ -569,6 +644,207 @@ if ($action === 'update_request' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     mobileJson(['success' => true]);
 }
 
+if ($action === 'cancel_event' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $eventId = (int)($input['event_id'] ?? 0);
+    if ($eventId <= 0) {
+        mobileJson(['success' => false, 'error' => 'Chybí termín.'], 422);
+    }
+    $eventStmt = $pdo->prepare(
+        'SELECT e.id, e.coach_id, e.athlete_id, e.second_athlete_id, e.requested_by_athlete_id, e.series_id,
+                e.approval_status, e.is_makeup_session, e.custom_title, e.location, e.billing_month, e.billing_issue_number, e.starts_at, e.ends_at,
+                c.name AS coach_name, c.username AS coach_username
+         FROM coach_calendar_events e
+         JOIN coaches c ON c.id = e.coach_id
+         WHERE e.id = ? AND (e.athlete_id = ? OR e.second_athlete_id = ?)
+         LIMIT 1'
+    );
+    $eventStmt->execute([$eventId, $athleteId, $athleteId]);
+    $event = $eventStmt->fetch();
+    if (!$event) {
+        mobileJson(['success' => false, 'error' => 'Termín nebyl nalezen.'], 404);
+    }
+    if ((string)($event['approval_status'] ?? '') === 'pending'
+        && (int)($event['requested_by_athlete_id'] ?? 0) === $athleteId
+        && preg_match('/^reschedule:\d+$/', (string)($event['series_id'] ?? ''))) {
+        $deleteRequestStmt = $pdo->prepare('DELETE FROM coach_calendar_events WHERE id = ? AND athlete_id = ? AND requested_by_athlete_id = ? AND approval_status = "pending" LIMIT 1');
+        $deleteRequestStmt->execute([$eventId, $athleteId, $athleteId]);
+        if ($deleteRequestStmt->rowCount() !== 1) {
+            mobileJson(['success' => false, 'error' => 'Žádost o změnu se nepodařilo zrušit.'], 404);
+        }
+        mobileJson(['success' => true, 'message' => 'Žádost o změnu termínu byla zrušena. Původní termín zůstává zachovaný.']);
+    }
+    $eventStartTs = strtotime((string)$event['starts_at']);
+    if ($eventStartTs !== false && $eventStartTs <= time()) {
+        mobileJson(['success' => false, 'error' => 'Minulé nebo právě probíhající termíny nelze rušit.'], 422);
+    }
+    $isLateCancellation = $eventStartTs !== false && ($eventStartTs - time()) > 0 && ($eventStartTs - time()) < (12 * 60 * 60);
+    $billingMonthSql = !empty($event['billing_month'])
+        ? date('Y-m-01', strtotime((string)$event['billing_month']))
+        : date('Y-m-01', strtotime((string)$event['starts_at']));
+    $paymentStatus = 'none';
+    try {
+        $paidStmt = $pdo->prepare('SELECT status FROM athlete_monthly_payments WHERE coach_id = ? AND athlete_id = ? AND billing_month = ? AND issue_number = ? AND status IN ("pending", "paid") LIMIT 1');
+        $paidStmt->execute([(int)$event['coach_id'], $athleteId, $billingMonthSql, max(1, (int)($event['billing_issue_number'] ?? 1))]);
+        $paymentStatus = (string)($paidStmt->fetchColumn() ?: 'none');
+    } catch (Throwable $e) {
+        $paymentStatus = 'none';
+    }
+    $wasAlreadyPaid = $paymentStatus === 'paid';
+    $requiresReplacement = !$isLateCancellation && in_array($paymentStatus, ['pending', 'paid'], true);
+    $coachMakeupDeadlineDays = 14;
+    try {
+        if (athletePortalColumnExists($pdo, 'coaches', 'makeup_booking_deadline_days')) {
+            $deadlineStmt = $pdo->prepare('SELECT makeup_booking_deadline_days FROM coaches WHERE id = ? LIMIT 1');
+            $deadlineStmt->execute([(int)$event['coach_id']]);
+            $rawDays = $deadlineStmt->fetchColumn();
+            if ($rawDays !== false && $rawDays !== null) {
+                $coachMakeupDeadlineDays = max(1, (int)$rawDays);
+            }
+        }
+    } catch (Throwable $e) {
+    }
+    $replacementDeadlineAtSql = $requiresReplacement ? date('Y-m-d H:i:s', strtotime('+' . $coachMakeupDeadlineDays . ' days')) : null;
+    $primaryAthleteId = (int)($event['athlete_id'] ?? 0);
+    $secondAthleteId = (int)($event['second_athlete_id'] ?? 0);
+    $removedFromPairOnly = false;
+    if ($primaryAthleteId > 0 && $secondAthleteId > 0) {
+        if ($primaryAthleteId === $athleteId) {
+            $updateStmt = $pdo->prepare('UPDATE coach_calendar_events SET athlete_id = second_athlete_id, second_athlete_id = NULL, requested_by_athlete_id = CASE WHEN requested_by_athlete_id = ? THEN NULL ELSE requested_by_athlete_id END WHERE id = ? LIMIT 1');
+        } else {
+            $updateStmt = $pdo->prepare('UPDATE coach_calendar_events SET second_athlete_id = NULL, requested_by_athlete_id = CASE WHEN requested_by_athlete_id = ? THEN NULL ELSE requested_by_athlete_id END WHERE id = ? LIMIT 1');
+        }
+        $updateStmt->execute([$athleteId, $eventId]);
+        if ($updateStmt->rowCount() === 0) {
+            mobileJson(['success' => false, 'error' => 'Termín se nepodařilo zrušit.'], 409);
+        }
+        $removedFromPairOnly = true;
+        $scope = 'pair_exit';
+        $logAthleteId = $athleteId;
+        $logSecondId = null;
+    } else {
+        $deleteStmt = $pdo->prepare('DELETE FROM coach_calendar_events WHERE id = ? AND (athlete_id = ? OR second_athlete_id = ?) LIMIT 1');
+        $deleteStmt->execute([$eventId, $athleteId, $athleteId]);
+        if ($deleteStmt->rowCount() === 0) {
+            mobileJson(['success' => false, 'error' => 'Termín se nepodařilo zrušit.'], 409);
+        }
+        $scope = 'single';
+        $logAthleteId = $primaryAthleteId > 0 ? $primaryAthleteId : null;
+        $logSecondId = $secondAthleteId > 0 ? $secondAthleteId : null;
+    }
+    try {
+        $columns = ['coach_id', 'athlete_id', 'second_athlete_id', 'canceled_by', 'canceled_by_athlete_id', 'cancellation_scope', 'approval_status', 'is_makeup_session', 'custom_title', 'location', 'starts_at', 'ends_at', 'canceled_at'];
+        $values = ['?', '?', '?', '"athlete"', '?', '?', '?', '?', '?', '?', '?', '?', 'NOW()'];
+        $params = [
+            (int)$event['coach_id'],
+            $logAthleteId,
+            $logSecondId,
+            $athleteId,
+            $scope,
+            (string)($event['approval_status'] ?? 'approved') === 'pending' ? 'pending' : 'approved',
+            !empty($event['is_makeup_session']) ? 1 : 0,
+            trim((string)($event['custom_title'] ?? '')) !== '' ? (string)$event['custom_title'] : null,
+            trim((string)($event['location'] ?? '')) !== '' ? (string)$event['location'] : null,
+            (string)$event['starts_at'],
+            (string)($event['ends_at'] ?? $event['starts_at']),
+        ];
+        if (athletePortalColumnExists($pdo, 'coach_calendar_event_cancellations', 'billing_month')) {
+            $columns[] = 'billing_month';
+            $values[] = '?';
+            $params[] = $billingMonthSql;
+        }
+        if (athletePortalColumnExists($pdo, 'coach_calendar_event_cancellations', 'payment_status_snapshot')) {
+            $columns[] = 'payment_status_snapshot';
+            $values[] = '?';
+            $params[] = $paymentStatus;
+        }
+        if (athletePortalColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_required')) {
+            $columns[] = 'replacement_required';
+            $values[] = '?';
+            $params[] = $requiresReplacement ? 1 : 0;
+        }
+        if (athletePortalColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_deadline_at')) {
+            $columns[] = 'replacement_deadline_at';
+            $values[] = '?';
+            $params[] = $replacementDeadlineAtSql;
+        }
+        if (athletePortalColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_event_id')) {
+            $columns[] = 'replacement_event_id';
+            $values[] = 'NULL';
+        }
+        $pdo->prepare('INSERT INTO coach_calendar_event_cancellations (' . implode(', ', $columns) . ') VALUES (' . implode(', ', $values) . ')')->execute($params);
+    } catch (Throwable $e) {
+    }
+    $selfStmt = $pdo->prepare('SELECT first_name, last_name FROM athletes WHERE id = ? LIMIT 1');
+    $selfStmt->execute([$athleteId]);
+    $self = $selfStmt->fetch();
+    $athleteName = trim((string)($self['first_name'] ?? '') . ' ' . (string)($self['last_name'] ?? ''));
+    if ($athleteName === '') {
+        $athleteName = 'Sportovec';
+    }
+    $coachDisplayName = trim((string)($event['coach_name'] ?? '')) !== '' ? (string)$event['coach_name'] : (string)($event['coach_username'] ?? 'trenér');
+    $whenLabel = date('d.m.Y H:i', strtotime((string)$event['starts_at']));
+    $subject = $removedFromPairOnly ? "Sportovec zrušil účast na párovém termínu - {$athleteName}" : "Sportovec zrušil termín - {$athleteName}";
+    $body = $removedFromPairOnly
+        ? "Sportovec {$athleteName} zrušil svou účast na párovém termínu {$whenLabel}. Slot zůstal aktivní pro druhého účastníka."
+        : "Sportovec {$athleteName} zrušil termín {$whenLabel}.";
+    if ($wasAlreadyPaid) {
+        $body .= ' Termín byl již uhrazen a systém jej automaticky započte jako zápočet do další fakturace.';
+    } elseif ($paymentStatus === 'pending') {
+        $body .= ' Termín byl součástí vystavené výzvy k platbě. Částka výzvy zůstává beze změny a čeká se na náhradní termín.';
+    }
+    if ($isLateCancellation) {
+        $body .= ' Zrušení proběhlo méně než 12 hodin před začátkem, termín je bez nároku na kompenzaci a nelze jej nahradit.';
+    }
+    if ($requiresReplacement) {
+        $body .= ' Sportovec má povinnost vybrat náhradní termín do ' . $coachMakeupDeadlineDays . ' dnů.';
+    }
+    if (function_exists('createCoachSystemMessage')) {
+        createCoachSystemMessage((int)$event['coach_id'], $subject, $body, true);
+    }
+    if (function_exists('createAthleteNotification')) {
+        createAthleteNotification(
+            $athleteId,
+            $removedFromPairOnly ? 'Potvrzení zrušení účasti' : 'Potvrzení zrušení termínu',
+            ($removedFromPairOnly ? "Tvoje účast na párovém termínu {$event['starts_at']} byla zrušena." : "Tvůj termín {$event['starts_at']} byl zrušen.")
+            . ($wasAlreadyPaid ? ' Tento termín byl již uhrazen a bude započten do další fakturace jako zápočet.' : '')
+            . ($paymentStatus === 'pending' ? ' Tento termín byl součástí otevřené výzvy k platbě, částka výzvy se nesnižuje.' : '')
+            . ($isLateCancellation ? ' Zrušení proběhlo méně než 12 hodin před začátkem, termín je bez nároku na kompenzaci a nelze jej nahradit.' : '')
+            . ($requiresReplacement ? (' Náhradní termín je potřeba vybrat do ' . $coachMakeupDeadlineDays . ' dnů.') : '')
+        );
+    }
+    if ($removedFromPairOnly) {
+        if (function_exists('enqueueCoachGoogleCalendarSync')) enqueueCoachGoogleCalendarSync((int)$event['coach_id'], $eventId, 'upsert');
+        if (function_exists('enqueueCoachAppleCaldavSync')) enqueueCoachAppleCaldavSync((int)$event['coach_id'], $eventId, 'upsert');
+        if (function_exists('enqueueAthleteAppleCaldavSync')) {
+            enqueueAthleteAppleCaldavSync($athleteId, $eventId, 'delete');
+            $remainingAthleteId = $primaryAthleteId === $athleteId ? $secondAthleteId : $primaryAthleteId;
+            if ($remainingAthleteId > 0) enqueueAthleteAppleCaldavSync($remainingAthleteId, $eventId, 'upsert');
+        }
+    } else {
+        if (function_exists('enqueueCoachGoogleCalendarSync')) enqueueCoachGoogleCalendarSync((int)$event['coach_id'], $eventId, 'delete');
+        if (function_exists('enqueueCoachAppleCaldavSync')) enqueueCoachAppleCaldavSync((int)$event['coach_id'], $eventId, 'delete');
+        if (function_exists('enqueueAthleteAppleCaldavSync')) enqueueAthleteAppleCaldavSync($athleteId, $eventId, 'delete');
+    }
+    if (function_exists('processInlineCalendarSyncQueues')) {
+        processInlineCalendarSyncQueues(2, 3, 3);
+    }
+    $message = ($removedFromPairOnly
+            ? "Účast na párovém termínu byla zrušena. Trenér {$coachDisplayName} byl informován."
+            : "Termín byl zrušen. Trenér {$coachDisplayName} byl informován.")
+        . ($wasAlreadyPaid ? ' Jednalo se o již uhrazený termín, který bude započten v další fakturaci.' : '')
+        . ($paymentStatus === 'pending' ? ' Termín byl součástí výzvy k platbě a částka výzvy se nesnižuje.' : '')
+        . ($isLateCancellation ? ' Zrušení proběhlo méně než 12 hodin před začátkem, termín je bez nároku na kompenzaci a nelze jej nahradit.' : '')
+        . ($requiresReplacement ? (' Náhradní termín musíte vybrat do ' . $coachMakeupDeadlineDays . ' dnů.') : '');
+    mobileJson([
+        'success' => true,
+        'message' => $message,
+        'was_paid' => $wasAlreadyPaid,
+        'payment_status' => $paymentStatus,
+        'late_cancellation' => $isLateCancellation,
+        'replacement_required' => $requiresReplacement,
+    ]);
+}
+
 if ($action === 'cancel_request' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $eventId = (int)($input['event_id'] ?? 0);
     $del = $pdo->prepare('DELETE FROM coach_calendar_events WHERE id = ? AND coach_id = ? AND requested_by_athlete_id = ? AND approval_status = "pending"');
@@ -646,12 +922,16 @@ if ($action === 'send' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($action === 'payments') {
     $rows = [];
     try {
+        athletePortalRefreshPendingPayments($pdo, $coachId, $athleteId);
+        $hasIssue = athletePortalColumnExists($pdo, 'athlete_monthly_payments', 'issue_number');
+        $issueSelect = $hasIssue ? 'issue_number' : '1 AS issue_number';
+        $issueOrder = $hasIssue ? 'issue_number ASC' : 'billing_month ASC';
         $pay = $pdo->prepare(
-            'SELECT billing_month, planned_sessions, billed_amount, status, paid_at, session_rate
+            "SELECT billing_month, {$issueSelect}, planned_sessions, billed_amount, status, paid_at, session_rate
              FROM athlete_monthly_payments
              WHERE athlete_id = ? AND coach_id = ?
-             ORDER BY billing_month DESC
-             LIMIT 24'
+             ORDER BY billing_month DESC, {$issueOrder}
+             LIMIT 24"
         );
         $pay->execute([$athleteId, $coachId]);
         foreach ($pay->fetchAll() as $row) {
@@ -660,14 +940,22 @@ if ($action === 'payments') {
             if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $monthSql)) {
                 $monthSql = date('Y-m-01');
             }
+            $trainings = athletePortalReceiptLines($pdo, $coachId, $athleteId, substr($monthSql, 0, 7) . '-01', $row);
+            $issueNumber = max(1, (int)($row['issue_number'] ?? 1));
+            $amountValue = $row['billed_amount'] !== null ? (float)$row['billed_amount'] : null;
             $rows[] = [
                 'month' => $monthRaw,
-                'sessions' => (int)($row['planned_sessions'] ?? 0),
+                'issue_number' => $issueNumber,
+                'qr_url' => ((string)($row['status'] ?? '') === 'pending' && $amountValue !== null)
+                    ? athletePortalPaymentQrUrl($pdo, $coachId, $amountValue, substr($monthSql, 0, 7) . '-01', $issueNumber)
+                    : null,
+                'label' => date('m/Y', strtotime($monthSql)) . ($issueNumber > 1 ? ' — dodatečná výzva' : ''),
+                'sessions' => count($trainings),
                 'amount' => $row['billed_amount'] !== null ? (float)$row['billed_amount'] : null,
                 'status' => (string)($row['status'] ?? ''),
                 'paid_at' => (string)($row['paid_at'] ?? ''),
                 'session_rate' => $row['session_rate'] !== null ? (float)$row['session_rate'] : null,
-                'trainings' => athletePortalReceiptLines($pdo, $coachId, $athleteId, substr($monthSql, 0, 7) . '-01', $row),
+                'trainings' => $trainings,
             ];
         }
     } catch (Throwable $e) {

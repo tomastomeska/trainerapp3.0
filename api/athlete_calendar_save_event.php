@@ -400,35 +400,6 @@ function athleteResolveAutoMakeupBillingMonth(PDO $pdo, int $coachId, int $athle
 
 function athleteResolveOpenBillingMonth(PDO $pdo, int $coachId, int $athleteId, string $targetMonthSql): string
 {
-    if (!athleteReserveTableExists($pdo, 'athlete_monthly_payments')) {
-        return $targetMonthSql;
-    }
-
-    $month = DateTime::createFromFormat('Y-m-d', $targetMonthSql) ?: new DateTime($targetMonthSql);
-    if (!$month) {
-        return $targetMonthSql;
-    }
-
-    $checkStmt = $pdo->prepare(
-        'SELECT status
-         FROM athlete_monthly_payments
-         WHERE coach_id = ?
-           AND athlete_id = ?
-           AND billing_month = ?
-         LIMIT 1'
-    );
-
-    for ($i = 0; $i < 24; $i++) {
-        $monthSql = $month->format('Y-m-01');
-        $checkStmt->execute([$coachId, $athleteId, $monthSql]);
-        $status = (string)($checkStmt->fetchColumn() ?: '');
-        if ($status !== 'paid') {
-            return $monthSql;
-        }
-
-        $month->modify('first day of next month');
-    }
-
     return $targetMonthSql;
 }
 
@@ -532,7 +503,7 @@ if ($isMakeupSession === 1) {
         $requiredBillingMonthSql = !empty($requiredReplacement['billing_month'])
             ? date('Y-m-01', strtotime((string)$requiredReplacement['billing_month']))
             : $targetMonthSql;
-        $billingMonthSql = $requiredBillingMonthSql;
+        $billingMonthSql = $targetMonthSql;
 
         if ($targetMonthSql !== $requiredBillingMonthSql) {
             $requiredMonthTs = strtotime($requiredBillingMonthSql);
@@ -553,11 +524,12 @@ if ($isMakeupSession === 1) {
 
         $replacementCancellationId = (int)$requiredReplacement['id'];
     } else {
-        $billingMonthSql = athleteResolveAutoMakeupBillingMonth($pdo, (int)$athlete['coach_id'], $athleteId, $targetMonthSql) ?: '';
-        if ($billingMonthSql === '') {
+        $autoMakeupMonthSql = athleteResolveAutoMakeupBillingMonth($pdo, (int)$athlete['coach_id'], $athleteId, $targetMonthSql);
+        if ($autoMakeupMonthSql === null) {
             echo json_encode(['success' => false, 'error' => 'Momentálně nemáte dostupný žádný nevyužitý uhrazený trénink.']);
             exit;
         }
+        $billingMonthSql = $targetMonthSql;
     }
 } else {
     $billingMonthSql = athleteResolveOpenBillingMonth($pdo, (int)$athlete['coach_id'], $athleteId, $billingMonthSql);

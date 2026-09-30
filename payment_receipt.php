@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/payment_billing.php';
 
 $coachMode = isLoggedIn();
 $athleteMode = !$coachMode && athleteIsLoggedIn();
@@ -17,6 +18,7 @@ if ($coachMode) {
 }
 
 $pdo = getDB();
+paymentEnsureBillingIssueSchema($pdo);
 
 function receiptTableExists(PDO $pdo, string $tableName): bool
 {
@@ -112,14 +114,17 @@ function receiptFetchOutstandingCarryover(PDO $pdo, int $coachId, int $athleteId
     return $outstanding;
 }
 
-function receiptBuildBillable(int $singleSessions, int $pairedSessions, int $carryoverApplied, ?float $singleRate, ?float $pairedRate): array
+function receiptBuildBillable(int $singleSessions, int $pairedSessions, int $carryoverApplied, ?float $singleRate, ?float $pairedRate, int $paidReplacementSingle = 0, int $paidReplacementPaired = 0): array
 {
     $totalSessions = max(0, $singleSessions) + max(0, $pairedSessions);
+    $paidReplacementSingle = min(max(0, $singleSessions), max(0, $paidReplacementSingle));
+    $paidReplacementPaired = min(max(0, $pairedSessions), max(0, $paidReplacementPaired));
     $carryoverApplied = min(max(0, $carryoverApplied), $totalSessions);
 
-    $billableSingle = max(0, $singleSessions - $carryoverApplied);
-    $remainingCarryover = max(0, $carryoverApplied - $singleSessions);
-    $billablePaired = max(0, $pairedSessions - $remainingCarryover);
+    $genericCarryover = max(0, $carryoverApplied - $paidReplacementSingle - $paidReplacementPaired);
+    $billableSingle = max(0, $singleSessions - $paidReplacementSingle - $genericCarryover);
+    $remainingCarryover = max(0, $genericCarryover - ($singleSessions - $paidReplacementSingle));
+    $billablePaired = max(0, $pairedSessions - $paidReplacementPaired - $remainingCarryover);
 
     $effectiveSingleRate = $singleRate;
     $effectivePairedRate = $pairedRate ?? $singleRate;
@@ -132,6 +137,8 @@ function receiptBuildBillable(int $singleSessions, int $pairedSessions, int $car
     return [
         'raw_total' => $totalSessions,
         'carryover_applied' => $carryoverApplied,
+        'paid_replacement_single' => $paidReplacementSingle,
+        'paid_replacement_paired' => $paidReplacementPaired,
         'billable_single' => $billableSingle,
         'billable_paired' => $billablePaired,
         'billable_total' => $billableSingle + $billablePaired,
@@ -143,16 +150,7 @@ function receiptBuildBillable(int $singleSessions, int $pairedSessions, int $car
 
 function receiptResolveCarryoverUsage(int $outstandingBefore, int $transferredSessions, int $totalSessions): int
 {
-    $totalSessions = max(0, $totalSessions);
-    if ($totalSessions === 0) {
-        return 0;
-    }
-
-    $fromHistory = min(max(0, $outstandingBefore), $totalSessions);
-    $fromTransferred = min(max(0, $transferredSessions), $totalSessions);
-
-    // Sessions billed in another month must not be charged again in this month.
-    return max($fromHistory, $fromTransferred);
+    return min(max(0, $totalSessions), max(0, $transferredSessions));
 }
 
 function receiptDecodeSnapshot(?string $raw): ?array
@@ -169,45 +167,39 @@ function receiptDecodeSnapshot(?string $raw): ?array
 function receiptFetchReplacementOrigins(PDO $pdo, int $coachId, int $athleteId): array
 {
     if (!receiptTableExists($pdo, 'coach_calendar_event_cancellations')) {
-        return ['direct' => [], 'fallback' => []];
+        return [];
     }
 
     if (!receiptColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_event_id')
         || !receiptColumnExists($pdo, 'coach_calendar_event_cancellations', 'starts_at')) {
-        return ['direct' => [], 'fallback' => []];
+        return [];
     }
 
-    $selectFields = ['replacement_event_id', 'starts_at'];
-    if (receiptColumnExists($pdo, 'coach_calendar_event_cancellations', 'billing_month')) {
-        $selectFields[] = 'billing_month';
-    }
-    if (receiptColumnExists($pdo, 'coach_calendar_event_cancellations', 'canceled_at')) {
-        $selectFields[] = 'canceled_at';
-    }
+    $billingField = receiptColumnExists($pdo, 'coach_calendar_event_cancellations', 'billing_month')
+        ? 'billing_month'
+        : 'NULL AS billing_month';
+    $statusField = receiptColumnExists($pdo, 'coach_calendar_event_cancellations', 'payment_status_snapshot')
+        ? 'payment_status_snapshot'
+        : '"none" AS payment_status_snapshot';
 
     $stmt = $pdo->prepare(
-        'SELECT ' . implode(', ', $selectFields) . '
+        "SELECT replacement_event_id, starts_at, {$billingField}, {$statusField}
          FROM coach_calendar_event_cancellations
          WHERE coach_id = ?
-         ORDER BY canceled_at ASC, id ASC'
+           AND replacement_event_id IS NOT NULL
+         ORDER BY id ASC"
     );
     $stmt->execute([$coachId]);
 
-    $result = ['direct' => [], 'fallback' => []];
+    $result = [];
     foreach ($stmt->fetchAll() as $row) {
         $replacementEventId = (int)($row['replacement_event_id'] ?? 0);
-        $origin = [
-            'starts_at' => (string)($row['starts_at'] ?? ''),
-            'billing_month' => (string)($row['billing_month'] ?? ''),
-        ];
-
-        if ($replacementEventId > 0 && !isset($result['direct'][$replacementEventId])) {
-            $result['direct'][$replacementEventId] = $origin;
-            continue;
-        }
-
-        if (!empty($origin['starts_at'])) {
-            $result['fallback'][] = $origin;
+        if ($replacementEventId > 0 && !isset($result[$replacementEventId])) {
+            $result[$replacementEventId] = [
+                'starts_at' => (string)($row['starts_at'] ?? ''),
+                'billing_month' => (string)($row['billing_month'] ?? ''),
+                'payment_status_snapshot' => (string)($row['payment_status_snapshot'] ?? 'none'),
+            ];
         }
     }
 
@@ -219,6 +211,7 @@ if (!preg_match('/^\d{4}-\d{2}$/', $monthParam)) {
     $monthParam = date('Y-m');
 }
 $monthSql = $monthParam . '-01';
+$issueNumber = max(1, (int)($_GET['issue'] ?? 1));
 
 $hasBillingMonth = receiptColumnExists($pdo, 'coach_calendar_events', 'billing_month');
 $hasSecondAthlete = receiptColumnExists($pdo, 'coach_calendar_events', 'second_athlete_id');
@@ -282,8 +275,21 @@ if ($coachMode) {
     $pageTitle = 'Moje účtenka platby';
 }
 
-$monthExpr = "DATE_FORMAT(e.starts_at, '%Y-%m-01')";
-$monthFilter = $monthExpr . ' = ?';
+$calendarExpr = "DATE_FORMAT(e.starts_at, '%Y-%m-01')";
+$monthExpr = $hasBillingMonth
+    ? "DATE_FORMAT(COALESCE(e.billing_month, e.starts_at), '%Y-%m-01')"
+    : $calendarExpr;
+$reasonExpr = receiptColumnExists($pdo, 'coach_calendar_events', 'billing_transfer_reason')
+    ? 'e.billing_transfer_reason'
+    : "''";
+$monthFilter = "(
+    ({$calendarExpr} = ? AND ({$monthExpr} = ? OR {$reasonExpr} IS NULL OR {$reasonExpr} = ''))
+    OR ({$monthExpr} = ? AND {$reasonExpr} IN ('pending_not_included', 'paid_not_paid') AND {$calendarExpr} <> ?)
+)";
+$issueExpr = receiptColumnExists($pdo, 'coach_calendar_events', 'billing_issue_number') ? 'COALESCE(e.billing_issue_number, 1)' : '1';
+$transferReasonSelect = receiptColumnExists($pdo, 'coach_calendar_events', 'billing_transfer_reason')
+    ? 'e.billing_transfer_reason'
+    : 'NULL AS billing_transfer_reason';
 $isMakeupSelect = $hasIsMakeup ? 'e.is_makeup_session' : '0';
 $billingMonthSelect = $hasBillingMonth
     ? "DATE_FORMAT(COALESCE(e.billing_month, e.starts_at), '%Y-%m-01')"
@@ -297,12 +303,14 @@ if ($hasSecondAthlete) {
                e.location,
                {$isMakeupSelect} AS is_makeup_session,
                {$billingMonthSelect} AS billing_month,
+               {$transferReasonSelect},
                CASE WHEN e.second_athlete_id IS NOT NULL THEN 1 ELSE 0 END AS is_paired
         FROM coach_calendar_events e
         WHERE e.coach_id = ?
           AND e.approval_status = 'approved'
           AND e.athlete_id = ?
           AND {$monthFilter}
+          AND {$issueExpr} = ?
         UNION ALL
         SELECT e.id,
                e.starts_at,
@@ -310,15 +318,20 @@ if ($hasSecondAthlete) {
                e.location,
                {$isMakeupSelect} AS is_makeup_session,
                {$billingMonthSelect} AS billing_month,
+               {$transferReasonSelect},
                1 AS is_paired
         FROM coach_calendar_events e
         WHERE e.coach_id = ?
           AND e.approval_status = 'approved'
           AND e.second_athlete_id = ?
           AND {$monthFilter}
+          AND {$issueExpr} = ?
         ORDER BY starts_at ASC
     ";
-    $eventsParams = [$coachId, $athleteId, $monthSql, $coachId, $athleteId, $monthSql];
+    $eventsParams = [
+        $coachId, $athleteId, $monthSql, $monthSql, $monthSql, $monthSql, $issueNumber,
+        $coachId, $athleteId, $monthSql, $monthSql, $monthSql, $monthSql, $issueNumber,
+    ];
 } else {
     $eventsSql = "
         SELECT e.id,
@@ -327,28 +340,32 @@ if ($hasSecondAthlete) {
                e.location,
                {$isMakeupSelect} AS is_makeup_session,
                {$billingMonthSelect} AS billing_month,
+               {$transferReasonSelect},
                0 AS is_paired
         FROM coach_calendar_events e
         WHERE e.coach_id = ?
           AND e.approval_status = 'approved'
           AND e.athlete_id = ?
           AND {$monthFilter}
+          AND {$issueExpr} = ?
         ORDER BY starts_at ASC
     ";
-    $eventsParams = [$coachId, $athleteId, $monthSql];
+    $eventsParams = [$coachId, $athleteId, $monthSql, $monthSql, $monthSql, $monthSql, $issueNumber];
 }
 
 $eventsStmt = $pdo->prepare($eventsSql);
 $eventsStmt->execute($eventsParams);
 $eventRows = $eventsStmt->fetchAll();
 $replacementOrigins = receiptFetchReplacementOrigins($pdo, $coachId, $athleteId);
-$replacementOriginsByEventId = $replacementOrigins['direct'] ?? [];
-$replacementOriginsFallback = $replacementOrigins['fallback'] ?? [];
+$replacementOriginsByEventId = $replacementOrigins;
 
 $singleSessions = 0;
 $pairedSessions = 0;
 $makeupSessions = 0;
 $transferredSessions = 0;
+$transferredMakeupSessions = 0;
+$paidReplacementSingle = 0;
+$paidReplacementPaired = 0;
 
 foreach ($eventRows as $eventRow) {
     $isPaired = ((int)$eventRow['is_paired'] === 1);
@@ -366,6 +383,15 @@ foreach ($eventRows as $eventRow) {
     $billingMonth = date('Y-m-01', strtotime((string)$eventRow['billing_month']));
     if ($eventMonth !== $billingMonth) {
         $transferredSessions++;
+    }
+    $replacementOrigin = $replacementOriginsByEventId[(int)($eventRow['id'] ?? 0)] ?? null;
+    if (is_array($replacementOrigin) && (string)($replacementOrigin['payment_status_snapshot'] ?? '') === 'paid') {
+        $transferredMakeupSessions++;
+        if ($isPaired) {
+            $paidReplacementPaired++;
+        } else {
+            $paidReplacementSingle++;
+        }
     }
 }
 
@@ -386,24 +412,26 @@ $pairedRate = ($hasPairedTrainingRate && array_key_exists('paired_training_rate'
 
 $carryoverForMonth = receiptResolveCarryoverUsage(
     $outstandingBefore,
-    $transferredSessions,
+    $transferredMakeupSessions,
     $singleSessions + $pairedSessions
 );
-$breakdown = receiptBuildBillable($singleSessions, $pairedSessions, $carryoverForMonth, $singleRate, $pairedRate);
+$breakdown = receiptBuildBillable($singleSessions, $pairedSessions, $carryoverForMonth, $singleRate, $pairedRate, $paidReplacementSingle, $paidReplacementPaired);
 $onlineBillingRows = [];
-try {
-    $onlineBillingStmt = $pdo->prepare('SELECT description, amount, billing_date FROM online_training_billing WHERE trainer_id = ? AND athlete_id = ? AND billing_month = ? ORDER BY billing_date, id');
-    $onlineBillingStmt->execute([$coachId, $athleteId, $monthSql]);
-    $onlineBillingRows = $onlineBillingStmt->fetchAll();
-} catch (Throwable $e) {
-    $onlineBillingRows = [];
+if ($issueNumber === 1) {
+    try {
+        $onlineBillingStmt = $pdo->prepare('SELECT description, amount, billing_date FROM online_training_billing WHERE trainer_id = ? AND athlete_id = ? AND billing_month = ? ORDER BY billing_date, id');
+        $onlineBillingStmt->execute([$coachId, $athleteId, $monthSql]);
+        $onlineBillingRows = $onlineBillingStmt->fetchAll();
+    } catch (Throwable $e) {
+        $onlineBillingRows = [];
+    }
 }
 $onlineBillingAmount = array_sum(array_map(static fn(array $row): float => (float)$row['amount'], $onlineBillingRows));
 
 $paymentRow = null;
 if ($hasPaymentsTable) {
     $paymentStmt = $pdo->prepare(
-        'SELECT session_rate, planned_sessions, '
+        'SELECT issue_number, session_rate, planned_sessions, '
         . ($hasCarryover ? 'carryover_used_sessions' : '0 AS carryover_used_sessions') . ',
         billed_amount, status, paid_at'
     . ($hasReceiptSnapshot ? ', receipt_snapshot_json' : '') . '
@@ -411,11 +439,17 @@ if ($hasPaymentsTable) {
          WHERE coach_id = ?
            AND athlete_id = ?
            AND billing_month = ?
+            AND issue_number = ?
          LIMIT 1'
     );
-    $paymentStmt->execute([$coachId, $athleteId, $monthSql]);
+        $paymentStmt->execute([$coachId, $athleteId, $monthSql, $issueNumber]);
     $paymentRow = $paymentStmt->fetch() ?: null;
 }
+
+    if ($paymentRow && $paymentRow['session_rate'] !== null) {
+        $singleRate = (float)$paymentRow['session_rate'];
+        $pairedRate = $singleRate;
+    }
 
 $usesSnapshot = false;
 if ($paymentRow && ($paymentRow['status'] ?? '') === 'paid' && $hasReceiptSnapshot) {
@@ -428,22 +462,44 @@ if ($paymentRow && ($paymentRow['status'] ?? '') === 'paid' && $hasReceiptSnapsh
                 if (!is_array($snapshotEvent)) {
                     continue;
                 }
+                $snapshotStart = (string)($snapshotEvent['starts_at'] ?? '');
+                $snapshotBillingMonth = (string)($snapshotEvent['billing_month'] ?? '');
+                $snapshotIssue = max(1, (int)($snapshotEvent['billing_issue_number'] ?? $issueNumber));
+                if ($snapshotStart === ''
+                    || ($snapshotBillingMonth !== '' && substr($snapshotBillingMonth, 0, 10) !== $monthSql)
+                    || $snapshotIssue !== $issueNumber) {
+                    continue;
+                }
                 $eventRows[] = [
                     'id' => (int)($snapshotEvent['id'] ?? 0),
-                    'starts_at' => (string)($snapshotEvent['starts_at'] ?? ''),
+                    'starts_at' => $snapshotStart,
                     'ends_at' => (string)($snapshotEvent['ends_at'] ?? ''),
                     'location' => (string)($snapshotEvent['location'] ?? ''),
-                    'billing_month' => (string)($snapshotEvent['billing_month'] ?? ''),
+                    'billing_month' => $snapshotBillingMonth,
+                    'billing_issue_number' => $snapshotIssue,
+                    'billing_transfer_reason' => (string)($snapshotEvent['billing_transfer_reason'] ?? ''),
                     'is_makeup_session' => (int)($snapshotEvent['is_makeup_session'] ?? 0),
                     'is_paired' => (int)($snapshotEvent['is_paired'] ?? 0),
                 ];
             }
+            $singleSessions = 0;
+            $pairedSessions = 0;
+            $makeupSessions = 0;
+            $transferredSessions = 0;
+            foreach ($eventRows as $snapshotEvent) {
+                if ((int)$snapshotEvent['is_paired'] === 1) {
+                    $pairedSessions++;
+                } else {
+                    $singleSessions++;
+                }
+                if ((int)$snapshotEvent['is_makeup_session'] === 1) {
+                    $makeupSessions++;
+                }
+                if (substr((string)$snapshotEvent['billing_month'], 0, 10) !== $monthSql) {
+                    $transferredSessions++;
+                }
+            }
         }
-
-        $singleSessions = max(0, (int)($snapshot['single_sessions'] ?? $singleSessions));
-        $pairedSessions = max(0, (int)($snapshot['paired_sessions'] ?? $pairedSessions));
-        $makeupSessions = max(0, (int)($snapshot['makeup_sessions'] ?? $makeupSessions));
-        $transferredSessions = max(0, (int)($snapshot['transferred_sessions'] ?? $transferredSessions));
 
         $snapshotBreakdown = $snapshot['breakdown'] ?? null;
         if (is_array($snapshotBreakdown)) {
@@ -471,36 +527,65 @@ if ($paymentRow && ($paymentRow['status'] ?? '') === 'paid' && $hasReceiptSnapsh
     }
 }
 
-$carryoverRemaining = max(0, (int)($breakdown['carryover_applied'] ?? $outstandingBefore));
 $rowCharges = [];
 foreach ($eventRows as $eventRow) {
     $rowRate = ((int)($eventRow['is_paired'] ?? 0) === 1)
         ? ($pairedRate ?? $singleRate)
         : $singleRate;
-    $isCarryover = $carryoverRemaining > 0;
     $rowNotes = [];
-    $rowCharges[] = [
-        'amount' => ($rowRate !== null && !$isCarryover) ? (float)$rowRate : 0.0,
-        'note' => '',
-    ];
-    if ($isCarryover) {
-        $rowNotes[] = 'Hrazeno v předešlém období' . (!empty($paymentRow['paid_at']) ? ' (' . date('m/Y', strtotime((string)$paymentRow['paid_at'])) . ')' : '');
-    }
-
     $replacementOrigin = $replacementOriginsByEventId[(int)($eventRow['id'] ?? 0)] ?? null;
-    if ((!is_array($replacementOrigin) || empty($replacementOrigin['starts_at'])) && (int)($eventRow['is_makeup_session'] ?? 0) === 1 && !empty($replacementOriginsFallback)) {
-        $replacementOrigin = array_shift($replacementOriginsFallback);
-    }
+    $isPaidReplacement = is_array($replacementOrigin)
+        && (string)($replacementOrigin['payment_status_snapshot'] ?? '') === 'paid';
 
+    if ($isPaidReplacement) {
+        $originMonthRaw = trim((string)($replacementOrigin['billing_month'] ?? ''));
+        if ($originMonthRaw === '') {
+            $originMonthRaw = (string)($replacementOrigin['starts_at'] ?? '');
+        }
+        if ($originMonthRaw !== '' && strtotime($originMonthRaw) !== false) {
+            $rowNotes[] = 'Hrazeno v ' . date('m/Y', strtotime($originMonthRaw));
+        }
+    }
     if (is_array($replacementOrigin) && !empty($replacementOrigin['starts_at'])) {
         $rowNotes[] = 'Původní termín: ' . formatDate((string)$replacementOrigin['starts_at']);
     }
+    $calendarMonth = date('Y-m-01', strtotime((string)$eventRow['starts_at']));
+    $assignedMonth = !empty($eventRow['billing_month'])
+        ? date('Y-m-01', strtotime((string)$eventRow['billing_month']))
+        : $calendarMonth;
+    if ($calendarMonth !== $assignedMonth) {
+        $calendarDay = date('j. n. Y', strtotime((string)$eventRow['starts_at']));
+        if ((string)($eventRow['billing_transfer_reason'] ?? '') === 'pending_not_included') {
+            $rowNotes[] = 'Tento trénink proběhl ' . $calendarDay . ' a nebyl zahrnut do ' . paymentBillingMonthAdjective($calendarMonth) . ' výzvy.';
+        } elseif ((string)($eventRow['billing_transfer_reason'] ?? '') === 'paid_not_paid') {
+            $rowNotes[] = 'Tento trénink proběhl ' . $calendarDay . ' a nebyl uhrazen v ' . paymentBillingMonthGenitive($calendarMonth) . '.';
+        }
+    }
 
-    $rowCharges[count($rowCharges) - 1]['note'] = implode('; ', $rowNotes);
-    if ($carryoverRemaining > 0) {
-        $carryoverRemaining--;
+    $rowCharges[] = [
+        'amount' => $isPaidReplacement ? 0.0 : ($rowRate !== null ? (float)$rowRate : 0.0),
+        'note' => implode('; ', $rowNotes),
+    ];
+}
+
+$paidReplacementSingle = 0;
+$paidReplacementPaired = 0;
+foreach ($eventRows as $eventRow) {
+    $origin = $replacementOriginsByEventId[(int)($eventRow['id'] ?? 0)] ?? null;
+    if (!is_array($origin) || (string)($origin['payment_status_snapshot'] ?? '') !== 'paid') {
+        continue;
+    }
+    if ((int)($eventRow['is_paired'] ?? 0) === 1) {
+        $paidReplacementPaired++;
+    } else {
+        $paidReplacementSingle++;
     }
 }
+$breakdown['raw_total'] = count($eventRows);
+$breakdown['billable_single'] = max(0, $singleSessions - $paidReplacementSingle);
+$breakdown['billable_paired'] = max(0, $pairedSessions - $paidReplacementPaired);
+$breakdown['billable_total'] = $breakdown['billable_single'] + $breakdown['billable_paired'];
+$breakdown['carryover_applied'] = $paidReplacementSingle + $paidReplacementPaired;
 
 $displayAmount = $breakdown['computed_amount'];
 if ($displayAmount !== null) {
@@ -508,12 +593,12 @@ if ($displayAmount !== null) {
 } elseif ($onlineBillingAmount > 0) {
     $displayAmount = $onlineBillingAmount;
 }
-if ($paymentRow && ($paymentRow['status'] ?? '') === 'paid' && isset($paymentRow['billed_amount'])) {
+if ($paymentRow && in_array((string)($paymentRow['status'] ?? ''), ['pending', 'paid'], true) && isset($paymentRow['billed_amount'])) {
     $displayAmount = (float)$paymentRow['billed_amount'];
 }
 
 $athleteName = trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']);
-$monthLabel = date('m/Y', strtotime($monthSql));
+$monthLabel = date('m/Y', strtotime($monthSql)) . ($issueNumber > 1 ? ' — dodatečná výzva' : '');
 $paymentStatus = $paymentRow ? (string)($paymentRow['status'] ?? 'pending') : 'pending';
 $statusLabel = $paymentStatus === 'paid' ? 'Uhrazeno' : 'Neuhrazeno';
 $statusClass = $paymentStatus === 'paid' ? 'success' : 'secondary';
@@ -851,7 +936,7 @@ if ($coachMode) {
                                 <td><?= ((int)$event['is_paired'] === 1) ? 'Párový' : 'Individuální' ?></td>
                                 <td><?= ((int)($event['is_makeup_session'] ?? 0) === 1) ? 'Ano' : 'Ne' ?></td>
                                 <td><?= number_format((float)$rowCharge, 0, ',', ' ') ?> Kč</td>
-                                <td><?= h($rowNote !== '' ? $rowNote : (((string)($event['billing_month'] ?? '') !== $monthSql) ? 'Převod z předchozího období' : '')) ?></td>
+                                <td><?= h($rowNote) ?></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -862,7 +947,6 @@ if ($coachMode) {
                     <?php
                     $rowCharge = $rowCharges[$index]['amount'] ?? 0.0;
                     $rowNote = $rowCharges[$index]['note'] ?? '';
-                    $defaultNote = ((string)($event['billing_month'] ?? '') !== $monthSql) ? 'Převod z předchozího období' : '';
                     ?>
                     <div class="receipt-event-card">
                         <div class="receipt-event-head">
@@ -887,8 +971,8 @@ if ($coachMode) {
                                 <div class="receipt-event-value"><?= ((int)($event['is_makeup_session'] ?? 0) === 1) ? 'Ano' : 'Ne' ?></div>
                             </div>
                         </div>
-                        <?php if ($rowNote !== '' || $defaultNote !== ''): ?>
-                            <div class="receipt-event-note"><?= h($rowNote !== '' ? $rowNote : $defaultNote) ?></div>
+                        <?php if ($rowNote !== ''): ?>
+                            <div class="receipt-event-note"><?= h($rowNote) ?></div>
                         <?php endif; ?>
                     </div>
                 <?php endforeach; ?>

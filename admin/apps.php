@@ -53,7 +53,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             return $scheme === 'https' ? $url : false;
         };
 
-        if ($action === 'save_android_app') {
+        if ($action === 'remove_android_apk') {
+            try {
+                if (str_starts_with($androidApkPath, 'uploads/apps/android/') && !str_contains($androidApkPath, '..')) {
+                    $apkFile = __DIR__ . '/../' . $androidApkPath;
+                    if (is_file($apkFile)) {
+                        @unlink($apkFile);
+                    }
+                }
+                $saveSetting($pdo, $androidApkPathKey, '');
+                flash('success', 'Instalační soubor Android byl odebrán.');
+            } catch (Throwable $e) {
+                flash('danger', 'Instalační soubor Android se nepodařilo odebrat.');
+            }
+        } elseif ($action === 'save_android_app') {
             $marketUrl = $validateMarketUrl(trim((string)($_POST['android_market_url'] ?? '')));
             if ($marketUrl === false) {
                 flash('danger', 'Zadejte platný odkaz na Google Play začínající https://.');
@@ -227,7 +240,12 @@ renderAdminHeader($platform === 'ios' ? 'Aplikace – Apple' : 'Aplikace – And
             <input class="form-control" type="url" id="android_market_url" name="android_market_url" value="<?= h($androidMarketUrl) ?>" placeholder="https://play.google.com/store/apps/details?id=…">
             <div class="form-text">Je-li odkaz vyplněný, tlačítko na přihlášení otevře Google Play místo APK.</div>
         </div>
-        <div class="col-12 col-lg-2"><button class="btn btn-primary w-100" type="submit"><i class="fas fa-save me-1"></i>Uložit</button></div>
+        <div class="col-12 col-lg-2 d-grid gap-2">
+            <button class="btn btn-primary w-100" type="submit"><i class="fas fa-save me-1"></i>Uložit</button>
+            <?php if ($androidApkPath !== ''): ?>
+            <button class="btn btn-outline-danger w-100" type="submit" name="action" value="remove_android_apk" formnovalidate onclick="return confirm('Opravdu odebrat instalační soubor Android?');"><i class="fas fa-trash me-1"></i>Odebrat APK</button>
+            <?php endif; ?>
+        </div>
     </form>
 </section>
 <?php else: ?>

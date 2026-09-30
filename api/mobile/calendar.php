@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/../../includes/payment_billing.php';
 
 $coach = mobileRequireCoach();
 $pdo = getDB();
@@ -253,6 +254,9 @@ if ($action === 'approve') {
     if (!$event) {
         mobileJson(['success' => false, 'error' => 'Událost nenalezena.'], 404);
     }
+    if ((string)($event['approval_status'] ?? '') !== 'pending') {
+        mobileJson(['success' => false, 'error' => 'Tuto událost už nelze schválit.'], 409);
+    }
 
     $newStarts = trim((string)($input['starts_at'] ?? ''));
     $newEnds = trim((string)($input['ends_at'] ?? ''));
@@ -302,18 +306,42 @@ if ($action === 'approve') {
         $rescheduleSourceId = (int)$matches[1];
     }
 
+    $billingAssignment = null;
+    if ($rescheduleSourceId <= 0 && $newAthlete > 0 && (int)($event['is_makeup_session'] ?? 0) !== 1) {
+        $targetMonth = $start->format('Y-m-01');
+        $billingAssignment = paymentResolveTrainingAssignment(
+            $pdo,
+            (int)$coach['id'],
+            [$newAthlete, (int)($event['second_athlete_id'] ?? 0)],
+            $targetMonth,
+            (string)($input['billing_decision'] ?? '')
+        );
+        if (isset($billingAssignment['error'])) {
+            mobileJson(['success' => false, 'error' => $billingAssignment['error']], 422);
+        }
+        if (!empty($billingAssignment['requires_choice'])) {
+            mobileJson([
+                'success' => false,
+                'billing_choice_required' => true,
+                'billing_choice' => $billingAssignment['choice'],
+            ], 200);
+        }
+    }
+
     try {
         $pdo->beginTransaction();
         if ($rescheduleSourceId > 0) {
-            $sourceStmt = $pdo->prepare('SELECT id FROM coach_calendar_events WHERE id = ? AND coach_id = ? LIMIT 1');
+            $sourceStmt = $pdo->prepare('SELECT id, billing_month, billing_issue_number, billing_transfer_reason FROM coach_calendar_events WHERE id = ? AND coach_id = ? LIMIT 1');
             $sourceStmt->execute([$rescheduleSourceId, $coach['id']]);
-            if (!$sourceStmt->fetch()) {
+            $sourceEvent = $sourceStmt->fetch(PDO::FETCH_ASSOC);
+            if (!$sourceEvent) {
                 $pdo->rollBack();
                 mobileJson(['success' => false, 'error' => 'Původní termín pro přesun nebyl nalezen.'], 404);
             }
             $update = $pdo->prepare(
                 'UPDATE coach_calendar_events
                  SET athlete_id = ?, custom_title = ?, location = ?, starts_at = ?, ends_at = ?,
+                     billing_month = ?, billing_issue_number = ?, billing_transfer_reason = ?,
                      approval_status = "approved", requested_by_athlete_id = NULL
                  WHERE id = ? AND coach_id = ?'
             );
@@ -323,6 +351,9 @@ if ($action === 'approve') {
                 $newLocation !== '' ? $newLocation : null,
                 $startSql,
                 $endSql,
+                $sourceEvent['billing_month'] ?? $start->format('Y-m-01'),
+                max(1, (int)($sourceEvent['billing_issue_number'] ?? 1)),
+                $sourceEvent['billing_transfer_reason'] ?? null,
                 $rescheduleSourceId,
                 $coach['id'],
             ]);
@@ -332,10 +363,19 @@ if ($action === 'approve') {
             );
             $deleteRequest->execute([$coach['id'], $seriesId]);
         } else {
+            $billingMonth = $billingAssignment !== null
+                ? (string)$billingAssignment['billing_month']
+                : ((int)($event['is_makeup_session'] ?? 0) === 1 && !empty($event['billing_month'])
+                    ? (string)$event['billing_month']
+                    : $start->format('Y-m-01'));
+            $issueNumber = $billingAssignment !== null
+                ? (int)$billingAssignment['issue_number']
+                : max(1, (int)($event['billing_issue_number'] ?? 1));
             $update = $pdo->prepare(
                 'UPDATE coach_calendar_events
                  SET athlete_id = ?, custom_title = ?, location = ?, starts_at = ?, ends_at = ?,
-                     approval_status = "approved"
+                     billing_month = ?, billing_issue_number = ?, billing_transfer_reason = ?,
+                     approval_status = "approved", requested_by_athlete_id = NULL
                  WHERE id = ? AND coach_id = ?'
             );
             $update->execute([
@@ -344,9 +384,20 @@ if ($action === 'approve') {
                 $newLocation !== '' ? $newLocation : null,
                 $startSql,
                 $endSql,
+                $billingMonth,
+                $issueNumber,
+                $billingAssignment['billing_transfer_reason'] ?? null,
                 $eventId,
                 $coach['id'],
             ]);
+            if ($billingAssignment !== null) {
+                foreach ($billingAssignment['refresh_athletes'] ?? [] as $refreshAthleteId) {
+                    paymentRefreshPendingIssue($pdo, (int)$coach['id'], (int)$refreshAthleteId, $billingMonth, $issueNumber);
+                }
+                foreach ($billingAssignment['additional_athletes'] ?? [] as $additionalAthleteId) {
+                    paymentCreateAdditionalIssue($pdo, (int)$coach['id'], (int)$additionalAthleteId, $billingMonth, $issueNumber, $billingAssignment['session_rates'][(int)$additionalAthleteId] ?? $billingAssignment['session_rate'] ?? null);
+                }
+            }
         }
         $pdo->commit();
     } catch (Throwable $e) {

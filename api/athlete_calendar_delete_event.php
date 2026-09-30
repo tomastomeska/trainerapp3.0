@@ -53,6 +53,7 @@ $eventStmt = $pdo->prepare(
             e.custom_title,
             e.location,
             e.billing_month,
+            e.billing_issue_number,
             e.starts_at,
             e.ends_at,
             c.name AS coach_name,
@@ -132,6 +133,7 @@ try {
 $billingMonthSql = $hasBillingMonth && !empty($event['billing_month'])
     ? date('Y-m-01', strtotime((string)$event['billing_month']))
     : date('Y-m-01', strtotime((string)$event['starts_at']));
+$billingIssueNumber = max(1, (int)($event['billing_issue_number'] ?? 1));
 
 $paymentStatus = 'none';
 $wasAlreadyPaid = false;
@@ -142,10 +144,11 @@ if ($hasPayments) {
          WHERE coach_id = ?
            AND athlete_id = ?
            AND billing_month = ?
+           AND issue_number = ?
            AND status IN ("pending", "paid")
          LIMIT 1'
     );
-    $paidStmt->execute([(int)$event['coach_id'], $athleteId, $billingMonthSql]);
+    $paidStmt->execute([(int)$event['coach_id'], $athleteId, $billingMonthSql, $billingIssueNumber]);
     $paymentStatus = (string)($paidStmt->fetchColumn() ?: 'none');
     $wasAlreadyPaid = ($paymentStatus === 'paid');
 }
