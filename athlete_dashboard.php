@@ -259,13 +259,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('danger', 'Vybraný záznam hmotnosti nebyl nalezen.');
         } else {
             if ($action === 'save_weight') {
-                addAthleteWeightLog($athleteId, $measuredAt, $weightKg, 'athlete_link', null, null);
-
-                flash('success', 'Hmotnost byla uložena.');
+                $existingWeight = getAthleteWeightLogForDate($athleteId, $measuredAt);
+                if ($existingWeight !== null) {
+                    flash('danger', 'Na ' . date('j. n. Y', strtotime($measuredAt)) . ' už máte zadanou váhu ' . number_format((float)$existingWeight['weight_kg'], 1, ',', '') . ' kg. Znovu ji zadat nejde.');
+                } elseif (addAthleteWeightLog($athleteId, $measuredAt, $weightKg, 'athlete_link', null, null) > 0) {
+                    flash('success', 'Hmotnost byla uložena.');
+                } else {
+                    flash('danger', 'Na tento den už je váha zadaná. Znovu ji zadat nejde.');
+                }
             } elseif (updateAthleteWeightLog($weightLogId, $athleteId, $measuredAt, $weightKg)) {
                 flash('success', 'Záznam hmotnosti byl upraven.');
             } else {
-                flash('danger', 'Záznam hmotnosti se nepodařilo upravit.');
+                flash('danger', 'Záznam hmotnosti se nepodařilo upravit. Na jeden den může být jen jedna váha.');
             }
         }
 
@@ -323,6 +328,14 @@ $editingWeightLog = $editWeightLogId > 0 ? getAthleteWeightLogById($editWeightLo
 $weightFormAction = $editingWeightLog ? 'update_weight' : 'save_weight';
 $weightFormDate = $editingWeightLog['measured_at'] ?? date('Y-m-d');
 $weightFormValue = $editingWeightLog['weight_kg'] ?? '';
+$latestWeightLog = $weightHistory[0] ?? null;
+$weightTodayLog = null;
+foreach ($weightHistory as $weightHistoryRow) {
+    if (substr((string)($weightHistoryRow['measured_at'] ?? ''), 0, 10) === date('Y-m-d')) {
+        $weightTodayLog = $weightHistoryRow;
+        break;
+    }
+}
 $weightPreviewLimit = 5;
 $weightVisibleRows = array_slice($weightHistory, 0, $weightPreviewLimit);
 $weightCollapsedRows = array_slice($weightHistory, $weightPreviewLimit);
@@ -1227,6 +1240,12 @@ renderAthleteHeader('Profil sportovce', false, true);
             </h2>
             <div id="collapseWeightInputMobile" class="accordion-collapse collapse" aria-labelledby="headingWeightInputMobile" data-bs-parent="#athleteMobileAccordion">
                 <div class="accordion-body">
+                    <?php if ($latestWeightLog): ?>
+                    <div class="alert alert-light border">Poslední váha: <strong><?= number_format((float)$latestWeightLog['weight_kg'], 1, ',', '') ?> kg</strong>, <?= h(date('j. n. Y', strtotime((string)$latestWeightLog['measured_at']))) ?></div>
+                    <?php endif; ?>
+                    <?php if (!$editingWeightLog && $weightTodayLog): ?>
+                    <div class="alert alert-warning">Na dnešek už máte zadanou váhu <?= number_format((float)$weightTodayLog['weight_kg'], 1, ',', '') ?> kg. Znovu ji zadat nejde.</div>
+                    <?php endif; ?>
                     <form method="post">
                         <?= csrfField() ?>
                         <input type="hidden" name="action" value="<?= h($weightFormAction) ?>">
@@ -1245,7 +1264,7 @@ renderAthleteHeader('Profil sportovce', false, true);
                             <i class="fas fa-save me-1"></i><?= $editingWeightLog ? 'Uložit změny' : 'Uložit váhu' ?>
                         </button>
                     </form>
-                    <small class="text-muted d-block mt-2">Svou historii hmotnosti můžete průběžně doplňovat, upravovat i mazat.</small>
+                    <small class="text-muted d-block mt-2">Na jeden den lze váhu zapsat jen jednou.</small>
                 </div>
             </div>
         </div>
@@ -1432,6 +1451,12 @@ renderAthleteHeader('Profil sportovce', false, true);
         <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-primary text-white"><i class="fas fa-weight-scale me-2"></i>Zaznamenat aktuální hmotnost</div>
             <div class="card-body">
+                <?php if ($latestWeightLog): ?>
+                <div class="alert alert-light border">Poslední váha: <strong><?= number_format((float)$latestWeightLog['weight_kg'], 1, ',', '') ?> kg</strong>, <?= h(date('j. n. Y', strtotime((string)$latestWeightLog['measured_at']))) ?></div>
+                <?php endif; ?>
+                <?php if (!$editingWeightLog && $weightTodayLog): ?>
+                <div class="alert alert-warning">Na dnešek už máte zadanou váhu <?= number_format((float)$weightTodayLog['weight_kg'], 1, ',', '') ?> kg. Znovu ji zadat nejde.</div>
+                <?php endif; ?>
                 <form method="post" class="row g-3 align-items-end">
                     <?= csrfField() ?>
                     <input type="hidden" name="action" value="<?= h($weightFormAction) ?>">
@@ -1455,7 +1480,7 @@ renderAthleteHeader('Profil sportovce', false, true);
                         </div>
                     </div>
                 </form>
-                <small class="text-muted d-block mt-2">Svou historii hmotnosti můžete průběžně doplňovat, upravovat i mazat.</small>
+                <small class="text-muted d-block mt-2">Na jeden den lze váhu zapsat jen jednou.</small>
             </div>
         </div>
     </div>

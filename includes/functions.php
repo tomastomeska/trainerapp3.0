@@ -6383,6 +6383,12 @@ function updateAthleteWeightLog(int $logId, int $athleteId, string $measuredAt, 
   if (!getAthleteWeightLogById($logId, $athleteId)) {
     return false;
   }
+  if (function_exists('getAthleteWeightLogForDate')) {
+    $existing = getAthleteWeightLogForDate($athleteId, $measuredAt);
+    if ($existing !== null && (int)$existing['id'] !== $logId) {
+      return false;
+    }
+  }
 
   $pdo = getDB();
   $stmt = $pdo->prepare(

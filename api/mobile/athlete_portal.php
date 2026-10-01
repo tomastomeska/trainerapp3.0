@@ -984,8 +984,18 @@ if ($action === 'save_weight' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($weightKg < 20 || $weightKg > 400) {
         mobileJson(['success' => false, 'error' => 'Zadejte platnou hmotnost v kg.'], 422);
     }
+    $existingWeight = function_exists('getAthleteWeightLogForDate') ? getAthleteWeightLogForDate($athleteId, $measuredAt) : null;
+    if ($existingWeight !== null) {
+        mobileJson([
+            'success' => false,
+            'error' => 'Na ' . date('j. n. Y', strtotime($measuredAt)) . ' už máte zadanou váhu ' . number_format((float)$existingWeight['weight_kg'], 1, ',', '') . ' kg. Znovu ji zadat nejde.',
+        ], 409);
+    }
     if (function_exists('addAthleteWeightLog')) {
-        addAthleteWeightLog($athleteId, $measuredAt, $weightKg, 'athlete_link', null, null);
+        $newWeightId = addAthleteWeightLog($athleteId, $measuredAt, $weightKg, 'athlete_link', null, null);
+        if ($newWeightId <= 0) {
+            mobileJson(['success' => false, 'error' => 'Na tento den už je váha zadaná. Znovu ji zadat nejde.'], 409);
+        }
     } else {
         $stmt = $pdo->prepare('INSERT INTO athlete_weight_logs (athlete_id, measured_at, weight_kg, source) VALUES (?, ?, ?, "athlete_link")');
         $stmt->execute([$athleteId, $measuredAt, $weightKg]);

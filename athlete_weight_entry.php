@@ -24,16 +24,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($weightKg < 20 || $weightKg > 400) {
             $error = 'Zadejte platnou hmotnost v kg.';
         } else {
-            addAthleteWeightLog(
+            $existingWeight = getAthleteWeightLogForDate((int)$invite['athlete_id'], $measuredAt);
+            if ($existingWeight !== null) {
+                $error = 'Na ' . date('j. n. Y', strtotime($measuredAt)) . ' uz mate zadanou vahu ' . number_format((float)$existingWeight['weight_kg'], 1, ',', '') . ' kg. Znovu ji zadat nejde.';
+            } elseif (addAthleteWeightLog(
                 (int)$invite['athlete_id'],
                 $measuredAt,
                 $weightKg,
                 'athlete_link',
                 null,
                 (int)$invite['id']
-            );
-            markAthleteWeightInviteUsed((int)$invite['id']);
-            $success = 'Dekujeme, vase hmotnost byla ulozena.';
+            ) > 0) {
+                markAthleteWeightInviteUsed((int)$invite['id']);
+                $success = 'Dekujeme, vase hmotnost byla ulozena.';
+            } else {
+                $error = 'Na tento den uz je vaha zadana. Znovu ji zadat nejde.';
+            }
         }
     }
 }

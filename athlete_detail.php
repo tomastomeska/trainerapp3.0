@@ -122,8 +122,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('danger', 'Vybraný záznam váhy nebyl nalezen.');
         } else {
             if ($action === 'save_weight') {
-                addAthleteWeightLog($athleteId, $measuredAt, $weightKg, 'coach', $coachId, null);
-                flash('success', 'Tělesná hmotnost byla uložena.');
+                $existingWeight = getAthleteWeightLogForDate($athleteId, $measuredAt);
+                if ($existingWeight !== null || addAthleteWeightLog($athleteId, $measuredAt, $weightKg, 'coach', $coachId, null) <= 0) {
+                    flash('danger', 'Na ' . date('j. n. Y', strtotime($measuredAt)) . ' už sportovec váhu má. Znovu ji zadat nejde.');
+                } else {
+                    flash('success', 'Tělesná hmotnost byla uložena.');
+                }
             } elseif (updateAthleteWeightLog($weightLogId, $athleteId, $measuredAt, $weightKg)) {
                 flash('success', 'Záznam hmotnosti byl upraven.');
             } else {

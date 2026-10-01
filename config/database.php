@@ -3987,6 +3987,21 @@ function calculateGolfStats(int $athleteId, int $daysBack = 90): array {
 // Tělesná hmotnost sportovců
 // ============================================================
 
+function getAthleteWeightLogForDate(int $athleteId, string $measuredAt): ?array
+{
+    $pdo = getDB();
+    $stmt = $pdo->prepare(
+        'SELECT `id`, `measured_at`, `weight_kg`
+         FROM `athlete_weight_logs`
+         WHERE `athlete_id` = ? AND DATE(`measured_at`) = ?
+         ORDER BY `id` DESC
+         LIMIT 1'
+    );
+    $stmt->execute([$athleteId, $measuredAt]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
 function addAthleteWeightLog(
     int $athleteId,
     string $measuredAt,
@@ -3998,6 +4013,10 @@ function addAthleteWeightLog(
     $allowedSources = ['coach', 'athlete_link'];
     if (!in_array($source, $allowedSources, true)) {
         $source = 'coach';
+    }
+
+    if (getAthleteWeightLogForDate($athleteId, $measuredAt) !== null) {
+        return 0;
     }
 
     $pdo = getDB();
