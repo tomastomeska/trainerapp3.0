@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/payment_billing.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -95,6 +96,7 @@ if (!athleteMakeupHintTableExists($pdo, 'athlete_monthly_payments') || !athleteM
 }
 
 $hasBillingMonth = athleteMakeupHintColumnExists($pdo, 'coach_calendar_events', 'billing_month');
+$hasTransferReason = athleteMakeupHintColumnExists($pdo, 'coach_calendar_events', 'billing_transfer_reason');
 $hasSecondAthlete = athleteMakeupHintColumnExists($pdo, 'coach_calendar_events', 'second_athlete_id');
 $hasCarryoverUsed = athleteMakeupHintColumnExists($pdo, 'athlete_monthly_payments', 'carryover_used_sessions');
 $hasIsMakeupSession = athleteMakeupHintColumnExists($pdo, 'coach_calendar_events', 'is_makeup_session');
@@ -109,21 +111,69 @@ if (!$athlete) {
 }
 $coachId = (int)$athlete['coach_id'];
 
+$requiredReplacementRows = [];
+if (athleteMakeupHintTableExists($pdo, 'coach_calendar_event_cancellations')
+    && athleteMakeupHintColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_required')
+    && athleteMakeupHintColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_deadline_at')
+    && athleteMakeupHintColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_event_id')
+    && athleteMakeupHintColumnExists($pdo, 'coach_calendar_event_cancellations', 'second_athlete_id')) {
+    $replacementBillingMonthSelect = athleteMakeupHintColumnExists($pdo, 'coach_calendar_event_cancellations', 'billing_month')
+        ? 'billing_month'
+        : 'NULL AS billing_month';
+    $replacementBillingIssueSelect = athleteMakeupHintColumnExists($pdo, 'coach_calendar_event_cancellations', 'billing_issue_number')
+        ? 'billing_issue_number'
+        : '1 AS billing_issue_number';
+    $replacementPaymentStatusSelect = athleteMakeupHintColumnExists($pdo, 'coach_calendar_event_cancellations', 'payment_status_snapshot')
+        ? 'payment_status_snapshot'
+        : '"none" AS payment_status_snapshot';
+    $requiredReplacementStmt = $pdo->prepare(
+        "SELECT id, starts_at AS canceled_starts_at, replacement_deadline_at,
+                {$replacementBillingMonthSelect}, {$replacementBillingIssueSelect}, {$replacementPaymentStatusSelect}
+         FROM coach_calendar_event_cancellations c
+         WHERE c.coach_id = ?
+           AND (c.athlete_id = ? OR c.second_athlete_id = ?)
+           AND c.canceled_by IN ('athlete', 'coach')
+           AND c.replacement_required = 1
+           AND c.replacement_deadline_at > NOW()
+         AND c.replacement_event_id IS NULL
+         ORDER BY c.replacement_deadline_at ASC, c.id ASC"
+    );
+    $requiredReplacementStmt->execute([$coachId, $athleteId, $athleteId]);
+    $requiredReplacementRows = $requiredReplacementStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+}
+
+$firstRequiredReplacement = $requiredReplacementRows[0] ?? [];
+
+echo json_encode([
+    'success' => true,
+    'has_outstanding' => false,
+    'outstanding_sessions' => 0,
+    'has_required_replacement' => $requiredReplacementRows !== [],
+    'required_replacement_count' => count($requiredReplacementRows),
+    'required_replacement_deadline_at' => $firstRequiredReplacement['replacement_deadline_at'] ?? null,
+    'required_replacement_original_starts_at' => $firstRequiredReplacement['canceled_starts_at'] ?? null,
+    'required_replacement_payment_status' => $firstRequiredReplacement['payment_status_snapshot'] ?? 'none',
+    'required_replacement_billing_month' => $firstRequiredReplacement['billing_month'] ?? null,
+    'required_replacement_billing_issue_number' => max(1, (int)($firstRequiredReplacement['billing_issue_number'] ?? 1)),
+    'target_month' => $targetMonthSql,
+    'target_month_label' => date('m/Y', strtotime($targetMonthSql)),
+]);
+exit;
+
 $participantsSql = '';
 $params = [];
-$monthExpr = $hasBillingMonth
-    ? "DATE_FORMAT(COALESCE(t.billing_month, t.starts_at), '%Y-%m-01')"
-    : "DATE_FORMAT(t.starts_at, '%Y-%m-01')";
+$monthExpr = paymentBillingEffectiveMonthExpression('t', $hasBillingMonth, $hasTransferReason);
+$transferReasonField = $hasTransferReason ? 'billing_transfer_reason' : 'NULL AS billing_transfer_reason';
 
 if ($hasSecondAthlete) {
     $participantsSql = "
-        SELECT starts_at, billing_month
+        SELECT starts_at, billing_month, {$transferReasonField}
         FROM coach_calendar_events
         WHERE coach_id = ?
           AND approval_status = 'approved'
           AND athlete_id = ?
         UNION ALL
-        SELECT starts_at, billing_month
+        SELECT starts_at, billing_month, {$transferReasonField}
         FROM coach_calendar_events
         WHERE coach_id = ?
           AND approval_status = 'approved'
@@ -132,7 +182,7 @@ if ($hasSecondAthlete) {
     $params = [$coachId, $athleteId, $coachId, $athleteId, $carryoverCutoffSql];
 } else {
     $participantsSql = "
-        SELECT starts_at, billing_month
+        SELECT starts_at, billing_month, {$transferReasonField}
         FROM coach_calendar_events
         WHERE coach_id = ?
           AND approval_status = 'approved'
@@ -196,17 +246,10 @@ if (athleteMakeupHintTableExists($pdo, 'coach_calendar_event_cancellations')
          WHERE coach_id = ?
            AND athlete_id = ?
            AND billing_month < ?
-           AND payment_status_snapshot IN ('pending', 'paid')
-           AND (
-               (starts_at > canceled_at AND TIMESTAMPDIFF(MINUTE, canceled_at, starts_at) < 720)
-               OR
-               (
-                   replacement_required = 1
-                   AND (replacement_event_id IS NULL OR NOT EXISTS (SELECT 1 FROM coach_calendar_events ce WHERE ce.id = replacement_event_id))
-                   AND replacement_deadline_at IS NOT NULL
-                   AND replacement_deadline_at < NOW()
-               )
-           )
+           AND replacement_required = 1
+           AND replacement_event_id IS NULL
+           AND replacement_deadline_at IS NOT NULL
+           AND replacement_deadline_at < NOW()
          GROUP BY billing_month"
     );
     $forfeitedStmt->execute([$coachId, $athleteId, $carryoverCutoffSql]);

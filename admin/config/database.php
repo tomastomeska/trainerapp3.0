@@ -513,6 +513,7 @@ function ensureSchemaUpgrades(PDO $pdo): void {
             `cancellation_scope`    ENUM('single','future','pair_exit') NOT NULL DEFAULT 'single',
             `approval_status`       ENUM('pending','approved') NOT NULL DEFAULT 'approved',
             `is_makeup_session`     TINYINT(1) NOT NULL DEFAULT 0,
+            `billing_issue_number`  INT NOT NULL DEFAULT 1,
             `custom_title`          VARCHAR(140) NULL,
             `location`              VARCHAR(255) NULL,
             `starts_at`             DATETIME NOT NULL,

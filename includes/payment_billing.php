@@ -58,6 +58,71 @@ function paymentBillingColumnExists(PDO $pdo, string $table, string $column): bo
     }
 }
 
+function paymentBillingEffectiveMonthExpression(string $alias, bool $hasBillingMonth, bool $hasTransferReason): string
+{
+    $calendarMonth = "DATE_FORMAT({$alias}.starts_at, '%Y-%m-01')";
+    if (!$hasBillingMonth) {
+        return $calendarMonth;
+    }
+
+    $billingMonth = "DATE_FORMAT(COALESCE({$alias}.billing_month, {$alias}.starts_at), '%Y-%m-01')";
+    if (!$hasTransferReason) {
+        return $billingMonth;
+    }
+
+    return "CASE
+        WHEN {$alias}.billing_transfer_reason IS NULL OR {$alias}.billing_transfer_reason = '' THEN {$calendarMonth}
+        ELSE {$billingMonth}
+    END";
+}
+
+function paymentFindActiveReplacementCancellation(PDO $pdo, int $coachId, int $athleteId, ?int $eventId = null): ?array
+{
+    if (!paymentBillingColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_required')
+        || !paymentBillingColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_deadline_at')
+        || !paymentBillingColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_event_id')) {
+        return null;
+    }
+
+    $hasSecondAthlete = paymentBillingColumnExists($pdo, 'coach_calendar_event_cancellations', 'second_athlete_id');
+    $participantWhere = $hasSecondAthlete
+        ? '(c.athlete_id = ? OR c.second_athlete_id = ?)'
+        : 'c.athlete_id = ?';
+    $snapshotSelect = paymentBillingColumnExists($pdo, 'coach_calendar_event_cancellations', 'payment_status_snapshot')
+        ? 'c.payment_status_snapshot'
+        : "'none' AS payment_status_snapshot";
+    $billingMonthSelect = paymentBillingColumnExists($pdo, 'coach_calendar_event_cancellations', 'billing_month')
+        ? 'c.billing_month'
+        : 'NULL AS billing_month';
+    $billingIssueSelect = paymentBillingColumnExists($pdo, 'coach_calendar_event_cancellations', 'billing_issue_number')
+        ? 'c.billing_issue_number'
+        : '1 AS billing_issue_number';
+
+    $replacementWhere = $eventId !== null
+        ? 'c.replacement_event_id = ?'
+        : '(c.replacement_event_id IS NULL AND c.replacement_deadline_at > NOW())';
+    $sql = "SELECT c.id, c.starts_at AS canceled_starts_at, {$billingMonthSelect}, {$billingIssueSelect}, {$snapshotSelect}, c.replacement_deadline_at
+            FROM coach_calendar_event_cancellations c
+            WHERE c.coach_id = ?
+              AND {$participantWhere}
+              AND c.canceled_by IN ('athlete', 'coach')
+              AND c.replacement_required = 1
+              AND {$replacementWhere}
+            ORDER BY c.replacement_deadline_at ASC, c.id ASC
+            LIMIT 1";
+    $stmt = $pdo->prepare($sql);
+    $params = [$coachId, $athleteId];
+    if ($hasSecondAthlete) {
+        $params[] = $athleteId;
+    }
+    if ($eventId !== null) {
+        $params[] = $eventId;
+    }
+    $stmt->execute($params);
+
+    return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+
 function paymentIssueRows(PDO $pdo, int $coachId, int $athleteId, string $month): array
 {
     $stmt = $pdo->prepare(
@@ -261,7 +326,7 @@ function calculateAthleteMonthlyBill(PDO $pdo, int $coachId, int $athleteId, str
                 SELECT 1 FROM coach_calendar_event_cancellations c
                 WHERE c.coach_id = e.coach_id
                   AND c.replacement_event_id = e.id
-                  AND c.payment_status_snapshot = 'paid'
+                  AND c.payment_status_snapshot IN ('pending', 'paid')
             )"
         : '0';
     $transferredMakeupExpr = $hasPaidReplacementLinks
@@ -312,29 +377,6 @@ function calculateAthleteMonthlyBill(PDO $pdo, int $coachId, int $athleteId, str
         }
     }
 
-    if ($issueNumber === 1
-        && paymentBillingColumnExists($pdo, 'coach_calendar_event_cancellations', 'billing_month')
-        && paymentBillingColumnExists($pdo, 'coach_calendar_event_cancellations', 'cancellation_scope')
-        && paymentBillingColumnExists($pdo, 'coach_calendar_event_cancellations', 'canceled_by')
-        && paymentBillingColumnExists($pdo, 'coach_calendar_event_cancellations', 'canceled_at')
-        && paymentBillingColumnExists($pdo, 'coach_calendar_event_cancellations', 'starts_at')) {
-        $lateStmt = $pdo->prepare(
-            "SELECT SUM(CASE WHEN cancellation_scope = 'pair_exit' THEN 1 ELSE 0 END) AS late_paired,
-                    SUM(CASE WHEN cancellation_scope = 'pair_exit' THEN 0 ELSE 1 END) AS late_single,
-                    COUNT(*) AS late_total
-             FROM coach_calendar_event_cancellations
-             WHERE coach_id = ? AND athlete_id = ? AND DATE_FORMAT(starts_at, '%Y-%m-01') = ?
-               AND canceled_by = 'athlete'
-               AND starts_at > canceled_at
-               AND TIMESTAMPDIFF(MINUTE, canceled_at, starts_at) < 720"
-        );
-        $lateStmt->execute([$coachId, $athleteId, $billingMonth]);
-        $late = $lateStmt->fetch() ?: [];
-        $stats['paired_sessions'] += (int)($late['late_paired'] ?? 0);
-        $stats['single_sessions'] += (int)($late['late_single'] ?? 0);
-        $stats['billed_sessions'] += (int)($late['late_total'] ?? 0);
-    }
-
     $sessionCount = $stats['single_sessions'] + $stats['paired_sessions'];
     $paidReplacementSingle = min($stats['single_sessions'], $stats['paid_replacement_single_sessions']);
     $paidReplacementPaired = min($stats['paired_sessions'], $stats['paid_replacement_paired_sessions']);
@@ -367,6 +409,91 @@ function calculateAthleteMonthlyBill(PDO $pdo, int $coachId, int $athleteId, str
     ];
 }
 
+function paymentBuildReceiptSnapshot(PDO $pdo, int $coachId, int $athleteId, string $billingMonth, int $issueNumber = 1, ?float $sessionRateOverride = null, ?float $displayAmountOverride = null): ?string
+{
+    $hasSecondAthlete = paymentBillingColumnExists($pdo, 'coach_calendar_events', 'second_athlete_id');
+    $hasBillingMonth = paymentBillingColumnExists($pdo, 'coach_calendar_events', 'billing_month');
+    $hasTransferReason = paymentBillingColumnExists($pdo, 'coach_calendar_events', 'billing_transfer_reason');
+    $hasBillingIssue = paymentBillingColumnExists($pdo, 'coach_calendar_events', 'billing_issue_number');
+    $hasMakeup = paymentBillingColumnExists($pdo, 'coach_calendar_events', 'is_makeup_session');
+    $monthExpr = paymentBillingEffectiveMonthExpression('e', $hasBillingMonth, $hasTransferReason);
+    $issueExpr = $hasBillingIssue ? 'COALESCE(e.billing_issue_number, 1)' : '1';
+    $makeupExpr = $hasMakeup ? 'COALESCE(e.is_makeup_session, 0)' : '0';
+    $reasonExpr = $hasTransferReason ? 'e.billing_transfer_reason' : "''";
+    $participantWhere = $hasSecondAthlete
+        ? '(e.athlete_id = ? OR e.second_athlete_id = ?)'
+        : 'e.athlete_id = ?';
+    $pairedExpr = $hasSecondAthlete
+        ? 'CASE WHEN e.second_athlete_id IS NOT NULL THEN 1 ELSE 0 END'
+        : '0';
+
+    $stmt = $pdo->prepare(
+        "SELECT e.id, e.starts_at, e.ends_at, e.location,
+                {$monthExpr} AS billing_month,
+                {$issueExpr} AS billing_issue_number,
+                {$reasonExpr} AS billing_transfer_reason,
+                {$makeupExpr} AS is_makeup_session,
+                {$pairedExpr} AS is_paired
+         FROM coach_calendar_events e
+         WHERE e.coach_id = ?
+           AND e.approval_status = 'approved'
+           AND {$participantWhere}
+           AND {$monthExpr} = ?
+           AND {$issueExpr} = ?
+         ORDER BY e.starts_at ASC, e.id ASC"
+    );
+    $params = [$coachId, $athleteId];
+    if ($hasSecondAthlete) {
+        $params[] = $athleteId;
+    }
+    array_push($params, $billingMonth, $issueNumber);
+    $stmt->execute($params);
+    $eventRows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+    $bill = calculateAthleteMonthlyBill(
+        $pdo,
+        $coachId,
+        $athleteId,
+        $billingMonth,
+        [],
+        $issueNumber,
+        $sessionRateOverride
+    );
+    $stats = $bill['stats'];
+    $singleSessions = max(0, (int)($stats['single_sessions'] ?? 0));
+    $pairedSessions = max(0, (int)($stats['paired_sessions'] ?? 0));
+    $paidReplacementSingle = min($singleSessions, max(0, (int)($stats['paid_replacement_single_sessions'] ?? 0)));
+    $paidReplacementPaired = min($pairedSessions, max(0, (int)($stats['paid_replacement_paired_sessions'] ?? 0)));
+    $hasPairedRate = paymentBillingColumnExists($pdo, 'athletes', 'paired_training_rate');
+    $rateStmt = $pdo->prepare(
+        $hasPairedRate
+            ? 'SELECT training_rate, paired_training_rate FROM athletes WHERE id = ? AND coach_id = ? LIMIT 1'
+            : 'SELECT training_rate, NULL AS paired_training_rate FROM athletes WHERE id = ? AND coach_id = ? LIMIT 1'
+    );
+    $rateStmt->execute([$athleteId, $coachId]);
+    $rates = $rateStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $singleRate = $sessionRateOverride ?? (($rates['training_rate'] ?? null) !== null ? (float)$rates['training_rate'] : null);
+    $pairedRate = $sessionRateOverride ?? (($rates['paired_training_rate'] ?? null) !== null ? (float)$rates['paired_training_rate'] : $singleRate);
+    $billableSingle = max(0, $singleSessions - $paidReplacementSingle);
+    $billablePaired = max(0, $pairedSessions - $paidReplacementPaired);
+    $snapshotAmount = $displayAmountOverride ?? ($bill['billed_amount'] !== null ? (float)$bill['billed_amount'] : null);
+
+    return json_encode([
+        'event_rows' => $eventRows,
+        'breakdown' => [
+            'total_sessions' => $singleSessions + $pairedSessions,
+            'carryover_used' => $paidReplacementSingle + $paidReplacementPaired,
+            'billable_single_sessions' => $billableSingle,
+            'billable_paired_sessions' => $billablePaired,
+            'billable_sessions' => $billableSingle + $billablePaired,
+            'single_rate' => $singleRate,
+            'paired_rate' => $pairedRate,
+            'amount' => $snapshotAmount,
+        ],
+        'display_amount' => $snapshotAmount,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+}
+
 function paymentRefreshPendingIssue(PDO $pdo, int $coachId, int $athleteId, string $billingMonth, int $issueNumber): void
 {
     $stmt = $pdo->prepare(
@@ -386,16 +513,18 @@ function paymentRefreshPendingIssue(PDO $pdo, int $coachId, int $athleteId, stri
     if ($bill['billed_amount'] === null) {
         throw new RuntimeException('Výzvu se nepodařilo přepočítat, protože chybí sazba.');
     }
+    $receiptSnapshot = paymentBuildReceiptSnapshot($pdo, $coachId, $athleteId, $billingMonth, $issueNumber, null, (float)$bill['billed_amount']);
 
     $update = $pdo->prepare(
         'UPDATE athlete_monthly_payments
-         SET planned_sessions = ?, carryover_used_sessions = ?, billed_amount = ?
+         SET planned_sessions = ?, carryover_used_sessions = ?, billed_amount = ?, receipt_snapshot_json = ?
          WHERE coach_id = ? AND athlete_id = ? AND billing_month = ? AND issue_number = ? AND status = "pending"'
     );
     $update->execute([
         $bill['planned_sessions'],
         $bill['carryover_used'],
         number_format((float)$bill['billed_amount'], 2, '.', ''),
+        $receiptSnapshot,
         $coachId,
         $athleteId,
         $billingMonth,
@@ -405,14 +534,16 @@ function paymentRefreshPendingIssue(PDO $pdo, int $coachId, int $athleteId, stri
 
 function paymentCreateAdditionalIssue(PDO $pdo, int $coachId, int $athleteId, string $billingMonth, int $issueNumber, ?float $sessionRate): void
 {
+    paymentEnsureBillingIssueSchema($pdo);
     $bill = calculateAthleteMonthlyBill($pdo, $coachId, $athleteId, $billingMonth, [], $issueNumber, $sessionRate, false);
     if ($bill['billed_amount'] === null) {
         throw new RuntimeException('Dodatečnou výzvu se nepodařilo vytvořit, protože chybí sazba.');
     }
+    $receiptSnapshot = paymentBuildReceiptSnapshot($pdo, $coachId, $athleteId, $billingMonth, $issueNumber, $sessionRate, (float)$bill['billed_amount']);
     $insert = $pdo->prepare(
         'INSERT INTO athlete_monthly_payments
-            (coach_id, athlete_id, billing_month, issue_number, session_rate, planned_sessions, carryover_used_sessions, billed_amount, status, paid_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, "pending", NULL)'
+            (coach_id, athlete_id, billing_month, issue_number, session_rate, planned_sessions, carryover_used_sessions, billed_amount, status, paid_at, receipt_snapshot_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, "pending", NULL, ?)'
     );
     $insert->execute([
         $coachId,
@@ -423,6 +554,7 @@ function paymentCreateAdditionalIssue(PDO $pdo, int $coachId, int $athleteId, st
         $bill['planned_sessions'],
         $bill['carryover_used'],
         number_format((float)$bill['billed_amount'], 2, '.', ''),
+        $receiptSnapshot,
     ]);
 }
 
@@ -435,6 +567,9 @@ function paymentEnsureBillingIssueSchema(PDO $pdo): void
         }
         if (!paymentBillingColumnExists($pdo, 'athlete_monthly_payments', 'issue_number')) {
             $pdo->exec('ALTER TABLE athlete_monthly_payments ADD COLUMN issue_number INT NOT NULL DEFAULT 1 AFTER billing_month');
+        }
+        if (!paymentBillingColumnExists($pdo, 'athlete_monthly_payments', 'receipt_snapshot_json')) {
+            $pdo->exec('ALTER TABLE athlete_monthly_payments ADD COLUMN receipt_snapshot_json LONGTEXT NULL');
         }
         $indexStmt = $pdo->query('SHOW INDEX FROM athlete_monthly_payments');
         $indexes = [];

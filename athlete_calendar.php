@@ -1084,13 +1084,13 @@ renderAthleteHeader('Můj kalendář', false, true);
                     </div>
 
                     <div class="alert alert-warning mt-3 mb-0 d-none" id="reserveMakeupSuggestion">
-                        <div class="fw-semibold mb-1"><i class="fas fa-circle-exclamation me-1"></i>Nevyužitý uhrazený trénink</div>
+                        <div class="fw-semibold mb-1"><i class="fas fa-circle-exclamation me-1"></i>Aktivní storno s nárokem na náhradu</div>
                         <div class="small" id="reserveMakeupSuggestionText"></div>
                         <div class="form-check mt-2">
                             <input class="form-check-input" type="checkbox" id="reserveUseMakeup">
-                            <label class="form-check-label fw-semibold" for="reserveUseMakeup">Použít tento termín jako náhradu</label>
+                            <label class="form-check-label fw-semibold" for="reserveUseMakeup">Rezervovat tento termín jako náhradu</label>
                         </div>
-                        <div class="small text-muted mt-2">Hrazený měsíc se při náhradě vybere automaticky.</div>
+                        <div class="small text-muted mt-2">Rezervace bude navázaná na konkrétní storno a započítá se pouze jednou.</div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -1485,14 +1485,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return startDate > new Date();
     }
 
-    function isLateCancellationWindow(event) {
-        if (!event || !event.starts_at) return false;
-        const startDate = fromSqlDateTime(event.starts_at);
-        if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) return false;
-        const diffMs = startDate.getTime() - Date.now();
-        return diffMs > 0 && diffMs < (12 * 60 * 60 * 1000);
-    }
-
     function getWeekRangeLabel() {
         const start = new Date(currentWeekStart);
         const end = addDays(start, 6);
@@ -1522,6 +1514,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const statusMeta = getEventStatusMeta(event);
         const rescheduleRequest = getRescheduleRequestForOrigin(event);
         const timeLabel = `${formatTimeCs(startDate)} - ${formatTimeCs(endDate)}`;
+        const replacementSourceStart = event.replacement_for_starts_at
+            ? fromSqlDateTime(event.replacement_for_starts_at)
+            : null;
+        const replacementLabel = replacementSourceStart
+            ? `Náhrada za ${formatDateCs(replacementSourceStart)}`
+            : '';
         const detailLine = event.is_foreign
             ? timeLabel
             : [event.location ? `Místo: ${event.location}` : 'Místo: -', timeLabel].filter(Boolean).join('\n');
@@ -1543,10 +1541,11 @@ document.addEventListener('DOMContentLoaded', () => {
             text: [title, detailLine].filter(Boolean).join('\n'),
             html: isForeign
                 ? `<div style="font-weight:700;line-height:1.15;font-size:12px;">${escapeHtml(title)}</div><div style="font-size:11px;line-height:1.15;margin-top:2px;">${escapeHtml(timeLabel)}</div>`
-                : `<div style="display:flex;align-items:center;font-weight:700;line-height:1.15;font-size:12px;">${syncBadgeHtml}<span>${escapeHtml(title)}</span></div><div style="font-size:11px;line-height:1.15;margin-top:2px;">${escapeHtml(event.location || 'Bez místa')}</div><div style="font-size:11px;line-height:1.15;margin-top:2px;">${escapeHtml(timeLabel)}</div>${rescheduleLabel ? `<div style="font-size:10px;line-height:1.1;margin-top:3px;font-weight:700;">${escapeHtml(rescheduleLabel)}</div>` : ''}`,
+                : `<div style="display:flex;align-items:center;font-weight:700;line-height:1.15;font-size:12px;">${syncBadgeHtml}<span>${escapeHtml(title)}</span></div><div style="font-size:11px;line-height:1.15;margin-top:2px;">${escapeHtml(event.location || 'Bez místa')}</div><div style="font-size:11px;line-height:1.15;margin-top:2px;">${escapeHtml(timeLabel)}</div>${replacementLabel ? `<div style="font-size:10px;line-height:1.1;margin-top:3px;font-weight:700;">${escapeHtml(replacementLabel)}</div>` : ''}${rescheduleLabel ? `<div style="font-size:10px;line-height:1.1;margin-top:3px;font-weight:700;">${escapeHtml(rescheduleLabel)}</div>` : ''}`,
             toolTip: isForeign
                 ? `${title}${time}`
                 : `${title}${time}${place}${statusLine}${rescheduleRequest ? `\nPožádáno o změnu na ${formatDateCs(fromSqlDateTime(rescheduleRequest.starts_at))} v ${formatTimeCs(fromSqlDateTime(rescheduleRequest.starts_at))}` : ''}`
+                + (replacementSourceStart ? `\nNáhrada za ${formatDateCs(replacementSourceStart)} v ${formatTimeCs(replacementSourceStart)}` : '')
                 + (paymentLabel ? `\nStav úhrady: ${paymentLabel}` : '')
                 + (nonCancelableOwnedEvent ? '\nPoznámka: Tento termín už nelze zrušit.' : '')
                 + (event.is_caldav_synced ? '\nSynchronizováno do iCloud' : ''),
@@ -1579,8 +1578,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const statusMeta = getEventStatusMeta(event);
         const rescheduleRequest = getRescheduleRequestForOrigin(event);
         const canCancel = Boolean(event.can_cancel ?? (event.is_mine || event.is_requested_by_me));
-        const lateCancellation = isLateCancellationWindow(event);
-
         selectedEventForDetail = event;
         eventDetailTitleEl.textContent = title;
         eventDetailWhenEl.textContent = `${formatDateCs(startDate)} ${formatTimeCs(startDate)} - ${formatTimeCs(endDate)}`;
@@ -1611,7 +1608,19 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        if (String(event.payment_status || '') === 'paid') {
+        if (event.replacement_for_starts_at) {
+            const originalStart = fromSqlDateTime(event.replacement_for_starts_at);
+            const isPendingReplacement = (event.approval_status || 'approved') === 'pending';
+            const wasPaidReplacement = String(event.replacement_payment_status || '') === 'paid';
+            const prefix = isPendingReplacement ? 'Po schválení bude tento slot náhradou' : 'Tento trénink je náhradou';
+            const paidText = wasPaidReplacement ? ' Původní termín byl uhrazen; náhrada nebude účtována znovu.' : '';
+            eventDetailPaymentInfoEl.textContent = `${prefix} za zrušený termín ${formatDateCs(originalStart)} v ${formatTimeCs(originalStart)}.${paidText}`;
+            eventDetailPaymentInfoEl.classList.toggle('alert-warning', isPendingReplacement);
+            eventDetailPaymentInfoEl.classList.toggle('alert-success', !isPendingReplacement);
+            eventDetailPaymentInfoEl.classList.remove('d-none');
+        } else if (String(event.payment_status || '') === 'paid') {
+            eventDetailPaymentInfoEl.classList.remove('alert-warning');
+            eventDetailPaymentInfoEl.classList.add('alert-success');
             eventDetailPaymentInfoEl.textContent = 'Tato událost patří do již uhrazeného období.';
             eventDetailPaymentInfoEl.classList.remove('d-none');
         } else {
@@ -1652,15 +1661,10 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (canCancel) {
             eventDetailCancelBtn.classList.remove('d-none');
             eventDetailCancelBtn.disabled = false;
-            if (lateCancellation) {
-                eventDetailCancelInfoEl.className = 'alert alert-danger mt-3 mb-0 py-2';
-                eventDetailCancelInfoEl.textContent = 'Pozor: Zrušení méně než 12 hodin před začátkem je bez nároku na kompenzaci. Tento termín nelze nahradit.';
-            } else {
-                eventDetailCancelInfoEl.className = 'alert alert-light border mt-3 mb-0 py-2';
-                eventDetailCancelInfoEl.textContent = canRequestChange
-                    ? 'Tento termín lze zrušit, nebo požádat o změnu času, místa či data.'
-                    : 'Tento termín lze zrušit.';
-            }
+            eventDetailCancelInfoEl.className = 'alert alert-light border mt-3 mb-0 py-2';
+            eventDetailCancelInfoEl.textContent = canRequestChange
+                ? 'Při zrušení tréninku máte 14 kalendářních dní od termínu na výběr náhrady. Můžete také požádat o změnu času, místa či data.'
+                : 'Při zrušení tréninku máte 14 kalendářních dní od termínu na výběr náhrady.';
         } else {
             eventDetailCancelBtn.classList.add('d-none');
             eventDetailCancelInfoEl.className = 'alert alert-secondary mt-3 mb-0 py-2';
@@ -1729,39 +1733,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderReserveMakeupSuggestion(payload, startDate) {
-        if (!payload || !payload.success) {
+        if (!payload || !payload.success || !payload.has_required_replacement) {
             clearReserveMakeupSuggestion();
             return;
         }
 
-        const hasOutstandingPaid = Boolean(payload.has_outstanding);
-        const hasRequiredReplacement = Boolean(payload.has_required_replacement);
-        if (!hasOutstandingPaid && !hasRequiredReplacement) {
-            clearReserveMakeupSuggestion();
-            return;
-        }
-
-        const targetMonthLabel = payload.target_month_label || `${String(startDate.getMonth() + 1).padStart(2, '0')}/${startDate.getFullYear()}`;
         const lines = [];
-
-        if (hasRequiredReplacement) {
-            const count = Number(payload.required_replacement_count || 0);
-            const deadlineRaw = payload.required_replacement_deadline_at || '';
-            const deadlineText = deadlineRaw ? new Date(String(deadlineRaw).replace(' ', 'T')).toLocaleDateString('cs-CZ') : '';
-            lines.push(
-                count > 1
-                    ? `Máte ${count} zrušené termíny, které je potřeba nahradit.`
-                    : 'Máte zrušený termín, který je potřeba nahradit.'
-            );
-            if (deadlineText) {
-                lines.push(`Náhradní rezervaci je potřeba vytvořit nejpozději do ${deadlineText}.`);
-            }
-            lines.push('Náhradní termín vybírejte přednostně ve stejném měsíci jako byl zrušený termín.');
-            lines.push('Do dalšího měsíce lze náhradu přesunout jen při zrušení v posledním týdnu měsíce.');
+        const count = Number(payload.required_replacement_count || 0);
+        const deadlineRaw = payload.required_replacement_deadline_at || '';
+        const deadlineText = deadlineRaw ? new Date(String(deadlineRaw).replace(' ', 'T')).toLocaleDateString('cs-CZ') : '';
+        const originalStart = payload.required_replacement_original_starts_at
+            ? fromSqlDateTime(payload.required_replacement_original_starts_at)
+            : null;
+        if (originalStart) {
+            lines.push(`Tento slot nahradí původní trénink ${formatDateCs(originalStart)} v ${formatTimeCs(originalStart)}.`);
         }
-
-        if (hasOutstandingPaid) {
-            lines.push(`Máte ${payload.outstanding_sessions} nevyužitý(é) uhrazený(é) trénink(y). Můžete je použít jako náhradu pro ${targetMonthLabel}.`);
+        if (payload.required_replacement_payment_status === 'paid') {
+            lines.push('Původní trénink byl uhrazen; náhrada nebude účtována znovu.');
+        }
+        lines.push(
+            count > 1
+                ? `Máte ${count} zrušené termíny, které je potřeba nahradit.`
+                : 'Máte zrušený termín, který je potřeba nahradit.'
+        );
+        if (deadlineText) {
+            lines.push(`Náhradní rezervaci vytvořte nejpozději do ${deadlineText}; potom nárok zaniká.`);
         }
 
         reserveMakeupSuggestionText.textContent = lines.join(' ');
@@ -2280,12 +2276,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const lateCancellation = isLateCancellationWindow(selectedEventForDetail);
-        const confirmMessage = lateCancellation
-            ? 'Opravdu chcete zrušit tuto událost? Pozor: je to méně než 12 hodin před začátkem, termín bude bez nároku na kompenzaci a nepůjde nahradit.'
-            : 'Opravdu chcete zrušit tuto událost?';
-
-        const ok = confirm(confirmMessage);
+        const ok = confirm('Opravdu chcete zrušit tuto událost? Náhradu musíte vybrat do 14 kalendářních dní od jejího termínu.');
         if (!ok) {
             return;
         }
@@ -2339,7 +2330,6 @@ document.addEventListener('DOMContentLoaded', () => {
             title_type: document.querySelector('input[name="reserveTitleType"]:checked')?.value || 'training',
             location: reserveLocationInput.value.trim(),
             is_makeup_session: reserveUseMakeupInput.checked ? 1 : 0,
-            allow_auto_makeup: !reserveMakeupSuggestion.classList.contains('d-none') ? 1 : 0,
         };
 
         if (mode === 'edit' && reserveEventIdInput.value) {

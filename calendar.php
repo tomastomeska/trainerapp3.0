@@ -1319,13 +1319,13 @@ renderHeader('Kalendář', false, true);
                             <input class="form-check-input" type="checkbox" role="switch" id="eventIsMakeup">
                             <label class="form-check-label fw-semibold" for="eventIsMakeup">Náhradní termín</label>
                         </div>
-                        <div class="small text-muted">Při označení jako náhrada se hrazený měsíc určí automaticky.</div>
+                        <div class="small text-muted">Náhradu lze použít pouze ke konkrétnímu stornu v platné 14denní lhůtě.</div>
                     </div>
                     </div>
                     </details>
 
                     <div class="alert alert-warning mt-3 mb-0 d-none" id="eventMakeupSuggestion">
-                        <div class="fw-semibold mb-1"><i class="fas fa-circle-exclamation me-1"></i>Možná náhrada z dříve uhrazených tréninků</div>
+                        <div class="fw-semibold mb-1"><i class="fas fa-circle-exclamation me-1"></i>Aktivní nárok na náhradu</div>
                         <div class="small" id="eventMakeupSuggestionText"></div>
                         <button type="button" class="btn btn-sm btn-outline-dark mt-2" id="eventUseMakeupBtn">
                             <i class="fas fa-check me-1"></i>Označit tento termín jako náhradu
@@ -1433,7 +1433,7 @@ renderHeader('Kalendář', false, true);
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    const csrfToken = <?= json_encode(csrfToken(), JSON_UNESCAPED_UNICODE) ?>;
+    let csrfToken = <?= json_encode(csrfToken(), JSON_UNESCAPED_UNICODE) ?>;
     const calendarGrid = document.getElementById('calendarGrid');
     const weekRangeLabel = document.getElementById('weekRangeLabel');
 
@@ -1895,14 +1895,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const color = getEventColorScheme(event);
         const statusMeta = getEventStatusMeta(event);
         const rescheduleTargetLabel = getRescheduleTargetLabel(event);
+        const replacementSourceStart = event.replacement_for_starts_at
+            ? fromSqlDateTime(event.replacement_for_starts_at)
+            : null;
+        const replacementLabel = replacementSourceStart
+            ? `Náhrada za ${formatDateCs(replacementSourceStart)}`
+            : '';
         const athleteInfo = athleteLabel && title !== athleteLabel ? `\nSportovci: ${athleteLabel}` : '';
         const statusLine = statusMeta.label ? `\nStav: ${statusMeta.label}` : '';
         const rescheduleLine = rescheduleTargetLabel ? `\n${rescheduleTargetLabel}` : '';
         const paymentPaid = String(event.payment_status || '') === 'paid';
         const paymentLabel = paymentPaid ? 'Uhrazeno' : '';
-        const detailLine = [timeLabel, event.location || '', statusMeta.label, rescheduleTargetLabel, paymentLabel].filter(Boolean).join(' | ');
+        const detailLine = [timeLabel, event.location || '', statusMeta.label, replacementLabel, rescheduleTargetLabel, paymentLabel].filter(Boolean).join(' | ');
         const badgeHtml = [
             statusMeta.label ? `<span class="badge text-bg-warning text-dark me-1">${escapeHtml(statusMeta.label)}</span>` : '',
+            replacementLabel ? `<span class="badge text-bg-info me-1">${escapeHtml(replacementLabel)}</span>` : '',
             paymentPaid ? '<span class="badge bg-success">Uhrazeno</span>' : '',
         ].filter(Boolean).join(' ');
         const syncBadgeHtml = getIcloudSyncBadgeHtml(event);
@@ -1910,12 +1917,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return {
             id: String(event.id),
             text: isPairedTraining
-                ? [athleteLabel || 'Párový trénink', event.location || 'Bez místa', timeLabel, statusMeta.label, paymentLabel].filter(Boolean).join('\n')
+                ? [athleteLabel || 'Párový trénink', event.location || 'Bez místa', timeLabel, statusMeta.label, replacementLabel, paymentLabel].filter(Boolean).join('\n')
                 : [title, event.location || 'Bez místa', detailLine].filter(Boolean).join('\n'),
             html: isPairedTraining
                 ? `<div style="display:grid;grid-template-columns:1fr 1fr;column-gap:8px;font-weight:700;line-height:1.1;font-size:12px;margin-bottom:4px;"><div>${escapeHtml(athleteNames[0])}</div><div style="text-align:right;">${escapeHtml(athleteNames[1])}</div></div><div style="display:flex;align-items:center;justify-content:center;font-weight:600;line-height:1.2;">${syncBadgeHtml}<span>${escapeHtml(event.location || 'Bez místa')}</span></div><div style="text-align:center;font-weight:600;line-height:1.2;">${escapeHtml(timeLabel)}</div><div style="text-align:center;line-height:1.1;margin-top:3px;">${badgeHtml}</div>`
                 : `<div style="display:flex;align-items:center;font-weight:700;line-height:1.15;font-size:12px;">${syncBadgeHtml}<span>${escapeHtml(title)}</span></div><div style="font-size:11px;line-height:1.15;margin-top:2px;">${escapeHtml(event.location || 'Bez místa')}</div><div style="font-size:11px;line-height:1.15;margin-top:2px;">${escapeHtml(timeLabel)}</div><div style="margin-top:3px;">${badgeHtml}</div>`,
-            toolTip: `${title}${time}${place}${athleteInfo}${statusLine}${rescheduleLine}${paymentLabel ? `\nStav úhrady: ${paymentLabel}` : ''}${event.is_caldav_synced ? '\nSynchronizováno do iCloud' : ''}`,
+            toolTip: `${title}${time}${place}${athleteInfo}${statusLine}${replacementSourceStart ? `\nNáhrada za ${formatDateCs(replacementSourceStart)} v ${formatTimeCs(replacementSourceStart)}` : ''}${rescheduleLine}${paymentLabel ? `\nStav úhrady: ${paymentLabel}` : ''}${event.is_caldav_synced ? '\nSynchronizováno do iCloud' : ''}`,
             start: toDateTimeSecondsValue(startDate),
             end: toDateTimeSecondsValue(endDate),
             backColor: color.backColor,
@@ -2176,14 +2183,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderMakeupSuggestion(payload) {
-        if (!payload || !payload.success || !payload.has_outstanding) {
+        if (!payload || !payload.success || !payload.has_required_replacement) {
             clearMakeupSuggestion();
             return;
         }
 
         currentMakeupSuggestion = payload;
-        const targetMonth = payload.target_month_label || getSelectedStartMonth();
-        eventMakeupSuggestionText.textContent = `Sportovec má ${payload.outstanding_sessions} nevyčerpaný(é) trénink(y) z dříve uhrazených období. Pro ${targetMonth} můžete tento termín označit jako náhradu.`;
+        const deadline = payload.required_replacement_deadline_at
+            ? new Date(String(payload.required_replacement_deadline_at).replace(' ', 'T')).toLocaleDateString('cs-CZ')
+            : '';
+        eventMakeupSuggestionText.textContent = `Sportovec má aktivní storno s nárokem na náhradu${deadline ? ` do ${deadline}` : ''}. Tento termín můžete přiřadit jako náhradu.`;
         eventMakeupSuggestion.classList.remove('d-none');
         eventUseMakeupBtn.classList.toggle('d-none', eventIsMakeupInput.checked);
     }
@@ -3081,7 +3090,7 @@ document.addEventListener('DOMContentLoaded', () => {
     eventIsMakeupInput.addEventListener('change', () => {
         if (eventIsMakeupInput.checked) {
             eventUseMakeupBtn.classList.add('d-none');
-        } else if (currentMakeupSuggestion && currentMakeupSuggestion.has_outstanding) {
+        } else if (currentMakeupSuggestion && currentMakeupSuggestion.has_required_replacement) {
             eventUseMakeupBtn.classList.remove('d-none');
         }
     });
@@ -3179,6 +3188,11 @@ document.addEventListener('DOMContentLoaded', () => {
             body: JSON.stringify(body),
         });
         let payload = await request();
+        if (!payload.success && payload.error === 'Neplatný CSRF token' && typeof payload.csrf_token === 'string') {
+            csrfToken = payload.csrf_token;
+            body.csrf_token = csrfToken;
+            payload = await request();
+        }
         while (payload.billing_choice_required) {
             body.billing_decisions = body.billing_decisions || {};
             for (const choice of (payload.billing_choices || [payload.billing_choice])) {
@@ -3297,19 +3311,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (!eventIsMakeupInput.checked && currentMakeupSuggestion && currentMakeupSuggestion.has_outstanding) {
-            const outstandingCount = Number(currentMakeupSuggestion.outstanding_sessions || 0);
-            const confirmUse = confirm(
-                `Sportovec má k dispozici ${outstandingCount} náhradní trénink(y) z dřívější úhrady.\n` +
-                'Chcete tento termín označit jako náhradu?\n\n' +
-                'OK = označit jako náhradu\nStorno = uložit bez náhrady'
-            );
-
-            if (confirmUse) {
-                eventIsMakeupInput.checked = true;
-            }
-        }
-
         const finishSubmit = beginAsyncFormSubmit(eventForm, submitter, 'Ukládám...');
         if (!finishSubmit) {
             return;
@@ -3422,9 +3423,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const eventId = Number((approveBtn || cancelBtn)?.dataset.eventId || 0);
         if (!eventId) return;
 
+        const canceledEvent = events.find((event) => Number(event.id) === eventId);
         if (cancelBtn && !confirm('Opravdu chcete tento trénink zrušit?')) return;
         const body = { csrf_token: csrfToken, event_id: eventId };
-        if (cancelBtn) body.delete_scope = 'single';
+        if (cancelBtn) {
+            body.delete_scope = 'single';
+            const hasAthlete = Number(canceledEvent?.athlete_id || 0) > 0 || Number(canceledEvent?.second_athlete_id || 0) > 0;
+            body.replacement_mode = hasAthlete && (canceledEvent?.title_type || 'training') === 'training'
+                ? (confirm('Dát sportovci možnost náhrady do 14 kalendářních dní od termínu?\n\nOK = nabídnout náhradu\nStorno = bez náhrady') ? '14_days' : 'none')
+                : 'none';
+        }
         const payload = approveBtn
             ? await postCalendarWithBillingChoice('<?= BASE_URL ?>/api/calendar_approve_event.php', body)
             : await fetchJson('<?= BASE_URL ?>/api/calendar_delete_event.php', {
@@ -3524,6 +3532,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        const selectedTitleType = getSelectedEventTitleType();
+        const hasAthlete = Number(eventAthleteInput.value || 0) > 0 || Number(eventSecondAthleteInput.value || 0) > 0;
+        const replacementMode = hasAthlete && selectedTitleType === 'training'
+            ? (confirm('Chcete sportovci dát možnost náhradního termínu? Lhůta bude 14 kalendářních dní od zrušeného termínu.\n\nOK = nabídnout náhradu\nStorno = zrušit bez náhrady') ? '14_days' : 'none')
+            : 'none';
+
         const payload = await fetchJson('<?= BASE_URL ?>/api/calendar_delete_event.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -3532,6 +3546,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 csrf_token: csrfToken,
                 event_id: eventId,
                 delete_scope: deleteScope,
+                replacement_mode: replacementMode,
             }),
         });
 

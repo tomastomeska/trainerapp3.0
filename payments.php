@@ -130,6 +130,7 @@ function ensurePaymentsRuntimeSchema(PDO $pdo): array
                 `status`           ENUM('pending','paid') NOT NULL DEFAULT 'pending',
                 `paid_at`          DATETIME NULL,
                 `note`             TEXT NULL,
+                `receipt_snapshot_json` LONGTEXT NULL,
                 `created_at`       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 `updated_at`       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 UNIQUE KEY `uq_athlete_monthly_payment_issue` (`coach_id`, `athlete_id`, `billing_month`, `issue_number`),
@@ -143,6 +144,9 @@ function ensurePaymentsRuntimeSchema(PDO $pdo): array
 
         if (!columnExists($pdo, 'athlete_monthly_payments', 'carryover_used_sessions')) {
             $pdo->exec('ALTER TABLE athlete_monthly_payments ADD COLUMN carryover_used_sessions INT NOT NULL DEFAULT 0 AFTER planned_sessions');
+        }
+        if (!columnExists($pdo, 'athlete_monthly_payments', 'receipt_snapshot_json')) {
+            $pdo->exec('ALTER TABLE athlete_monthly_payments ADD COLUMN receipt_snapshot_json LONGTEXT NULL');
         }
         paymentEnsureBillingIssueSchema($pdo);
     } catch (Throwable $e) {
@@ -332,10 +336,13 @@ function fetchBillingStats(PDO $pdo, int $coachId, string $billingMonthSql, bool
 {
     $makeupExpr = $hasIsMakeupSession ? 'SUM(CASE WHEN t.is_makeup_session = 1 THEN 1 ELSE 0 END)' : '0';
     $hasBillingIssue = columnExists($pdo, 'coach_calendar_events', 'billing_issue_number');
+    $hasTransferReason = columnExists($pdo, 'coach_calendar_events', 'billing_transfer_reason');
     $billingField = $hasBillingMonth ? 'billing_month' : 'starts_at AS billing_month';
     $issueField = $hasBillingIssue ? 'billing_issue_number' : '1 AS billing_issue_number';
+    $transferReasonField = $hasTransferReason ? 'billing_transfer_reason' : "'' AS billing_transfer_reason";
+    $effectiveBillingMonth = paymentBillingEffectiveMonthExpression('t', $hasBillingMonth, $hasTransferReason);
     $transferredExpr = $hasBillingMonth
-        ? "SUM(CASE WHEN DATE_FORMAT(t.starts_at, '%Y-%m-01') <> DATE_FORMAT(t.billing_month, '%Y-%m-01') THEN 1 ELSE 0 END)"
+        ? "SUM(CASE WHEN DATE_FORMAT(t.starts_at, '%Y-%m-01') <> {$effectiveBillingMonth} THEN 1 ELSE 0 END)"
         : '0';
     $hasPaidReplacementLinks = tableExists($pdo, 'coach_calendar_event_cancellations')
         && columnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_event_id')
@@ -345,15 +352,13 @@ function fetchBillingStats(PDO $pdo, int $coachId, string $billingMonthSql, bool
                 SELECT 1 FROM coach_calendar_event_cancellations c
                 WHERE c.coach_id = coach_calendar_events.coach_id
                   AND c.replacement_event_id = coach_calendar_events.id
-                  AND c.payment_status_snapshot = 'paid'
+                                      AND c.payment_status_snapshot IN ('pending', 'paid')
             ) THEN 1 ELSE 0 END AS is_paid_replacement"
         : '0 AS is_paid_replacement';
     $transferredMakeupExpr = $hasPaidReplacementLinks
         ? 'SUM(CASE WHEN t.is_paid_replacement = 1 THEN 1 ELSE 0 END)'
         : '0';
-    $billingFilter = $hasBillingMonth
-        ? "AND DATE_FORMAT(COALESCE(t.billing_month, t.starts_at), '%Y-%m-01') = ? AND t.billing_issue_number = ?"
-        : "AND DATE_FORMAT(t.starts_at, '%Y-%m-01') = ? AND t.billing_issue_number = ?";
+    $billingFilter = "AND {$effectiveBillingMonth} = ? AND t.billing_issue_number = ?";
 
     if ($hasSecondAthlete) {
         $participantsSql = "
@@ -361,6 +366,7 @@ function fetchBillingStats(PDO $pdo, int $coachId, string $billingMonthSql, bool
                    starts_at,
                    {$billingField},
                    {$issueField},
+                   {$transferReasonField},
                    is_makeup_session,
                    {$paidReplacementField},
                    CASE WHEN second_athlete_id IS NOT NULL THEN 1 ELSE 0 END AS is_paired
@@ -373,6 +379,7 @@ function fetchBillingStats(PDO $pdo, int $coachId, string $billingMonthSql, bool
                    starts_at,
                    {$billingField},
                    {$issueField},
+                   {$transferReasonField},
                    is_makeup_session,
                    {$paidReplacementField},
                    1 AS is_paired
@@ -389,6 +396,7 @@ function fetchBillingStats(PDO $pdo, int $coachId, string $billingMonthSql, bool
                    starts_at,
                    {$billingField},
                    {$issueField},
+                   {$transferReasonField},
                    is_makeup_session,
                    {$paidReplacementField},
                    0 AS is_paired
@@ -437,52 +445,6 @@ function fetchBillingStats(PDO $pdo, int $coachId, string $billingMonthSql, bool
             'paid_replacement_single_sessions' => (int)($row['paid_replacement_single_sessions'] ?? 0),
             'paid_replacement_paired_sessions' => (int)($row['paid_replacement_paired_sessions'] ?? 0),
         ];
-    }
-
-    if ($issueNumber === 1 && tableExists($pdo, 'coach_calendar_event_cancellations')
-        && columnExists($pdo, 'coach_calendar_event_cancellations', 'billing_month')
-        && columnExists($pdo, 'coach_calendar_event_cancellations', 'cancellation_scope')
-        && columnExists($pdo, 'coach_calendar_event_cancellations', 'canceled_by')
-        && columnExists($pdo, 'coach_calendar_event_cancellations', 'canceled_at')
-        && columnExists($pdo, 'coach_calendar_event_cancellations', 'starts_at')
-    ) {
-        $lateSql = "SELECT athlete_id,
-                           SUM(CASE WHEN cancellation_scope = 'pair_exit' THEN 1 ELSE 0 END) AS late_paired,
-                           SUM(CASE WHEN cancellation_scope = 'pair_exit' THEN 0 ELSE 1 END) AS late_single,
-                           COUNT(*) AS late_total
-                    FROM coach_calendar_event_cancellations
-                    WHERE coach_id = ?
-                      AND canceled_by = 'athlete'
-                      AND athlete_id IS NOT NULL
-                      AND DATE_FORMAT(starts_at, '%Y-%m-01') = ?
-                      AND starts_at > canceled_at
-                      AND TIMESTAMPDIFF(MINUTE, canceled_at, starts_at) < 720";
-        $lateParams = [$coachId, $billingMonthSql];
-        if ($athleteId !== null) {
-            $lateSql .= ' AND athlete_id = ?';
-            $lateParams[] = $athleteId;
-        }
-        $lateSql .= ' GROUP BY athlete_id';
-
-        $lateStmt = $pdo->prepare($lateSql);
-        $lateStmt->execute($lateParams);
-
-        foreach ($lateStmt->fetchAll() as $lateRow) {
-            $aid = (int)$lateRow['athlete_id'];
-            if (!isset($result[$aid])) {
-                $result[$aid] = [
-                    'billed_sessions' => 0,
-                    'paired_sessions' => 0,
-                    'single_sessions' => 0,
-                    'makeup_sessions' => 0,
-                    'transferred_sessions' => 0,
-                ];
-            }
-
-            $result[$aid]['paired_sessions'] += (int)($lateRow['late_paired'] ?? 0);
-            $result[$aid]['single_sessions'] += (int)($lateRow['late_single'] ?? 0);
-            $result[$aid]['billed_sessions'] += (int)($lateRow['late_total'] ?? 0);
-        }
     }
 
     return $result;
@@ -601,12 +563,9 @@ function fetchForfeitedCarryoverByAthleteMonth(PDO $pdo, int $coachId, string $b
     }
     if (!columnExists($pdo, 'coach_calendar_event_cancellations', 'athlete_id')
         || !columnExists($pdo, 'coach_calendar_event_cancellations', 'billing_month')
-        || !columnExists($pdo, 'coach_calendar_event_cancellations', 'payment_status_snapshot')
         || !columnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_required')
         || !columnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_event_id')
         || !columnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_deadline_at')
-        || !columnExists($pdo, 'coach_calendar_event_cancellations', 'canceled_at')
-        || !columnExists($pdo, 'coach_calendar_event_cancellations', 'starts_at')
     ) {
         return [];
     }
@@ -619,12 +578,9 @@ function fetchForfeitedCarryoverByAthleteMonth(PDO $pdo, int $coachId, string $b
          WHERE coach_id = ?
            AND athlete_id IS NOT NULL
            AND billing_month < ?
-           AND payment_status_snapshot IN ('pending', 'paid')
-           AND (
-               (starts_at > canceled_at AND TIMESTAMPDIFF(MINUTE, canceled_at, starts_at) < 720)
-               OR
-               (replacement_required = 1 AND replacement_event_id IS NULL AND replacement_deadline_at IS NOT NULL AND replacement_deadline_at < NOW())
-           )
+           AND replacement_required = 1
+           AND replacement_event_id IS NULL
+           AND replacement_deadline_at < NOW()
          GROUP BY athlete_id, billing_month"
     );
     $stmt->execute([$coachId, $beforeMonthSql]);
@@ -646,12 +602,9 @@ function fetchForfeitedBillingSessionsByAthlete(PDO $pdo, int $coachId, string $
     }
     if (!columnExists($pdo, 'coach_calendar_event_cancellations', 'athlete_id')
         || !columnExists($pdo, 'coach_calendar_event_cancellations', 'billing_month')
-        || !columnExists($pdo, 'coach_calendar_event_cancellations', 'payment_status_snapshot')
         || !columnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_required')
         || !columnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_event_id')
         || !columnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_deadline_at')
-        || !columnExists($pdo, 'coach_calendar_event_cancellations', 'canceled_at')
-        || !columnExists($pdo, 'coach_calendar_event_cancellations', 'starts_at')
     ) {
         return [];
     }
@@ -663,12 +616,9 @@ function fetchForfeitedBillingSessionsByAthlete(PDO $pdo, int $coachId, string $
          WHERE coach_id = ?
            AND athlete_id IS NOT NULL
            AND billing_month = ?
-           AND payment_status_snapshot IN ('pending', 'paid')
-           AND (
-               (starts_at > canceled_at AND TIMESTAMPDIFF(MINUTE, canceled_at, starts_at) < 720)
-               OR
-               (replacement_required = 1 AND replacement_event_id IS NULL AND replacement_deadline_at IS NOT NULL AND replacement_deadline_at < NOW())
-           )
+           AND replacement_required = 1
+           AND replacement_event_id IS NULL
+           AND replacement_deadline_at < NOW()
          GROUP BY athlete_id"
     );
     $stmt->execute([$coachId, $billingMonthSql]);
@@ -710,8 +660,9 @@ function upsertAthleteMonthlyPayment(PDO $pdo, int $coachId, int $athleteId, str
     if (!$amountIncludesOnline) {
         $billedAmount += onlineTrainingBillingAmount($pdo, $coachId, $athleteId, $billingMonthSql);
     }
-        $sql = "INSERT INTO athlete_monthly_payments (coach_id, athlete_id, billing_month, issue_number, session_rate, planned_sessions, carryover_used_sessions, billed_amount, status, paid_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, " . ($safeStatus === 'paid' ? 'NOW()' : 'NULL') . ")
+    $receiptSnapshot = paymentBuildReceiptSnapshot($pdo, $coachId, $athleteId, $billingMonthSql, $issueNumber, null, $billedAmount);
+    $sql = "INSERT INTO athlete_monthly_payments (coach_id, athlete_id, billing_month, issue_number, session_rate, planned_sessions, carryover_used_sessions, billed_amount, status, paid_at, receipt_snapshot_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, " . ($safeStatus === 'paid' ? 'NOW()' : 'NULL') . ", ?)
             ON DUPLICATE KEY UPDATE
                 session_rate = CASE
                     WHEN athlete_monthly_payments.status IN ('pending', 'paid') THEN athlete_monthly_payments.session_rate
@@ -729,6 +680,10 @@ function upsertAthleteMonthlyPayment(PDO $pdo, int $coachId, int $athleteId, str
                     WHEN athlete_monthly_payments.status IN ('pending', 'paid') THEN athlete_monthly_payments.billed_amount
                     ELSE VALUES(billed_amount)
                 END,
+                receipt_snapshot_json = CASE
+                    WHEN athlete_monthly_payments.status IN ('pending', 'paid') THEN COALESCE(athlete_monthly_payments.receipt_snapshot_json, VALUES(receipt_snapshot_json))
+                    ELSE VALUES(receipt_snapshot_json)
+                END,
                 status = VALUES(status),
                 paid_at = " . ($safeStatus === 'paid' ? 'NOW()' : 'NULL');
 
@@ -743,6 +698,7 @@ function upsertAthleteMonthlyPayment(PDO $pdo, int $coachId, int $athleteId, str
         $carryoverUsed,
         number_format($billedAmount, 2, '.', ''),
         $safeStatus,
+        $receiptSnapshot,
     ]);
 }
 
@@ -948,7 +904,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $existingStmt = $pdo->prepare(
-            'SELECT planned_sessions, carryover_used_sessions, billed_amount, status
+            'SELECT session_rate, planned_sessions, carryover_used_sessions, billed_amount, status, receipt_snapshot_json
              FROM athlete_monthly_payments
                WHERE coach_id = ? AND athlete_id = ? AND billing_month = ? AND issue_number = ?
              LIMIT 1'
@@ -956,10 +912,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
            $existingStmt->execute([$coachId, $athleteId, $selectedMonthSql, $issueNumber]);
         $existingPayment = $existingStmt->fetch() ?: null;
 
-        if ($existingPayment && (($existingPayment['status'] ?? '') === 'pending' || ($existingPayment['status'] ?? '') === 'paid')) {
+        if ($existingPayment && (string)($existingPayment['status'] ?? '') === 'paid') {
+            flash('danger', 'Tato výzva už je uhrazená a nelze ji znovu odeslat.');
+            redirect(BASE_URL . '/payments.php?month=' . urlencode($selectedMonthParam));
+        }
+
+        if ($existingPayment && (string)($existingPayment['status'] ?? '') === 'pending') {
+            $storedRate = $existingPayment['session_rate'] !== null ? (float)$existingPayment['session_rate'] : $rate;
+            $currentBill = calculateAthleteMonthlyBill(
+                $pdo,
+                $coachId,
+                $athleteId,
+                $selectedMonthSql,
+                [],
+                $issueNumber,
+                $issueNumber > 1 ? $storedRate : null
+            );
+            $currentAmountForCheck = (float)($currentBill['billed_amount'] ?? 0.0);
+            $currentReceiptSnapshot = json_decode(
+                (string)paymentBuildReceiptSnapshot($pdo, $coachId, $athleteId, $selectedMonthSql, $issueNumber, null, $currentAmountForCheck),
+                true
+            );
+            $savedReceiptSnapshot = json_decode((string)($existingPayment['receipt_snapshot_json'] ?? ''), true);
+            $eventListChanged = false;
+            if (is_array($savedReceiptSnapshot['event_rows'] ?? null) && is_array($currentReceiptSnapshot['event_rows'] ?? null)) {
+                $signature = static function (array $rows): array {
+                    $result = [];
+                    foreach ($rows as $row) {
+                        $result[] = [
+                            (int)($row['id'] ?? 0),
+                            (string)($row['starts_at'] ?? ''),
+                            (int)($row['is_paired'] ?? 0),
+                            (int)($row['is_makeup_session'] ?? 0),
+                        ];
+                    }
+                    sort($result);
+                    return $result;
+                };
+                $eventListChanged = $signature($savedReceiptSnapshot['event_rows']) !== $signature($currentReceiptSnapshot['event_rows']);
+            }
+
+            if ((int)$currentBill['planned_sessions'] !== (int)$existingPayment['planned_sessions']
+                || abs($currentAmountForCheck - (float)$existingPayment['billed_amount']) > 0.009
+                || $eventListChanged) {
+                flash('danger', 'Kalendář se od otevření výzvy změnil. Výzvu neodesílám. Zkontrolujte termíny, zavřete a znovu otevřete výzvu, potom znovu ověřte účtenku.');
+                redirect(BASE_URL . '/payments.php?month=' . urlencode($selectedMonthParam));
+            }
             $billableSessions = (int)($existingPayment['planned_sessions'] ?? 0);
             $carryoverUsedNow = (int)($existingPayment['carryover_used_sessions'] ?? 0);
             $currentAmount = (float)($existingPayment['billed_amount'] ?? 0.0);
+            if (empty($existingPayment['receipt_snapshot_json'])) {
+                upsertAthleteMonthlyPayment(
+                    $pdo,
+                    $coachId,
+                    $athleteId,
+                    $selectedMonthSql,
+                    $storedRate,
+                    $billableSessions,
+                    $carryoverUsedNow,
+                    $currentAmount,
+                    'pending',
+                    true,
+                    $issueNumber
+                );
+            }
         } else {
             $bill = calculateAthleteMonthlyBill($pdo, $coachId, $athleteId, $selectedMonthSql, [], $issueNumber);
             $carryoverUsedNow = (int)$bill['carryover_used'];
@@ -1078,7 +1094,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'Platba byla označena jako uhrazená',
             'Trenér označil platbu za období ' . $selectedMonth->format('m/Y')
             . ' jako uhrazenou. Evidovaná částka je ' . number_format($billedAmount, 0, ',', ' ') . ' Kč.'
-            . ($carryoverUsedNow > 0 ? (' Zároveň bylo započteno ' . $carryoverUsedNow . ' dříve uhrazených tréninků.') : '')
+            . ($carryoverUsedNow > 0 ? (' Zároveň bylo započteno ' . $carryoverUsedNow . ' náhradních tréninků.') : '')
         );
 
         flash('success', 'Úhrada pro ' . $athleteName . ' byla označena jako uhrazená.');
@@ -1128,7 +1144,7 @@ $statsByAthlete = fetchBillingStats($pdo, $coachId, $selectedMonthSql, $hasIsMak
 $paymentsRows = [];
 if ($hasPaymentsTable) {
     $paymentsStmt = $pdo->prepare(
-        'SELECT athlete_id, issue_number, session_rate, planned_sessions, carryover_used_sessions, billed_amount, status, paid_at
+        'SELECT athlete_id, issue_number, session_rate, planned_sessions, carryover_used_sessions, billed_amount, status, paid_at, receipt_snapshot_json
          FROM athlete_monthly_payments
          WHERE coach_id = ? AND billing_month = ?'
     );
@@ -1190,7 +1206,17 @@ foreach ($athletes as $athlete) {
     $isPaid = $payment && (($payment['status'] ?? '') === 'paid');
 
     $isSnapshotLocked = $payment && in_array(($payment['status'] ?? ''), ['pending', 'paid'], true);
-    $displaySessions = (int)($stats['billed_sessions'] ?? 0);
+    $snapshot = $payment && !empty($payment['receipt_snapshot_json'])
+        ? json_decode((string)$payment['receipt_snapshot_json'], true)
+        : null;
+    $snapshotBreakdown = is_array($snapshot) && is_array($snapshot['breakdown'] ?? null)
+        ? $snapshot['breakdown']
+        : [];
+    $displaySessions = is_array($snapshotBreakdown) && array_key_exists('total_sessions', $snapshotBreakdown)
+        ? (int)$snapshotBreakdown['total_sessions']
+        : (($payment && in_array((string)($payment['status'] ?? ''), ['pending', 'paid'], true))
+            ? (int)($payment['planned_sessions'] ?? 0)
+            : (int)($stats['billed_sessions'] ?? 0));
     $displayAmount = $isSnapshotLocked
         ? (float)($payment['billed_amount'] ?? 0)
         : ($billable['amount'] !== null ? (float)$billable['amount'] : null);
@@ -1217,7 +1243,13 @@ foreach ($athletes as $athlete) {
             $athleteId,
             $issueNumber
         )[$athleteId] ?? ['billed_sessions' => 0];
-        $totalSessions += (int)$issueStats['billed_sessions'];
+        $issueSnapshot = json_decode((string)($additionalPayment['receipt_snapshot_json'] ?? ''), true);
+        $issueSnapshotEvents = is_array($issueSnapshot) && is_array($issueSnapshot['event_rows'] ?? null)
+            ? $issueSnapshot['event_rows']
+            : null;
+        $totalSessions += $issueSnapshotEvents !== null
+            ? count($issueSnapshotEvents)
+            : (int)$issueStats['billed_sessions'];
         $totalAmount += (float)$additionalPayment['billed_amount'];
         if ((string)$additionalPayment['status'] === 'paid') {
             $totalPaidAmount += (float)$additionalPayment['billed_amount'];
@@ -1368,7 +1400,41 @@ renderHeader('Platby', false, true);
                         }
                         $isPaid = $payment && (($payment['status'] ?? '') === 'paid');
                         $isSnapshotLocked = $payment && in_array(($payment['status'] ?? ''), ['pending', 'paid'], true);
-                        $displaySessions = $currentSessions;
+                        $receiptSnapshot = $payment && !empty($payment['receipt_snapshot_json'])
+                            ? json_decode((string)$payment['receipt_snapshot_json'], true)
+                            : null;
+                        $receiptBreakdown = is_array($receiptSnapshot) && is_array($receiptSnapshot['breakdown'] ?? null)
+                            ? $receiptSnapshot['breakdown']
+                            : [];
+                        $displayStats = $stats;
+                        $snapshotEventRows = is_array($receiptSnapshot) && is_array($receiptSnapshot['event_rows'] ?? null)
+                            ? $receiptSnapshot['event_rows']
+                            : null;
+                        if ($snapshotEventRows !== null) {
+                            $displayStats['billed_sessions'] = count($snapshotEventRows);
+                            $displayStats['single_sessions'] = 0;
+                            $displayStats['paired_sessions'] = 0;
+                            $displayStats['makeup_sessions'] = 0;
+                            $displayStats['transferred_sessions'] = 0;
+                            foreach ($snapshotEventRows as $snapshotEvent) {
+                                $isPairedSnapshot = !empty($snapshotEvent['is_paired']);
+                                $displayStats[$isPairedSnapshot ? 'paired_sessions' : 'single_sessions']++;
+                                if (!empty($snapshotEvent['is_makeup_session'])) {
+                                    $displayStats['makeup_sessions']++;
+                                }
+                                $snapshotStartMonth = date('Y-m-01', strtotime((string)($snapshotEvent['starts_at'] ?? '')));
+                                $snapshotBillingMonth = date('Y-m-01', strtotime((string)($snapshotEvent['billing_month'] ?? '')));
+                                if ($snapshotStartMonth !== $snapshotBillingMonth) {
+                                    $displayStats['transferred_sessions']++;
+                                }
+                            }
+                        }
+                        $displaySessions = $isSnapshotLocked
+                            ? (int)($payment['planned_sessions'] ?? 0)
+                            : $currentSessions;
+                        $displayRawSessions = $snapshotEventRows !== null
+                            ? count($snapshotEventRows)
+                            : ($isSnapshotLocked ? (int)($payment['planned_sessions'] ?? 0) : $rawSessions);
                         $displayAmount = $isSnapshotLocked
                             ? (float)($payment['billed_amount'] ?? 0)
                             : ($currentAmount !== null ? (float)$currentAmount : null);
@@ -1393,11 +1459,11 @@ renderHeader('Platby', false, true);
                         <tr>
                             <td>
                                 <div class="fw-semibold"><?= h(trim((string)$athlete['last_name'] . ' ' . (string)$athlete['first_name'])) ?></div>
-                                <?php if ((int)$stats['makeup_sessions'] > 0): ?>
-                                    <div class="small text-muted">Náhradní termíny: <?= (int)$stats['makeup_sessions'] ?>x</div>
+                                <?php if ((int)$displayStats['makeup_sessions'] > 0): ?>
+                                    <div class="small text-muted">Náhradní termíny: <?= (int)$displayStats['makeup_sessions'] ?>x</div>
                                 <?php endif; ?>
-                                <?php if ((int)$stats['transferred_sessions'] > 0): ?>
-                                    <div class="small text-muted">Z toho v jiném kalendářním měsíci: <?= (int)$stats['transferred_sessions'] ?>x</div>
+                                <?php if ((int)$displayStats['transferred_sessions'] > 0): ?>
+                                    <div class="small text-muted">Z toho v jiném kalendářním měsíci: <?= (int)$displayStats['transferred_sessions'] ?>x</div>
                                 <?php endif; ?>
                             </td>
                             <td>
@@ -1413,15 +1479,15 @@ renderHeader('Platby', false, true);
                             <td>
                                 <span class="fw-semibold"><?= $displaySessions ?></span>
                                 <div class="small text-muted">tréninků v této výzvě</div>
-                                <div class="small text-muted">celkem ve výzvě: <?= $rawSessions ?></div>
-                                <?php if ($rawPairedSessions > 0): ?>
-                                    <div class="small text-muted">z toho párové: <?= $rawPairedSessions ?>x</div>
+                                <div class="small text-muted">celkem ve výzvě: <?= $displayRawSessions ?></div>
+                                <?php if ((int)$displayStats['paired_sessions'] > 0): ?>
+                                    <div class="small text-muted">z toho párové: <?= (int)$displayStats['paired_sessions'] ?>x</div>
                                 <?php endif; ?>
-                                <?php if ($rawSingleSessions > 0): ?>
-                                    <div class="small text-muted">z toho individuální: <?= $rawSingleSessions ?>x</div>
+                                <?php if ((int)$displayStats['single_sessions'] > 0): ?>
+                                    <div class="small text-muted">z toho individuální: <?= (int)$displayStats['single_sessions'] ?>x</div>
                                 <?php endif; ?>
                                 <?php if ($carryoverUsedNow > 0): ?>
-                                    <div class="small text-warning">Zápočet z minulých úhrad: -<?= $carryoverUsedNow ?> tréninků</div>
+                                    <div class="small text-warning">Započteno jako náhrada: <?= $carryoverUsedNow ?>x</div>
                                 <?php endif; ?>
                                 <?php if ($forfeitedCompensations > 0): ?>
                                     <div class="small text-danger">Propadlá kompenzace: <?= $forfeitedCompensations ?> tréninků</div>
@@ -1458,6 +1524,9 @@ renderHeader('Platby', false, true);
                                     <?php else: ?>
                                         <span class="badge bg-warning text-dark">Čeká na vystavení výzvy</span>
                                     <?php endif; ?>
+                                    <?php if ($isSnapshotLocked && $hasDiff): ?>
+                                        <div class="small text-danger mt-1">Kalendář se od otevření výzvy změnil. Před odesláním výzvu zkontrolujte a znovu otevřete.</div>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                             </td>
                             <td class="text-end">
@@ -1476,6 +1545,7 @@ renderHeader('Platby', false, true);
                                             data-athlete-name="<?= h($athleteName) ?>"
                                             data-athlete-email="<?= h($athleteEmail) ?>"
                                             data-athlete-phone="<?= h($athletePhone) ?>"
+                                            data-sessions="<?= (int)$displayRawSessions ?>"
                                             data-amount="<?= h($shareAmountText) ?>"
                                             data-account="<?= h($coachBankAccount ?? '') ?>"
                                             data-note="<?= h($paymentNote) ?>"
@@ -1532,6 +1602,18 @@ renderHeader('Platby', false, true);
                                 $athleteId,
                                 $additionalIssue
                             )[$athleteId] ?? ['billed_sessions' => 0, 'single_sessions' => 0, 'paired_sessions' => 0];
+                            $additionalSnapshot = json_decode((string)($additionalPayment['receipt_snapshot_json'] ?? ''), true);
+                            $additionalSnapshotEvents = is_array($additionalSnapshot) && is_array($additionalSnapshot['event_rows'] ?? null)
+                                ? $additionalSnapshot['event_rows']
+                                : null;
+                            if ($additionalSnapshotEvents !== null) {
+                                $additionalStats['billed_sessions'] = count($additionalSnapshotEvents);
+                                $additionalStats['single_sessions'] = 0;
+                                $additionalStats['paired_sessions'] = 0;
+                                foreach ($additionalSnapshotEvents as $snapshotEvent) {
+                                    $additionalStats[!empty($snapshotEvent['is_paired']) ? 'paired_sessions' : 'single_sessions']++;
+                                }
+                            }
                             $additionalAmount = (float)$additionalPayment['billed_amount'];
                             $additionalStatus = (string)$additionalPayment['status'];
                             $additionalPending = $additionalStatus === 'pending';
@@ -1560,7 +1642,7 @@ renderHeader('Platby', false, true);
                                     <div class="d-flex justify-content-end gap-2 flex-wrap">
                                         <a href="<?= BASE_URL ?>/payment_receipt.php?month=<?= urlencode($selectedMonthParam) ?>&athlete_id=<?= $athleteId ?>&issue=<?= $additionalIssue ?>" class="btn btn-outline-primary btn-sm"><i class="fas fa-receipt me-1"></i>Účtenka</a>
                                         <?php if ($additionalQr !== null): ?>
-                                            <button type="button" class="btn btn-outline-dark btn-sm" data-bs-toggle="modal" data-bs-target="#paymentQrModal" data-athlete-id="<?= $athleteId ?>" data-issue-number="<?= $additionalIssue ?>" data-athlete-name="<?= h($athleteName) ?>" data-athlete-email="<?= h($athleteEmail) ?>" data-athlete-phone="<?= h($athletePhone) ?>" data-amount="<?= h(number_format($additionalAmount, 0, ',', ' ') . ' Kč') ?>" data-account="<?= h($coachBankAccount ?? '') ?>" data-note="<?= h(paymentAsciiText($coachLastName . ' ' . $selectedMonth->format('m/Y') . ' dodatecna')) ?>" data-qr-url="<?= h($additionalQr) ?>" data-share-text="<?= h('Dodatečná výzva za ' . $selectedMonth->format('m/Y') . ' pro ' . $athleteName . '. Částka: ' . number_format($additionalAmount, 0, ',', ' ') . ' Kč. Účet: ' . ($coachBankAccount ?? '')) ?>"><i class="fas fa-qrcode me-1"></i>QR platba</button>
+                                            <button type="button" class="btn btn-outline-dark btn-sm" data-bs-toggle="modal" data-bs-target="#paymentQrModal" data-athlete-id="<?= $athleteId ?>" data-issue-number="<?= $additionalIssue ?>" data-athlete-name="<?= h($athleteName) ?>" data-athlete-email="<?= h($athleteEmail) ?>" data-athlete-phone="<?= h($athletePhone) ?>" data-sessions="<?= (int)$additionalStats['billed_sessions'] ?>" data-amount="<?= h(number_format($additionalAmount, 0, ',', ' ') . ' Kč') ?>" data-account="<?= h($coachBankAccount ?? '') ?>" data-note="<?= h(paymentAsciiText($coachLastName . ' ' . $selectedMonth->format('m/Y') . ' dodatecna')) ?>" data-qr-url="<?= h($additionalQr) ?>" data-share-text="<?= h('Dodatečná výzva za ' . $selectedMonth->format('m/Y') . ' pro ' . $athleteName . '. Částka: ' . number_format($additionalAmount, 0, ',', ' ') . ' Kč. Účet: ' . ($coachBankAccount ?? '')) ?>"><i class="fas fa-qrcode me-1"></i>QR platba</button>
                                         <?php endif; ?>
                                         <form method="post" class="d-inline">
                                             <?= csrfField() ?>
@@ -1598,6 +1680,7 @@ renderHeader('Platby', false, true);
                     <img id="paymentQrImage" src="" alt="QR platba" class="img-fluid border rounded p-2 bg-white" style="max-width:220px;">
                 </div>
                 <div class="small text-muted mb-1" id="paymentQrAthlete"></div>
+                <div class="small"><strong>Tréninků:</strong> <span id="paymentQrSessions"></span></div>
                 <div class="small"><strong>Částka:</strong> <span id="paymentQrAmount"></span></div>
                 <div class="small"><strong>Účet:</strong> <span id="paymentQrAccount"></span></div>
                 <div class="small"><strong>Poznámka:</strong> <span id="paymentQrNote"></span></div>
@@ -1639,6 +1722,7 @@ renderHeader('Platby', false, true);
     const qrImage = document.getElementById('paymentQrImage');
     const athleteLabel = document.getElementById('paymentQrAthlete');
     const amountLabel = document.getElementById('paymentQrAmount');
+    const sessionsLabel = document.getElementById('paymentQrSessions');
     const accountLabel = document.getElementById('paymentQrAccount');
     const noteLabel = document.getElementById('paymentQrNote');
     const emailSendBtn = document.getElementById('paymentQrEmailSendBtn');
@@ -1662,6 +1746,7 @@ renderHeader('Platby', false, true);
         const athleteEmail = data.athleteEmail || '';
         const athletePhone = data.athletePhone || '';
         const amount = data.amount || '';
+        const sessions = data.sessions || '0';
         const account = data.account || '';
         const note = data.note || '';
         const qrUrl = data.qrUrl || '';
@@ -1671,6 +1756,7 @@ renderHeader('Platby', false, true);
         qrImage.src = qrUrl;
         athleteLabel.textContent = athleteName;
         amountLabel.textContent = amount;
+        sessionsLabel.textContent = sessions;
         accountLabel.textContent = account;
         noteLabel.textContent = note;
 
@@ -1716,6 +1802,7 @@ renderHeader('Platby', false, true);
 
     emailSendBtn.addEventListener('click', function () {
         if (!canSendEmail || !emailForm || !emailAthleteId.value) return;
+        if (!confirm(`Před odesláním zkontrolujte výzvu ${noteLabel.textContent}: ${sessionsLabel.textContent} tréninků, ${amountLabel.textContent}. Odeslat e-mailem?`)) return;
         emailForm.submit();
     });
 })();

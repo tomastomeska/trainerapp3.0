@@ -40,13 +40,16 @@ $eventsStmt = $pdo->prepare(
                         e.location,
                         e.starts_at,
                         e.ends_at,
+                        replacement_cancellation.starts_at AS replacement_for_starts_at,
+                        replacement_cancellation.payment_status_snapshot AS replacement_payment_status,
+                        replacement_cancellation.replacement_deadline_at AS replacement_deadline_at,
                                 reschedule_request.id AS reschedule_request_id,
                                 reschedule_request.starts_at AS reschedule_request_starts_at,
                                 reschedule_request.ends_at AS reschedule_request_ends_at,
                            CASE WHEN ael.event_id IS NULL THEN 0 ELSE 1 END AS is_caldav_synced,
-                        p.status AS payment_status,
-                        p.paid_at AS payment_paid_at,
-                        p.billed_amount AS payment_billed_amount,
+                        CASE WHEN e.approval_status = 'approved' THEN p.status ELSE NULL END AS payment_status,
+                        CASE WHEN e.approval_status = 'approved' THEN p.paid_at ELSE NULL END AS payment_paid_at,
+                        CASE WHEN e.approval_status = 'approved' THEN p.billed_amount ELSE NULL END AS payment_billed_amount,
                         a.first_name,
                         a.last_name,
                         a2.first_name AS second_first_name,
@@ -55,6 +58,8 @@ $eventsStmt = $pdo->prepare(
                   LEFT JOIN athlete_apple_caldav_event_links ael ON ael.athlete_id = ? AND ael.event_id = e.id
          LEFT JOIN athletes a ON a.id = e.athlete_id
          LEFT JOIN athletes a2 ON a2.id = e.second_athlete_id
+          LEFT JOIN coach_calendar_event_cancellations replacement_cancellation
+              ON replacement_cancellation.replacement_event_id = e.id
          LEFT JOIN athlete_monthly_payments p
                 ON p.coach_id = e.coach_id
                AND p.athlete_id = ?
@@ -108,6 +113,9 @@ foreach ($events as &$event) {
         $event['last_name'] = null;
         $event['second_first_name'] = null;
         $event['second_last_name'] = null;
+        $event['replacement_for_starts_at'] = null;
+        $event['replacement_payment_status'] = null;
+        $event['replacement_deadline_at'] = null;
         $event['approval_status'] = 'approved';
         $event['coach_modified_at'] = null;
         $event['can_cancel'] = false;

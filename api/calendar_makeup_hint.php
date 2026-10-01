@@ -82,6 +82,39 @@ if (!$athleteStmt->fetch()) {
     exit;
 }
 
+$requiredReplacements = [];
+if (makeupHintTableExists($pdo, 'coach_calendar_event_cancellations')
+    && makeupHintColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_required')
+    && makeupHintColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_deadline_at')
+    && makeupHintColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_event_id')
+    && makeupHintColumnExists($pdo, 'coach_calendar_event_cancellations', 'second_athlete_id')) {
+    $requiredStmt = $pdo->prepare(
+        "SELECT replacement_deadline_at
+         FROM coach_calendar_event_cancellations c
+         WHERE c.coach_id = ?
+           AND (c.athlete_id = ? OR c.second_athlete_id = ?)
+           AND c.canceled_by IN ('athlete', 'coach')
+           AND c.replacement_required = 1
+           AND c.replacement_deadline_at > NOW()
+         AND c.replacement_event_id IS NULL
+         ORDER BY c.replacement_deadline_at ASC, c.id ASC"
+    );
+    $requiredStmt->execute([$coachId, $athleteId, $athleteId]);
+    $requiredReplacements = $requiredStmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+}
+
+echo json_encode([
+    'success' => true,
+    'has_outstanding' => false,
+    'outstanding_sessions' => 0,
+    'has_required_replacement' => $requiredReplacements !== [],
+    'required_replacement_count' => count($requiredReplacements),
+    'required_replacement_deadline_at' => $requiredReplacements[0] ?? null,
+    'target_month' => $targetMonthSql,
+    'target_month_label' => date('m/Y', strtotime($targetMonthSql)),
+]);
+exit;
+
 $participantsSql = '';
 $params = [];
 $monthExpr = $hasBillingMonth

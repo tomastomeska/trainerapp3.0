@@ -182,14 +182,8 @@ function receiptFetchReplacementOrigins(PDO $pdo, int $coachId, int $athleteId):
         ? 'payment_status_snapshot'
         : '"none" AS payment_status_snapshot';
 
-    $stmt = $pdo->prepare(
-        "SELECT replacement_event_id, starts_at, {$billingField}, {$statusField}
-         FROM coach_calendar_event_cancellations
-         WHERE coach_id = ?
-           AND replacement_event_id IS NOT NULL
-         ORDER BY id ASC"
-    );
-    $stmt->execute([$coachId]);
+        $stmt = $pdo->prepare("SELECT replacement_event_id, starts_at, {$billingField}, {$statusField} FROM coach_calendar_event_cancellations WHERE coach_id = ? AND replacement_event_id IS NOT NULL ORDER BY id ASC");
+        $stmt->execute([$coachId]);
 
     $result = [];
     foreach ($stmt->fetchAll() as $row) {
@@ -214,6 +208,7 @@ $monthSql = $monthParam . '-01';
 $issueNumber = max(1, (int)($_GET['issue'] ?? 1));
 
 $hasBillingMonth = receiptColumnExists($pdo, 'coach_calendar_events', 'billing_month');
+$hasBillingTransferReason = receiptColumnExists($pdo, 'coach_calendar_events', 'billing_transfer_reason');
 $hasSecondAthlete = receiptColumnExists($pdo, 'coach_calendar_events', 'second_athlete_id');
 $hasIsMakeup = receiptColumnExists($pdo, 'coach_calendar_events', 'is_makeup_session');
 $hasPairedTrainingRate = receiptColumnExists($pdo, 'athletes', 'paired_training_rate');
@@ -275,17 +270,8 @@ if ($coachMode) {
     $pageTitle = 'Moje účtenka platby';
 }
 
-$calendarExpr = "DATE_FORMAT(e.starts_at, '%Y-%m-01')";
-$monthExpr = $hasBillingMonth
-    ? "DATE_FORMAT(COALESCE(e.billing_month, e.starts_at), '%Y-%m-01')"
-    : $calendarExpr;
-$reasonExpr = receiptColumnExists($pdo, 'coach_calendar_events', 'billing_transfer_reason')
-    ? 'e.billing_transfer_reason'
-    : "''";
-$monthFilter = "(
-    ({$calendarExpr} = ? AND ({$monthExpr} = ? OR {$reasonExpr} IS NULL OR {$reasonExpr} = ''))
-    OR ({$monthExpr} = ? AND {$reasonExpr} IN ('pending_not_included', 'paid_not_paid') AND {$calendarExpr} <> ?)
-)";
+$monthExpr = paymentBillingEffectiveMonthExpression('e', $hasBillingMonth, $hasBillingTransferReason);
+$monthFilter = "{$monthExpr} = ?";
 $issueExpr = receiptColumnExists($pdo, 'coach_calendar_events', 'billing_issue_number') ? 'COALESCE(e.billing_issue_number, 1)' : '1';
 $transferReasonSelect = receiptColumnExists($pdo, 'coach_calendar_events', 'billing_transfer_reason')
     ? 'e.billing_transfer_reason'
@@ -329,8 +315,8 @@ if ($hasSecondAthlete) {
         ORDER BY starts_at ASC
     ";
     $eventsParams = [
-        $coachId, $athleteId, $monthSql, $monthSql, $monthSql, $monthSql, $issueNumber,
-        $coachId, $athleteId, $monthSql, $monthSql, $monthSql, $monthSql, $issueNumber,
+        $coachId, $athleteId, $monthSql, $issueNumber,
+        $coachId, $athleteId, $monthSql, $issueNumber,
     ];
 } else {
     $eventsSql = "
@@ -350,7 +336,7 @@ if ($hasSecondAthlete) {
           AND {$issueExpr} = ?
         ORDER BY starts_at ASC
     ";
-    $eventsParams = [$coachId, $athleteId, $monthSql, $monthSql, $monthSql, $monthSql, $issueNumber];
+    $eventsParams = [$coachId, $athleteId, $monthSql, $issueNumber];
 }
 
 $eventsStmt = $pdo->prepare($eventsSql);
@@ -385,7 +371,7 @@ foreach ($eventRows as $eventRow) {
         $transferredSessions++;
     }
     $replacementOrigin = $replacementOriginsByEventId[(int)($eventRow['id'] ?? 0)] ?? null;
-    if (is_array($replacementOrigin) && (string)($replacementOrigin['payment_status_snapshot'] ?? '') === 'paid') {
+    if (is_array($replacementOrigin) && in_array((string)($replacementOrigin['payment_status_snapshot'] ?? ''), ['pending', 'paid'], true)) {
         $transferredMakeupSessions++;
         if ($isPaired) {
             $paidReplacementPaired++;
@@ -452,7 +438,7 @@ if ($hasPaymentsTable) {
     }
 
 $usesSnapshot = false;
-if ($paymentRow && ($paymentRow['status'] ?? '') === 'paid' && $hasReceiptSnapshot) {
+if ($paymentRow && in_array((string)($paymentRow['status'] ?? ''), ['pending', 'paid'], true) && $hasReceiptSnapshot) {
     $snapshot = receiptDecodeSnapshot((string)($paymentRow['receipt_snapshot_json'] ?? ''));
     if ($snapshot !== null) {
         $snapshotEvents = $snapshot['event_rows'] ?? null;
@@ -535,7 +521,7 @@ foreach ($eventRows as $eventRow) {
     $rowNotes = [];
     $replacementOrigin = $replacementOriginsByEventId[(int)($eventRow['id'] ?? 0)] ?? null;
     $isPaidReplacement = is_array($replacementOrigin)
-        && (string)($replacementOrigin['payment_status_snapshot'] ?? '') === 'paid';
+        && in_array((string)($replacementOrigin['payment_status_snapshot'] ?? ''), ['pending', 'paid'], true);
 
     if ($isPaidReplacement) {
         $originMonthRaw = trim((string)($replacementOrigin['billing_month'] ?? ''));
@@ -543,7 +529,8 @@ foreach ($eventRows as $eventRow) {
             $originMonthRaw = (string)($replacementOrigin['starts_at'] ?? '');
         }
         if ($originMonthRaw !== '' && strtotime($originMonthRaw) !== false) {
-            $rowNotes[] = 'Hrazeno v ' . date('m/Y', strtotime($originMonthRaw));
+            $rowNotes[] = ((string)($replacementOrigin['payment_status_snapshot'] ?? '') === 'paid' ? 'Hrazeno v ' : 'Zahrnuto ve výzvě za ')
+                . date('m/Y', strtotime($originMonthRaw));
         }
     }
     if (is_array($replacementOrigin) && !empty($replacementOrigin['starts_at'])) {
@@ -572,7 +559,7 @@ $paidReplacementSingle = 0;
 $paidReplacementPaired = 0;
 foreach ($eventRows as $eventRow) {
     $origin = $replacementOriginsByEventId[(int)($eventRow['id'] ?? 0)] ?? null;
-    if (!is_array($origin) || (string)($origin['payment_status_snapshot'] ?? '') !== 'paid') {
+    if (!is_array($origin) || !in_array((string)($origin['payment_status_snapshot'] ?? ''), ['pending', 'paid'], true)) {
         continue;
     }
     if ((int)($eventRow['is_paired'] ?? 0) === 1) {

@@ -2017,6 +2017,7 @@ function ensureSchemaUpgrades(PDO $pdo): void {
             `approval_status`       ENUM('pending','approved') NOT NULL DEFAULT 'approved',
             `is_makeup_session`     TINYINT(1) NOT NULL DEFAULT 0,
             `billing_month`         DATE NULL,
+            `billing_issue_number`  INT NOT NULL DEFAULT 1,
             `payment_status_snapshot` ENUM('none','pending','paid') NOT NULL DEFAULT 'none',
             `replacement_required`  TINYINT(1) NOT NULL DEFAULT 0,
             `replacement_deadline_at` DATETIME NULL,
@@ -2041,6 +2042,11 @@ function ensureSchemaUpgrades(PDO $pdo): void {
     $stmtCancelBillingMonth = $pdo->query("SHOW COLUMNS FROM coach_calendar_event_cancellations LIKE 'billing_month'");
     if (!$stmtCancelBillingMonth->fetch()) {
         $pdo->exec('ALTER TABLE coach_calendar_event_cancellations ADD COLUMN billing_month DATE NULL AFTER is_makeup_session');
+    }
+
+    $stmtCancelBillingIssue = $pdo->query("SHOW COLUMNS FROM coach_calendar_event_cancellations LIKE 'billing_issue_number'");
+    if (!$stmtCancelBillingIssue->fetch()) {
+        $pdo->exec('ALTER TABLE coach_calendar_event_cancellations ADD COLUMN billing_issue_number INT NOT NULL DEFAULT 1 AFTER billing_month');
     }
 
     $stmtCancelPaymentStatus = $pdo->query("SHOW COLUMNS FROM coach_calendar_event_cancellations LIKE 'payment_status_snapshot'");

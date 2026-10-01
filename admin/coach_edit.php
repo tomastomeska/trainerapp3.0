@@ -65,7 +65,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $isActive  = isset($_POST['is_active']) ? 1 : 0;
         $specialTrainingEnabled = isset($_POST['special_training_enabled']) ? 1 : 0;
         $myCoachEnabled = isset($_POST['mycoach_enabled']) ? 1 : 0;
-        $makeupDeadlineDaysRaw = trim((string)($_POST['makeup_booking_deadline_days'] ?? ''));
         $makeupDeadlineDays = 14;
         $generateTemporaryPassword = $action === 'generate_password';
         $saveCoachMyCoachAccess = static function () use ($pdo, $hasMyCoachColumn, $myCoachEnabled, $coachId): void {
@@ -76,19 +75,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare('UPDATE coaches SET mycoach_enabled = ? WHERE id = ?')
                 ->execute([$myCoachEnabled, $coachId]);
         };
-
-        if ($hasMakeupDeadlineColumn) {
-            if ($makeupDeadlineDaysRaw !== '') {
-                if (!ctype_digit($makeupDeadlineDaysRaw)) {
-                    $error = 'Lhuta pro nahradni termin musi byt cele cislo ve dnech.';
-                } else {
-                    $makeupDeadlineDays = (int)$makeupDeadlineDaysRaw;
-                    if ($makeupDeadlineDays < 1 || $makeupDeadlineDays > 365) {
-                        $error = 'Lhuta pro nahradni termin muze byt 1 az 365 dni.';
-                    }
-                }
-            }
-        }
 
         if ($error !== null) {
             // Validation error already set.
@@ -302,12 +288,8 @@ renderAdminHeader('Upravit trenéra');
             </div>
             <?php if ($hasMakeupDeadlineColumn): ?>
             <div class="mb-4">
-                <label class="form-label fw-semibold">Lhůta pro výběr náhradního termínu (dny)</label>
-                <input type="number" name="makeup_booking_deadline_days" class="form-control"
-                       min="1" max="365" step="1"
-                       value="<?= h((string)($d['makeup_booking_deadline_days'] ?? '14')) ?>"
-                       placeholder="např. 14">
-                <div class="form-text">Výchozí hodnota je 14 dní. Po zrušení termínu sportovcem musí být náhradní rezervace vytvořena do této lhůty.</div>
+                <div class="form-label fw-semibold">Lhůta pro náhradní termín</div>
+                <div class="form-control-plaintext">14 kalendářních dní od data zrušeného tréninku.</div>
             </div>
             <?php endif; ?>
             <?php if ($hasSpecialTrainingColumn): ?>

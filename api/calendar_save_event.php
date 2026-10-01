@@ -22,12 +22,24 @@ if (!is_array($input)) {
 }
 
 if (!verifyCsrf((string)($input['csrf_token'] ?? ''))) {
-    echo json_encode(['success' => false, 'error' => 'Neplatný CSRF token']);
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+    $currentCsrfToken = csrfToken();
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
+    echo json_encode([
+        'success' => false,
+        'error' => 'Neplatný CSRF token',
+        'csrf_token' => $currentCsrfToken,
+    ]);
     exit;
 }
 
 $coachId = (int)getCurrentCoachId();
 $pdo = getDB();
+paymentEnsureBillingIssueSchema($pdo);
 $titleTypeColumn = $pdo->query("SHOW COLUMNS FROM coach_calendar_events LIKE 'title_type'")->fetch();
 if (!$titleTypeColumn) {
     echo json_encode([
@@ -82,142 +94,6 @@ function parseRepeatUntil(DateTime $start, string $repeatMode, string $repeatUnt
     }
 
     return null;
-}
-
-function saveEventTableExists(PDO $pdo, string $tableName): bool
-{
-    $quoted = $pdo->quote($tableName);
-    $stmt = $pdo->query("SHOW TABLES LIKE {$quoted}");
-    return $stmt !== false && (bool)$stmt->fetchColumn();
-}
-
-function saveEventColumnExists(PDO $pdo, string $tableName, string $columnName): bool
-{
-    $quoted = $pdo->quote($columnName);
-    $stmt = $pdo->query("SHOW COLUMNS FROM `{$tableName}` LIKE {$quoted}");
-    return $stmt !== false && (bool)$stmt->fetch();
-}
-
-function resolveAutoMakeupBillingMonth(PDO $pdo, int $coachId, int $athleteId, string $targetMonthSql, ?int $excludeEventId = null): ?string
-{
-    if (!saveEventTableExists($pdo, 'athlete_monthly_payments') || !saveEventTableExists($pdo, 'coach_calendar_events')) {
-        return null;
-    }
-
-    $hasBillingMonth = saveEventColumnExists($pdo, 'coach_calendar_events', 'billing_month');
-    $hasSecondAthlete = saveEventColumnExists($pdo, 'coach_calendar_events', 'second_athlete_id');
-    $hasCarryoverUsed = saveEventColumnExists($pdo, 'athlete_monthly_payments', 'carryover_used_sessions');
-    $currentMonthSql = (new DateTime('now'))->format('Y-m-01');
-    $carryoverCutoffSql = strcmp($targetMonthSql, $currentMonthSql) < 0 ? $targetMonthSql : $currentMonthSql;
-
-    $monthExpr = $hasBillingMonth
-        ? "DATE_FORMAT(COALESCE(t.billing_month, t.starts_at), '%Y-%m-01')"
-        : "DATE_FORMAT(t.starts_at, '%Y-%m-01')";
-    $billingField = $hasBillingMonth ? 'billing_month' : 'NULL AS billing_month';
-    $excludeSql = ($excludeEventId !== null && $excludeEventId > 0) ? ' AND id <> ?' : '';
-
-    if ($hasSecondAthlete) {
-        $participantsSql = "
-            SELECT starts_at, {$billingField}
-            FROM coach_calendar_events
-            WHERE coach_id = ?
-              AND approval_status = 'approved'
-              AND athlete_id = ?{$excludeSql}
-            UNION ALL
-            SELECT starts_at, {$billingField}
-            FROM coach_calendar_events
-            WHERE coach_id = ?
-              AND approval_status = 'approved'
-              AND second_athlete_id = ?{$excludeSql}
-        ";
-        $actualParams = [$coachId, $athleteId];
-        if ($excludeSql !== '') {
-            $actualParams[] = $excludeEventId;
-        }
-        $actualParams[] = $coachId;
-        $actualParams[] = $athleteId;
-        if ($excludeSql !== '') {
-            $actualParams[] = $excludeEventId;
-        }
-        $actualParams[] = $carryoverCutoffSql;
-    } else {
-        $participantsSql = "
-            SELECT starts_at, {$billingField}
-            FROM coach_calendar_events
-            WHERE coach_id = ?
-              AND approval_status = 'approved'
-              AND athlete_id = ?{$excludeSql}
-        ";
-        $actualParams = [$coachId, $athleteId];
-        if ($excludeSql !== '') {
-            $actualParams[] = $excludeEventId;
-        }
-        $actualParams[] = $carryoverCutoffSql;
-    }
-
-    $actualByMonthStmt = $pdo->prepare(
-        "SELECT {$monthExpr} AS billing_month,
-                COUNT(*) AS billed_sessions
-         FROM ({$participantsSql}) t
-         WHERE {$monthExpr} < ?
-         GROUP BY {$monthExpr}
-         ORDER BY {$monthExpr} ASC"
-    );
-    $actualByMonthStmt->execute($actualParams);
-
-    $actualByMonth = [];
-    foreach ($actualByMonthStmt->fetchAll() as $row) {
-        $actualByMonth[(string)$row['billing_month']] = (int)$row['billed_sessions'];
-    }
-
-    $paymentStmt = $pdo->prepare(
-        'SELECT billing_month, planned_sessions, ' . ($hasCarryoverUsed ? 'carryover_used_sessions' : '0 AS carryover_used_sessions') . '
-         FROM athlete_monthly_payments
-         WHERE coach_id = ?
-           AND athlete_id = ?
-           AND status = "paid"
-            AND billing_month < ?
-         ORDER BY billing_month ASC'
-    );
-        $paymentStmt->execute([$coachId, $athleteId, $carryoverCutoffSql]);
-
-    $balances = [];
-    foreach ($paymentStmt->fetchAll() as $row) {
-        $month = (string)$row['billing_month'];
-        $planned = max(0, (int)($row['planned_sessions'] ?? 0));
-        $actual = max(0, (int)($actualByMonth[$month] ?? 0));
-        $generated = max(0, $planned - $actual);
-        $used = max(0, (int)($row['carryover_used_sessions'] ?? 0));
-
-        if ($generated > 0) {
-            $balances[] = [
-                'month' => $month,
-                'remaining' => $generated,
-            ];
-        }
-
-        while ($used > 0 && !empty($balances)) {
-            $deduct = min($used, (int)$balances[0]['remaining']);
-            $balances[0]['remaining'] -= $deduct;
-            $used -= $deduct;
-
-            if ((int)$balances[0]['remaining'] <= 0) {
-                array_shift($balances);
-            }
-        }
-    }
-
-    return empty($balances) ? null : (string)$balances[0]['month'];
-}
-
-function requireAutoMakeupBillingMonth(PDO $pdo, int $coachId, int $athleteId, string $targetMonthSql, ?int $excludeEventId = null): string
-{
-    $resolved = resolveAutoMakeupBillingMonth($pdo, $coachId, $athleteId, $targetMonthSql, $excludeEventId);
-    if ($resolved === null) {
-        throw new RuntimeException('Sportovec momentálně nemá dostupný žádný nevyužitý uhrazený trénink.');
-    }
-
-    return $resolved;
 }
 
 function extractRescheduleTargetEventId(?string $seriesId): int
@@ -400,6 +276,7 @@ $targetMonthSql = $start->format('Y-m-01');
 $billingMonthSql = $targetMonthSql;
 $billingIssueNumberSql = $eventId > 0 ? max(1, (int)($existingEvent['billing_issue_number'] ?? 1)) : 1;
 $billingTransferReasonSql = $eventId > 0 ? ($existingEvent['billing_transfer_reason'] ?? null) : null;
+$replacementCancellationId = null;
 $billingAssignment = null;
 $repeatUntilForUpdate = null;
 $shouldCreateRecurrenceFromUpdate = false;
@@ -414,15 +291,25 @@ if ($isMakeupSession) {
         echo json_encode(['success' => false, 'error' => 'Náhradní termín nelze použít u párového tréninku.']);
         exit;
     }
-
-    $excludeEventId = $eventId > 0 ? $eventId : null;
-    try {
-        requireAutoMakeupBillingMonth($pdo, $coachId, (int)$athleteId, $targetMonthSql, $excludeEventId);
-        $billingMonthSql = $targetMonthSql;
-    } catch (RuntimeException $e) {
-        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    if ($repeatMode !== 'none') {
+        echo json_encode(['success' => false, 'error' => 'Náhradní termín nelze vytvářet jako opakovanou sérii.']);
         exit;
     }
+    $replacementCancellation = paymentFindActiveReplacementCancellation(
+        $pdo,
+        $coachId,
+        (int)$athleteId,
+        $eventId > 0 ? $eventId : null
+    );
+    if (!$replacementCancellation) {
+        echo json_encode(['success' => false, 'error' => 'Sportovec nemá žádné aktivní storno s nevypršenou 14denní lhůtou.']);
+        exit;
+    }
+    $replacementCancellationId = (int)$replacementCancellation['id'];
+    $billingMonthSql = !empty($replacementCancellation['billing_month'])
+        ? date('Y-m-01', strtotime((string)$replacementCancellation['billing_month']))
+        : $targetMonthSql;
+    $billingIssueNumberSql = max(1, (int)($replacementCancellation['billing_issue_number'] ?? 1));
 } elseif ($athleteId > 0) {
     $billingMonthSql = resolveOpenBillingMonth($pdo, $coachId, (int)$athleteId, $targetMonthSql);
 }
@@ -761,6 +648,22 @@ if ($eventId > 0) {
         $pdo->beginTransaction();
 
         $upd->execute([$athleteId, $secondAthleteId, $newSeriesId, $nextApprovalStatus, $coachModifiedAt, (int)$isMakeupSession, $billingMonthSql, $billingIssueNumberSql, $billingTransferReasonSql, $colorKey, $titleType, $customTitle, $location, $startSql, $endSql, $eventId, $coachId]);
+        if ($replacementCancellationId !== null) {
+            $bindReplacementStmt = $pdo->prepare(
+                'UPDATE coach_calendar_event_cancellations
+                 SET replacement_event_id = ?
+                 WHERE id = ? AND coach_id = ? AND athlete_id = ? AND replacement_required = 1
+                   AND ((replacement_event_id IS NULL AND replacement_deadline_at > NOW()) OR replacement_event_id = ?)'
+            );
+            $bindReplacementStmt->execute([$eventId, $replacementCancellationId, $coachId, (int)$athleteId, $eventId]);
+            if ($bindReplacementStmt->rowCount() !== 1) {
+                $linkedStmt = $pdo->prepare('SELECT id FROM coach_calendar_event_cancellations WHERE id = ? AND replacement_event_id = ? LIMIT 1');
+                $linkedStmt->execute([$replacementCancellationId, $eventId]);
+                if (!$linkedStmt->fetchColumn()) {
+                    throw new RuntimeException('Nárok na náhradu mezitím vypršel nebo byl využit.');
+                }
+            }
+        }
 
         if ($shouldCreateRecurrenceFromUpdate && $repeatUntilForUpdate instanceof DateTime) {
             $lockStmtFuture = $pdo->prepare(
@@ -1031,6 +934,20 @@ try {
         ]);
         $createdIds[] = (int)$pdo->lastInsertId();
     }
+
+        if ($replacementCancellationId !== null && !empty($createdIds[0])) {
+            $bindReplacementStmt = $pdo->prepare(
+                'UPDATE coach_calendar_event_cancellations
+                 SET replacement_event_id = ?
+                 WHERE id = ? AND coach_id = ? AND athlete_id = ?
+                   AND replacement_required = 1 AND replacement_event_id IS NULL
+                   AND replacement_deadline_at > NOW()'
+            );
+            $bindReplacementStmt->execute([$createdIds[0], $replacementCancellationId, $coachId, (int)$athleteId]);
+            if ($bindReplacementStmt->rowCount() !== 1) {
+                throw new RuntimeException('Nárok na náhradu mezitím vypršel nebo byl využit.');
+            }
+        }
 
     foreach ($billingAssignmentsByMonth as $month => $assignment) {
         foreach ($assignment['refresh_athletes'] ?? [] as $refreshAthleteId) {

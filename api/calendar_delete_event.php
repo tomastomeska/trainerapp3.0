@@ -27,6 +27,10 @@ if (!verifyCsrf((string)($input['csrf_token'] ?? ''))) {
 
 $eventId = (int)($input['event_id'] ?? 0);
 $deleteScope = trim((string)($input['delete_scope'] ?? 'single'));
+$replacementMode = trim((string)($input['replacement_mode'] ?? 'none'));
+if (!in_array($replacementMode, ['none', '14_days'], true)) {
+    $replacementMode = 'none';
+}
 $coachId = (int)getCurrentCoachId();
 
 function coachDeleteHasColumn(PDO $pdo, string $table, string $column): bool
@@ -77,8 +81,11 @@ $eventStmt = $pdo->prepare(
             e.athlete_id,
             e.second_athlete_id,
         e.is_makeup_session,
+            e.title_type,
         e.requested_by_athlete_id,
         e.approval_status,
+            e.billing_month,
+            e.billing_issue_number,
             a.email AS athlete_email,
             a.first_name,
             a.last_name,
@@ -108,6 +115,9 @@ if ($deleteScope === 'future' && !empty($event['series_id'])) {
                 second_athlete_id,
                 approval_status,
                 is_makeup_session,
+                title_type,
+                billing_month,
+                billing_issue_number,
                 custom_title,
                 location,
                 starts_at,
@@ -128,6 +138,9 @@ if ($deleteScope === 'future' && !empty($event['series_id'])) {
         'second_athlete_id' => $event['second_athlete_id'] ?? null,
         'approval_status' => $event['approval_status'] ?? 'approved',
         'is_makeup_session' => $event['is_makeup_session'] ?? 0,
+        'title_type' => $event['title_type'] ?? 'training',
+        'billing_month' => $event['billing_month'] ?? null,
+        'billing_issue_number' => $event['billing_issue_number'] ?? 1,
         'custom_title' => $event['custom_title'] ?? null,
         'location' => $event['location'] ?? null,
         'starts_at' => $event['starts_at'] ?? null,
@@ -196,55 +209,120 @@ if ($hasPayments) {
     }
 }
 
-if ($deleteScope === 'future') {
-    if (empty($event['series_id'])) {
-        echo json_encode(['success' => false, 'error' => 'Událost není součástí série.']);
-        exit;
+$pdo->beginTransaction();
+try {
+    if ($deleteScope === 'future') {
+        if (empty($event['series_id'])) {
+            throw new RuntimeException('Událost není součástí série.');
+        }
+        $del = $pdo->prepare(
+            'DELETE FROM coach_calendar_events
+             WHERE coach_id = ?
+               AND series_id = ?
+               AND starts_at >= ?'
+        );
+        $del->execute([$coachId, $event['series_id'], $event['starts_at']]);
+    } else {
+        $del = $pdo->prepare('DELETE FROM coach_calendar_events WHERE id = ? AND coach_id = ?');
+        $del->execute([$eventId, $coachId]);
     }
 
-    $del = $pdo->prepare(
-        'DELETE FROM coach_calendar_events
-         WHERE coach_id = ?
-           AND series_id = ?
-           AND starts_at >= ?'
-    );
-    $del->execute([$coachId, $event['series_id'], $event['starts_at']]);
-} else {
-    $del = $pdo->prepare('DELETE FROM coach_calendar_events WHERE id = ? AND coach_id = ?');
-    $del->execute([$eventId, $coachId]);
-}
-
-if ($del->rowCount() === 0) {
-    echo json_encode(['success' => false, 'error' => 'Událost nenalezena']);
-    exit;
-}
-
-if (!empty($eventsToCancel)) {
-    $cancelInsert = $pdo->prepare(
-        'INSERT INTO coach_calendar_event_cancellations
-            (coach_id, athlete_id, second_athlete_id, canceled_by, canceled_by_athlete_id, cancellation_scope,
-             approval_status, is_makeup_session, custom_title, location, starts_at, ends_at, canceled_at)
-         VALUES (?, ?, ?, "coach", NULL, ?, ?, ?, ?, ?, ?, ?, NOW())'
-    );
+    if ($del->rowCount() === 0) {
+        throw new RuntimeException('Událost nenalezena.');
+    }
 
     foreach ($eventsToCancel as $cancelEvent) {
-        try {
-            $cancelInsert->execute([
+        $participantIds = array_values(array_unique(array_filter([
+            (int)($cancelEvent['athlete_id'] ?? 0),
+            (int)($cancelEvent['second_athlete_id'] ?? 0),
+        ])));
+        if ($participantIds === []) {
+            continue;
+        }
+
+        $startsAt = (string)($cancelEvent['starts_at'] ?? '');
+        $startDate = new DateTimeImmutable($startsAt);
+        $isTraining = (string)($cancelEvent['title_type'] ?? 'training') === 'training';
+        $billingMonth = !empty($cancelEvent['billing_month'])
+            ? date('Y-m-01', strtotime((string)$cancelEvent['billing_month']))
+            : date('Y-m-01', strtotime($startsAt));
+        $issueNumber = max(1, (int)($cancelEvent['billing_issue_number'] ?? 1));
+
+        foreach ($participantIds as $participantId) {
+            $hasReplacementSlot = coachHasActiveSlotForAthlete(
+                $pdo,
+                $coachId,
+                $participantId,
+                $startsAt,
+                (string)($cancelEvent['ends_at'] ?? $startsAt)
+            );
+            $replacementRequired = $replacementMode === '14_days'
+                && $isTraining
+                && !$hasReplacementSlot
+                && (string)($cancelEvent['approval_status'] ?? 'approved') === 'approved';
+            $replacementDeadline = $replacementRequired
+                ? $startDate->modify('+14 days')->setTime(23, 59, 59)->format('Y-m-d H:i:s')
+                : null;
+            $paymentStatus = 'none';
+            if ($hasPayments) {
+                $paymentStatusStmt = $pdo->prepare(
+                    'SELECT status FROM athlete_monthly_payments
+                     WHERE coach_id = ? AND athlete_id = ? AND billing_month = ? AND issue_number = ?
+                     LIMIT 1'
+                );
+                $paymentStatusStmt->execute([$coachId, $participantId, $billingMonth, $issueNumber]);
+                $paymentStatus = (string)($paymentStatusStmt->fetchColumn() ?: 'none');
+            }
+
+            $columns = [
+                'coach_id', 'athlete_id', 'second_athlete_id', 'canceled_by', 'canceled_by_athlete_id',
+                'cancellation_scope', 'approval_status', 'is_makeup_session', 'custom_title', 'location',
+                'starts_at', 'ends_at', 'canceled_at',
+            ];
+            $values = ['?', '?', 'NULL', '"coach"', 'NULL', '?', '?', '?', '?', '?', '?', '?', 'NOW()'];
+            $params = [
                 (int)($cancelEvent['coach_id'] ?? $coachId),
-                !empty($cancelEvent['athlete_id']) ? (int)$cancelEvent['athlete_id'] : null,
-                !empty($cancelEvent['second_athlete_id']) ? (int)$cancelEvent['second_athlete_id'] : null,
-                $deleteScope === 'future' ? 'future' : 'single',
+                $participantId,
+                $deleteScope === 'future' ? 'future' : ((count($participantIds) > 1) ? 'pair_exit' : 'single'),
                 (string)($cancelEvent['approval_status'] ?? 'approved') === 'pending' ? 'pending' : 'approved',
                 !empty($cancelEvent['is_makeup_session']) ? 1 : 0,
                 ($cancelEvent['custom_title'] ?? null) !== '' ? (string)$cancelEvent['custom_title'] : null,
                 ($cancelEvent['location'] ?? null) !== '' ? (string)$cancelEvent['location'] : null,
-                (string)($cancelEvent['starts_at'] ?? ''),
-                (string)($cancelEvent['ends_at'] ?? ''),
-            ]);
-        } catch (Throwable $e) {
-            error_log('calendar cancellation log insert failed: ' . $e->getMessage());
+                $startsAt,
+                (string)($cancelEvent['ends_at'] ?? $startsAt),
+            ];
+            foreach ([
+                'billing_month' => $billingMonth,
+                'billing_issue_number' => max(1, (int)($cancelEvent['billing_issue_number'] ?? 1)),
+                'payment_status_snapshot' => $paymentStatus,
+                'replacement_required' => $replacementRequired ? 1 : 0,
+                'replacement_deadline_at' => $replacementDeadline,
+            ] as $column => $value) {
+                if (coachDeleteHasColumn($pdo, 'coach_calendar_event_cancellations', $column)) {
+                    $columns[] = $column;
+                    $values[] = '?';
+                    $params[] = $value;
+                }
+            }
+            if (coachDeleteHasColumn($pdo, 'coach_calendar_event_cancellations', 'replacement_event_id')) {
+                $columns[] = 'replacement_event_id';
+                $values[] = 'NULL';
+            }
+
+            $cancelInsert = $pdo->prepare(
+                'INSERT INTO coach_calendar_event_cancellations (' . implode(', ', $columns) . ')
+                 VALUES (' . implode(', ', $values) . ')'
+            );
+            $cancelInsert->execute($params);
         }
     }
+    $pdo->commit();
+} catch (Throwable $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    echo json_encode(['success' => false, 'error' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+    exit;
 }
 
 $deletedEventIds = [];
@@ -321,8 +399,13 @@ if (!empty($participants)) {
             $body = 'Trenér zrušil trénink naplánovaný na ' . $startLabel . '.';
         }
 
+        if (!$isPendingRequest && !$hasReplacement && (string)($event['title_type'] ?? 'training') === 'training') {
+            $body .= $replacementMode === '14_days'
+                ? ' Trenér vám ponechal možnost vybrat náhradní termín do 14 kalendářních dní od zrušeného termínu.'
+                : ' Trenér zvolil zrušení bez náhradního termínu.';
+        }
         if ($paidAffectedCount > 0) {
-            $body .= ' Šlo o již uhrazený termín, který aplikace automaticky započte do další fakturace jako zápočet.';
+            $body .= ' Původní uhrazená výzva zůstává beze změny.';
         }
 
         createAthleteNotification((int)$participant['id'], $subject, $body);
@@ -339,6 +422,8 @@ echo json_encode([
     'scope' => $deleteScope,
     'paid_affected_count' => $paidAffectedCount,
     'message' => $paidAffectedCount > 0
-        ? 'Byl zrušen již uhrazený termín. Systém jej započte do další fakturace.'
+        ? ($replacementMode === '14_days'
+            ? 'Uhrazený termín byl zrušen. Náhradu rezervujte do 14 kalendářních dní; nebude účtována znovu.'
+            : 'Byl zrušen již uhrazený termín. Částka bude započtena do další fakturace.')
         : 'Událost byla zrušena.',
 ]);

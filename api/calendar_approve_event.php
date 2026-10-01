@@ -34,6 +34,7 @@ if ($eventId <= 0) {
 
 $coachId = (int)getCurrentCoachId();
 $pdo = getDB();
+paymentEnsureBillingIssueSchema($pdo);
 
 function approveExtractRescheduleTargetEventId(?string $seriesId): int
 {
@@ -287,9 +288,13 @@ try {
     );
     $billingMonth = $billingAssignment !== null
         ? (string)$billingAssignment['billing_month']
-        : date('Y-m-01', strtotime((string)$event['starts_at']));
-    $issueNumber = $billingAssignment !== null ? (int)$billingAssignment['issue_number'] : 1;
-    $transferReason = $billingAssignment['billing_transfer_reason'] ?? null;
+        : (!empty($event['billing_month'])
+            ? date('Y-m-01', strtotime((string)$event['billing_month']))
+            : date('Y-m-01', strtotime((string)$event['starts_at'])));
+    $issueNumber = $billingAssignment !== null
+        ? (int)$billingAssignment['issue_number']
+        : max(1, (int)($event['billing_issue_number'] ?? 1));
+    $transferReason = $billingAssignment['billing_transfer_reason'] ?? $event['billing_transfer_reason'] ?? null;
     $updateStmt->execute([$billingMonth, $issueNumber, $transferReason, $eventId, $coachId]);
 
     if ($billingAssignment !== null) {

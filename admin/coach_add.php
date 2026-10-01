@@ -70,22 +70,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password  = $_POST['password'] ?? '';
         $password2 = $_POST['password2'] ?? '';
         $isActive  = isset($_POST['is_active']) ? 1 : 0;
-        $makeupDeadlineDaysRaw = trim((string)($_POST['makeup_booking_deadline_days'] ?? ''));
         $makeupDeadlineDays = 14;
         $sourceTicketId = intParam($_POST, 'source_ticket_id');
-
-        if ($hasMakeupDeadlineColumn) {
-            if ($makeupDeadlineDaysRaw !== '') {
-                if (!ctype_digit($makeupDeadlineDaysRaw)) {
-                    $error = 'Lhuta pro nahradni termin musi byt cele cislo ve dnech.';
-                } else {
-                    $makeupDeadlineDays = (int)$makeupDeadlineDaysRaw;
-                    if ($makeupDeadlineDays < 1 || $makeupDeadlineDays > 365) {
-                        $error = 'Lhuta pro nahradni termin muze byt 1 az 365 dni.';
-                    }
-                }
-            }
-        }
 
         if ($error !== null) {
             // Validation error already set.
@@ -270,12 +256,8 @@ renderAdminHeader('Pridat trenera');
             </div>
             <?php if ($hasMakeupDeadlineColumn): ?>
             <div class="mb-4">
-                <label class="form-label fw-semibold">Lhuta pro vyber nahradniho terminu (dny)</label>
-                <input type="number" name="makeup_booking_deadline_days" class="form-control"
-                       min="1" max="365" step="1"
-                       value="<?= h($_POST['makeup_booking_deadline_days'] ?? '14') ?>"
-                       placeholder="napr. 14">
-                <div class="form-text">Vychozi hodnota je 14 dni. Sportovec musi do teto lhuty vytvorit nahradni rezervaci po zruseni terminu.</div>
+                <div class="form-label fw-semibold">Lhůta pro náhradní termín</div>
+                <div class="form-control-plaintext">14 kalendářních dní od data zrušeného tréninku.</div>
             </div>
             <?php endif; ?>
             <div class="d-flex gap-2">

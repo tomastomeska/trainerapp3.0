@@ -382,6 +382,7 @@ $venuesJson = json_encode($venues, JSON_UNESCAPED_UNICODE);
         let modal = new bootstrap.Modal(document.getElementById('eventModal'));
         let currentDate = new Date();
         let currentEventId = null;
+        let currentEvent = null;
         let events = [];
 
         const TIME_START = 5;
@@ -555,6 +556,7 @@ $venuesJson = json_encode($venues, JSON_UNESCAPED_UNICODE);
 
         function openModal(ev, startDate = null) {
             currentEventId = ev ? ev.id : null;
+            currentEvent = ev || null;
             document.querySelector('.modal-title').textContent = ev ? 'Upravit trénink' : 'Nový trénink';
             document.getElementById('deleteBtn').style.display = ev ? 'block' : 'none';
 
@@ -635,13 +637,20 @@ $venuesJson = json_encode($venues, JSON_UNESCAPED_UNICODE);
         document.getElementById('deleteBtn').addEventListener('click', async () => {
             if (!confirm('Smazat trénink?')) return;
 
+            const hasAthlete = Number(currentEvent?.athlete_id || 0) > 0 || Number(currentEvent?.second_athlete_id || 0) > 0;
+            const replacementMode = hasAthlete && (currentEvent?.title_type || 'training') === 'training'
+                ? (confirm('Dát sportovci možnost náhrady do 14 kalendářních dní od termínu?\n\nOK = nabídnout náhradu\nStorno = bez náhrady') ? '14_days' : 'none')
+                : 'none';
+
             try {
                 const r = await fetch('/api/calendar_delete_event.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        id: currentEventId,
-                        csrf_token: document.querySelector('[name="csrf_token"]').value
+                        event_id: currentEventId,
+                        delete_scope: 'single',
+                        replacement_mode: replacementMode,
+                        csrf_token: document.querySelector('[name="csrf_token"]').value,
                     })
                 });
 
