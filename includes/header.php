@@ -238,6 +238,7 @@ if ($coach) {
                     </a>
                 </li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/special_training.php"><i class="fas fa-flag-checkered me-1"></i>Events</a></li>
+                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/calendar_replacements.php"><i class="fas fa-calendar-check me-1"></i>Náhrady</a></li>
                 <li class="nav-item"><a class="nav-link d-inline-flex align-items-center" href="<?= BASE_URL ?>/online_training.php"><i class="fas fa-laptop me-1"></i>Online tréninky<?php if ($onlineTrainingCount > 0): ?><span class="badge rounded-pill bg-warning text-dark ms-1 top-badge"><?= $onlineTrainingCount ?></span><?php endif; ?></a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/mycoach.php"><i class="fas fa-brain me-1"></i>MYCoach</a></li>
                 <li class="nav-item">

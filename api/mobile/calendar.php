@@ -167,21 +167,74 @@ if ($action === 'create') {
         }
     } catch (Throwable $e) {}
 
-    try {
-        $stmt = $pdo->prepare(
-            'INSERT INTO coach_calendar_events (coach_id, athlete_id, custom_title, location, starts_at, ends_at, approval_status, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, "approved", NOW())'
+    $billingAssignment = null;
+    if ($athleteId && $athleteId > 0) {
+        $start = DateTime::createFromFormat('Y-m-d H:i:s', $startsAt) ?: DateTime::createFromFormat('Y-m-d H:i', $startsAt);
+        if (!$start) {
+            mobileJson(['success' => false, 'error' => 'Neplatné datum začátku.'], 422);
+        }
+        $billingAssignment = paymentResolveTrainingAssignment(
+            $pdo,
+            (int)$coach['id'],
+            [(int)$athleteId],
+            $start->format('Y-m-01'),
+            (string)($input['billing_decision'] ?? '')
         );
-        $stmt->execute([
-            $coach['id'],
-            $athleteId && $athleteId > 0 ? $athleteId : null,
-            $title ?: null,
-            $location ?: null,
-            $startsAt,
-            $endsAt
-        ]);
+        if (isset($billingAssignment['error'])) {
+            mobileJson(['success' => false, 'error' => $billingAssignment['error']], 422);
+        }
+        if (!empty($billingAssignment['requires_choice'])) {
+            mobileJson([
+                'success' => false,
+                'billing_choice_required' => true,
+                'billing_choice' => $billingAssignment['choice'],
+            ]);
+        }
+    }
 
-        mobileJson(['success' => true, 'id' => (int)$pdo->lastInsertId()]);
+    try {
+        $billingMonth = $billingAssignment['billing_month'] ?? substr($startsAt, 0, 7) . '-01';
+        $issueNumber = (int)($billingAssignment['issue_number'] ?? 1);
+        if ($billingAssignment !== null) {
+            $stmt = $pdo->prepare(
+                'INSERT INTO coach_calendar_events (coach_id, athlete_id, custom_title, location, starts_at, ends_at, approval_status, billing_month, billing_issue_number, billing_transfer_reason, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, "approved", ?, ?, ?, NOW())'
+            );
+            $stmt->execute([
+                $coach['id'],
+                $athleteId,
+                $title ?: null,
+                $location ?: null,
+                $startsAt,
+                $endsAt,
+                $billingMonth,
+                max(1, $issueNumber),
+                $billingAssignment['billing_transfer_reason'] ?? null,
+            ]);
+        } else {
+            $stmt = $pdo->prepare(
+                'INSERT INTO coach_calendar_events (coach_id, athlete_id, custom_title, location, starts_at, ends_at, approval_status, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, "approved", NOW())'
+            );
+            $stmt->execute([
+                $coach['id'],
+                null,
+                $title ?: null,
+                $location ?: null,
+                $startsAt,
+                $endsAt,
+            ]);
+        }
+        $newId = (int)$pdo->lastInsertId();
+        if ($billingAssignment !== null && $athleteId && $athleteId > 0) {
+            foreach ($billingAssignment['refresh_athletes'] ?? [] as $refreshAthleteId) {
+                paymentRefreshPendingIssue($pdo, (int)$coach['id'], (int)$refreshAthleteId, $billingMonth, max(1, $issueNumber));
+            }
+            foreach ($billingAssignment['additional_athletes'] ?? [] as $additionalAthleteId) {
+                paymentCreateAdditionalIssue($pdo, (int)$coach['id'], (int)$additionalAthleteId, $billingMonth, max(1, $issueNumber), $billingAssignment['session_rates'][(int)$additionalAthleteId] ?? $billingAssignment['session_rate'] ?? null);
+            }
+        }
+        mobileJson(['success' => true, 'id' => $newId]);
     } catch (Throwable $e) {
         mobileJson(['success' => false, 'error' => 'Chyba vytvoření události: ' . $e->getMessage()], 500);
     }
@@ -498,16 +551,238 @@ if ($action === 'delete' || $action === 'reject') {
     if ($eventId <= 0) mobileJson(['success' => false, 'error' => 'Chybí ID události.'], 422);
 
     try {
+        $message = '';
         if ($eventId >= 200000) {
             $lockId = $eventId - 200000;
             $stmt = $pdo->prepare('DELETE FROM coach_calendar_locks WHERE id = ? AND coach_id = ?');
             $stmt->execute([$lockId, $coach['id']]);
         } else {
-            $stmt = $pdo->prepare('DELETE FROM coach_calendar_events WHERE id = ? AND coach_id = ?');
-            $stmt->execute([$eventId, $coach['id']]);
+            $replacementMode = trim((string)($input['replacement_mode'] ?? $_REQUEST['replacement_mode'] ?? 'none'));
+            if (!in_array($replacementMode, ['none', '14_days'], true) || $action === 'reject') {
+                $replacementMode = 'none';
+            }
+            $message = mobileCancelCoachEvent($pdo, (int)$coach['id'], $eventId, $replacementMode);
         }
-        mobileJson(['success' => true]);
+        mobileJson(['success' => true, 'message' => $message]);
     } catch (Throwable $e) {
         mobileJson(['success' => false, 'error' => 'Chyba mazání: ' . $e->getMessage()], 500);
     }
+}
+
+function mobileCalendarHasColumn(PDO $pdo, string $table, string $column): bool
+{
+    $stmt = $pdo->query('SHOW COLUMNS FROM `' . str_replace('`', '', $table) . '` LIKE ' . $pdo->quote($column));
+    return $stmt !== false && (bool)$stmt->fetch();
+}
+
+function mobileCoachHasActiveSlot(PDO $pdo, int $coachId, int $athleteId, string $startsAt, string $endsAt): bool
+{
+    if ($athleteId <= 0) {
+        return false;
+    }
+    $stmt = $pdo->prepare(
+        'SELECT id FROM coach_calendar_events
+         WHERE coach_id = ? AND starts_at = ? AND ends_at = ? AND (athlete_id = ? OR second_athlete_id = ?)
+         LIMIT 1'
+    );
+    $stmt->execute([$coachId, $startsAt, $endsAt, $athleteId, $athleteId]);
+    return (bool)$stmt->fetchColumn();
+}
+
+function mobileCancelCoachEvent(PDO $pdo, int $coachId, int $eventId, string $replacementMode): string
+{
+    $eventStmt = $pdo->prepare(
+        'SELECT e.id, e.custom_title, e.location, e.starts_at, e.ends_at,
+                e.athlete_id, e.second_athlete_id, e.is_makeup_session, e.title_type,
+                e.requested_by_athlete_id, e.approval_status, e.billing_month, e.billing_issue_number,
+                a.email AS athlete_email, a.first_name, a.last_name,
+                a2.email AS second_athlete_email, a2.first_name AS second_first_name, a2.last_name AS second_last_name
+         FROM coach_calendar_events e
+         LEFT JOIN athletes a ON a.id = e.athlete_id
+         LEFT JOIN athletes a2 ON a2.id = e.second_athlete_id
+         WHERE e.id = ? AND e.coach_id = ?
+         LIMIT 1'
+    );
+    $eventStmt->execute([$eventId, $coachId]);
+    $event = $eventStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$event) {
+        throw new RuntimeException('Událost nenalezena.');
+    }
+
+    $hasPayments = false;
+    try {
+        $hasPaymentsStmt = $pdo->query("SHOW TABLES LIKE 'athlete_monthly_payments'");
+        $hasPayments = $hasPaymentsStmt !== false && (bool)$hasPaymentsStmt->fetchColumn();
+    } catch (Throwable $e) {
+        $hasPayments = false;
+    }
+
+    $billingMonth = !empty($event['billing_month'])
+        ? date('Y-m-01', strtotime((string)$event['billing_month']))
+        : date('Y-m-01', strtotime((string)$event['starts_at']));
+    $issueNumber = max(1, (int)($event['billing_issue_number'] ?? 1));
+    $paidAffectedCount = 0;
+    if ($hasPayments && !empty($event['athlete_id'])) {
+        $paidStmt = $pdo->prepare(
+            'SELECT COUNT(*) FROM athlete_monthly_payments
+             WHERE coach_id = ? AND athlete_id = ? AND billing_month = ? AND issue_number = ? AND status = "paid"'
+        );
+        $paidStmt->execute([$coachId, (int)$event['athlete_id'], $billingMonth, $issueNumber]);
+        $paidAffectedCount = (int)$paidStmt->fetchColumn();
+    }
+
+    $participantIds = array_values(array_unique(array_filter([
+        (int)($event['athlete_id'] ?? 0),
+        (int)($event['second_athlete_id'] ?? 0),
+    ])));
+    $startsAt = (string)$event['starts_at'];
+    $endsAt = (string)($event['ends_at'] ?? $startsAt);
+    $isTraining = (string)($event['title_type'] ?? 'training') === 'training';
+    $approved = (string)($event['approval_status'] ?? 'approved') === 'approved';
+
+    $pdo->beginTransaction();
+    try {
+        $delete = $pdo->prepare('DELETE FROM coach_calendar_events WHERE id = ? AND coach_id = ?');
+        $delete->execute([$eventId, $coachId]);
+        if ($delete->rowCount() === 0) {
+            throw new RuntimeException('Událost nenalezena.');
+        }
+
+        $startDate = new DateTimeImmutable($startsAt);
+        foreach ($participantIds as $participantId) {
+            $hasReplacementSlot = mobileCoachHasActiveSlot($pdo, $coachId, $participantId, $startsAt, $endsAt);
+            $replacementRequired = $replacementMode === '14_days' && $isTraining && !$hasReplacementSlot && $approved;
+            $replacementDeadline = $replacementRequired
+                ? $startDate->modify('+14 days')->setTime(23, 59, 59)->format('Y-m-d H:i:s')
+                : null;
+            $paymentStatus = 'none';
+            if ($hasPayments) {
+                $paymentStatusStmt = $pdo->prepare(
+                    'SELECT status FROM athlete_monthly_payments
+                     WHERE coach_id = ? AND athlete_id = ? AND billing_month = ? AND issue_number = ?
+                     LIMIT 1'
+                );
+                $paymentStatusStmt->execute([$coachId, $participantId, $billingMonth, $issueNumber]);
+                $paymentStatus = (string)($paymentStatusStmt->fetchColumn() ?: 'none');
+            }
+
+            $columns = [
+                'coach_id', 'athlete_id', 'second_athlete_id', 'canceled_by', 'canceled_by_athlete_id',
+                'cancellation_scope', 'approval_status', 'is_makeup_session', 'custom_title', 'location',
+                'starts_at', 'ends_at', 'canceled_at',
+            ];
+            $values = ['?', '?', 'NULL', '"coach"', 'NULL', '?', '?', '?', '?', '?', '?', '?', 'NOW()'];
+            $params = [
+                $coachId,
+                $participantId,
+                count($participantIds) > 1 ? 'pair_exit' : 'single',
+                $approved ? 'approved' : 'pending',
+                !empty($event['is_makeup_session']) ? 1 : 0,
+                ($event['custom_title'] ?? null) !== '' ? (string)$event['custom_title'] : null,
+                ($event['location'] ?? null) !== '' ? (string)$event['location'] : null,
+                $startsAt,
+                $endsAt,
+            ];
+            foreach ([
+                'billing_month' => $billingMonth,
+                'billing_issue_number' => $issueNumber,
+                'payment_status_snapshot' => $paymentStatus,
+                'replacement_required' => $replacementRequired ? 1 : 0,
+                'replacement_deadline_at' => $replacementDeadline,
+            ] as $column => $value) {
+                if (mobileCalendarHasColumn($pdo, 'coach_calendar_event_cancellations', $column)) {
+                    $columns[] = $column;
+                    $values[] = '?';
+                    $params[] = $value;
+                }
+            }
+            if (mobileCalendarHasColumn($pdo, 'coach_calendar_event_cancellations', 'replacement_event_id')) {
+                $columns[] = 'replacement_event_id';
+                $values[] = 'NULL';
+            }
+            $insert = $pdo->prepare(
+                'INSERT INTO coach_calendar_event_cancellations (' . implode(', ', $columns) . ')
+                 VALUES (' . implode(', ', $values) . ')'
+            );
+            $insert->execute($params);
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+
+    if (function_exists('enqueueCoachGoogleCalendarSync')) {
+        enqueueCoachGoogleCalendarSync($coachId, $eventId, 'delete');
+    }
+    if (function_exists('enqueueCoachAppleCaldavSync')) {
+        enqueueCoachAppleCaldavSync($coachId, $eventId, 'delete');
+    }
+    foreach ($participantIds as $participantId) {
+        if (function_exists('enqueueAthleteAppleCaldavSync')) {
+            enqueueAthleteAppleCaldavSync($participantId, $eventId, 'delete');
+        }
+    }
+    if (function_exists('processInlineCalendarSyncQueues')) {
+        processInlineCalendarSyncQueues(2, 3, 3);
+    }
+
+    $participants = [];
+    if (!empty($event['athlete_id'])) {
+        $participants[] = [
+            'id' => (int)$event['athlete_id'],
+            'email' => (string)($event['athlete_email'] ?? ''),
+            'name' => trim((string)($event['first_name'] ?? '') . ' ' . (string)($event['last_name'] ?? '')),
+        ];
+    }
+    if (!empty($event['second_athlete_id'])) {
+        $participants[] = [
+            'id' => (int)$event['second_athlete_id'],
+            'email' => (string)($event['second_athlete_email'] ?? ''),
+            'name' => trim((string)($event['second_first_name'] ?? '') . ' ' . (string)($event['second_last_name'] ?? '')),
+        ];
+    }
+
+    $isPendingRequest = (($event['approval_status'] ?? 'approved') === 'pending') && !empty($event['requested_by_athlete_id']);
+    $startLabel = date('d.m.Y H:i', strtotime($startsAt));
+    foreach ($participants as $participant) {
+        $participantId = (int)$participant['id'];
+        $hasReplacement = mobileCoachHasActiveSlot($pdo, $coachId, $participantId, $startsAt, $endsAt);
+        if ($isPendingRequest) {
+            $subject = 'Požadavek termínu byl zamítnut';
+            $body = 'Trenér zamítl váš požadavek na termín ' . $startLabel . '.';
+        } elseif ($hasReplacement) {
+            $subject = 'Úprava termínu tréninku';
+            $body = 'Původní termín ' . $startLabel . ' byl trenérem změněn. Ve stejném čase je evidovaný nový aktivní termín.';
+        } else {
+            $subject = 'Zrušení tréninku';
+            $body = 'Trenér zrušil trénink naplánovaný na ' . $startLabel . '.';
+        }
+        if (!$isPendingRequest && !$hasReplacement && $isTraining) {
+            $body .= $replacementMode === '14_days'
+                ? ' Trenér vám ponechal možnost vybrat náhradní termín do 14 kalendářních dní od zrušeného termínu.'
+                : ' Trenér zvolil zrušení bez náhradního termínu.';
+        }
+        if ($paidAffectedCount > 0) {
+            $body .= ' Původní uhrazená výzva zůstává beze změny.';
+        }
+        if (function_exists('createAthleteNotification')) {
+            createAthleteNotification($participantId, $subject, $body);
+        }
+        if ($participant['email'] !== '' && function_exists('sendAthleteCalendarNotificationEmail')) {
+            $name = $participant['name'] !== '' ? $participant['name'] : 'sportovec';
+            sendAthleteCalendarNotificationEmail((string)$participant['email'], $name, $subject, $body);
+        }
+    }
+
+    if ($paidAffectedCount > 0) {
+        return $replacementMode === '14_days'
+            ? 'Uhrazený termín byl zrušen. Náhradu rezervujte do 14 kalendářních dní; nebude účtována znovu.'
+            : 'Uhrazený termín byl zrušen bez náhrady. Nárok na náhradní slot nevznikl. Původní uhrazená výzva zůstává beze změny.';
+    }
+    return $replacementMode === '14_days'
+        ? 'Událost byla zrušena s možností náhrady do 14 kalendářních dní od původního termínu.'
+        : 'Událost byla zrušena bez náhrady. Nárok na náhradní slot nevznikl.';
 }

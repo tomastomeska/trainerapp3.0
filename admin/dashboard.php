@@ -5,6 +5,7 @@ require_once __DIR__ . '/../includes/admin_auth.php';
 requireAdminLogin();
 
 require_once __DIR__ . '/header.php';
+require_once __DIR__ . '/../includes/calendar_replacements.php';
 
 $pdo = getDB();
 $calendarTitleTypeColumn = $pdo->query("SHOW COLUMNS FROM coach_calendar_events LIKE 'title_type'")->fetch();
@@ -32,6 +33,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'enabl
         flash('danger', 'Kalendář se nepodařilo aktualizovat. Kontaktujte správce serveru.');
     }
     redirect(BASE_URL . '/admin/dashboard.php');
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'enable_replacement_revocation') {
+    if (!verifyCsrf((string)($_POST['csrf_token'] ?? ''))) {
+        flash('danger', 'Neplatný bezpečnostní token.');
+        redirect(BASE_URL . '/admin/dashboard.php');
+    }
+    try {
+        calendarMigrateReplacementRevocation($pdo);
+        flash('success', 'Nároky na náhrady byly aktualizovány. Trenéři mohou rušit nároky s uložením důvodu. Žádné nároky ani platby nebyly změněny.');
+    } catch (Throwable $exception) {
+        error_log('Replacement revocation migration failed: ' . $exception->getMessage());
+        flash('danger', 'Aktualizace nároků se nepodařila. Kontaktujte správce serveru.');
+    }
+    redirect(BASE_URL . '/admin/dashboard.php');
+}
+
+$replacementRevocationReady = true;
+try {
+    foreach (['replacement_revoked_at', 'replacement_revoked_by_coach_id', 'replacement_revocation_reason'] as $column) {
+        $columnStmt = $pdo->query('SHOW COLUMNS FROM coach_calendar_event_cancellations LIKE ' . $pdo->quote($column));
+        if (!$columnStmt->fetch()) {
+            $replacementRevocationReady = false;
+        }
+    }
+} catch (Throwable $exception) {
+    $replacementRevocationReady = false;
 }
 
 // Statistiky
@@ -93,6 +121,25 @@ renderAdminHeader('Přehled');
 <?php endif; ?>
 
 <!-- Statistiky -->
+<div class="alert <?= $replacementRevocationReady ? 'alert-success' : 'alert-warning' ?> d-flex justify-content-between align-items-center gap-3 flex-wrap">
+    <div>
+        <i class="fas fa-calendar-check me-2"></i>
+        <?= $replacementRevocationReady
+            ? 'Evidence zrušení nároků na náhrady je připravena.'
+            : 'Nároky na náhrady potřebují jednorázovou aktualizaci pro evidenci důvodu a času zrušení.' ?>
+    </div>
+    <?php if ($replacementRevocationReady): ?>
+        <span class="badge bg-success"><i class="fas fa-check me-1"></i>Aktualizováno</span>
+    <?php else: ?>
+        <form method="post" class="m-0">
+            <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
+            <input type="hidden" name="action" value="enable_replacement_revocation">
+            <button type="submit" class="btn btn-warning fw-semibold">
+                <i class="fas fa-database me-1"></i>Aktualizovat nároky na náhrady
+            </button>
+        </form>
+    <?php endif; ?>
+</div>
 <style>
     .admin-stats-grid {
         display: grid;

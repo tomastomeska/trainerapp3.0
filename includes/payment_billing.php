@@ -101,12 +101,16 @@ function paymentFindActiveReplacementCancellation(PDO $pdo, int $coachId, int $a
     $replacementWhere = $eventId !== null
         ? 'c.replacement_event_id = ?'
         : '(c.replacement_event_id IS NULL AND c.replacement_deadline_at > NOW())';
+    $revokedWhere = paymentBillingColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_revoked_at')
+        ? 'AND c.replacement_revoked_at IS NULL'
+        : '';
     $sql = "SELECT c.id, c.starts_at AS canceled_starts_at, {$billingMonthSelect}, {$billingIssueSelect}, {$snapshotSelect}, c.replacement_deadline_at
             FROM coach_calendar_event_cancellations c
             WHERE c.coach_id = ?
               AND {$participantWhere}
               AND c.canceled_by IN ('athlete', 'coach')
               AND c.replacement_required = 1
+              {$revokedWhere}
               AND {$replacementWhere}
             ORDER BY c.replacement_deadline_at ASC, c.id ASC
             LIMIT 1";

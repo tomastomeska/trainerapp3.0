@@ -2022,6 +2022,9 @@ function ensureSchemaUpgrades(PDO $pdo): void {
             `replacement_required`  TINYINT(1) NOT NULL DEFAULT 0,
             `replacement_deadline_at` DATETIME NULL,
             `replacement_event_id`  INT NULL,
+            `replacement_revoked_at` DATETIME NULL,
+            `replacement_revoked_by_coach_id` INT NULL,
+            `replacement_revocation_reason` VARCHAR(1000) NULL,
             `custom_title`          VARCHAR(140) NULL,
             `location`              VARCHAR(255) NULL,
             `starts_at`             DATETIME NOT NULL,
@@ -2067,6 +2070,17 @@ function ensureSchemaUpgrades(PDO $pdo): void {
     $stmtCancelReplacementEvent = $pdo->query("SHOW COLUMNS FROM coach_calendar_event_cancellations LIKE 'replacement_event_id'");
     if (!$stmtCancelReplacementEvent->fetch()) {
         $pdo->exec('ALTER TABLE coach_calendar_event_cancellations ADD COLUMN replacement_event_id INT NULL AFTER replacement_deadline_at');
+    }
+
+    foreach ([
+        'replacement_revoked_at' => 'DATETIME NULL',
+        'replacement_revoked_by_coach_id' => 'INT NULL',
+        'replacement_revocation_reason' => 'VARCHAR(1000) NULL',
+    ] as $column => $definition) {
+        $auditColumnStmt = $pdo->query('SHOW COLUMNS FROM coach_calendar_event_cancellations LIKE ' . $pdo->quote($column));
+        if (!$auditColumnStmt->fetch()) {
+            $pdo->exec('ALTER TABLE coach_calendar_event_cancellations ADD COLUMN `' . $column . '` ' . $definition);
+        }
     }
 
     $stmtCancelReplacementIdx = $pdo->query("SHOW INDEX FROM coach_calendar_event_cancellations WHERE Key_name = 'idx_calendar_cancel_replacement_required'");

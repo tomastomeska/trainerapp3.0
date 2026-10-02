@@ -734,6 +734,9 @@ renderHeader('Kalendář', false, true);
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <h2 class="mb-0"><i class="fas fa-calendar-alt me-2 text-warning"></i>Kalendář trenéra</h2>
     <div class="calendar-top-actions">
+        <a href="<?= BASE_URL ?>/calendar_replacements.php" class="btn btn-outline-dark btn-sm">
+            <i class="fas fa-calendar-check me-1"></i>Náhrady
+        </a>
         <a href="<?= BASE_URL ?>/dashboard.php" class="btn btn-outline-secondary btn-sm">
             <i class="fas fa-house me-1"></i>Domů
         </a>
