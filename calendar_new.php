@@ -374,6 +374,7 @@ $venuesJson = json_encode($venues, JSON_UNESCAPED_UNICODE);
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="<?= BASE_URL ?>/assets/js/calendar-replacement-choice.js"></script>
     <script>
         const athletes = <?= $athletesJson ?>;
         const venues = <?= $venuesJson ?>;
@@ -639,8 +640,9 @@ $venuesJson = json_encode($venues, JSON_UNESCAPED_UNICODE);
 
             const hasAthlete = Number(currentEvent?.athlete_id || 0) > 0 || Number(currentEvent?.second_athlete_id || 0) > 0;
             const replacementMode = hasAthlete && (currentEvent?.title_type || 'training') === 'training'
-                ? (confirm('Dát sportovci možnost náhrady do 14 kalendářních dní od termínu?\n\nOK = nabídnout náhradu\nStorno = bez náhrady') ? '14_days' : 'none')
+                ? await askCalendarReplacementChoice()
                 : 'none';
+            if (replacementMode === null) return;
 
             try {
                 const r = await fetch('/api/calendar_delete_event.php', {

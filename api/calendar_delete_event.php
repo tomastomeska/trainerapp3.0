@@ -424,6 +424,8 @@ echo json_encode([
     'message' => $paidAffectedCount > 0
         ? ($replacementMode === '14_days'
             ? 'Uhrazený termín byl zrušen. Náhradu rezervujte do 14 kalendářních dní; nebude účtována znovu.'
-            : 'Byl zrušen již uhrazený termín. Částka bude započtena do další fakturace.')
-        : 'Událost byla zrušena.',
+            : 'Uhrazený termín byl zrušen bez náhrady. Nárok na náhradní slot nevznikl. Původní uhrazená výzva zůstává beze změny; nevzniká zápočet do další fakturace.')
+        : ($replacementMode === '14_days'
+            ? 'Událost byla zrušena s možností náhrady do 14 kalendářních dní od původního termínu.'
+            : 'Událost byla zrušena bez náhrady. Nárok na náhradní slot nevznikl.'),
 ]);

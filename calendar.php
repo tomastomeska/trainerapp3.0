@@ -1430,6 +1430,7 @@ renderHeader('Kalendář', false, true);
 </div>
 
 <script src="https://unpkg.com/@daypilot/daypilot-lite-javascript@5.6.0/daypilot-javascript.min.js"></script>
+<script src="<?= BASE_URL ?>/assets/js/calendar-replacement-choice.js"></script>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
@@ -3430,8 +3431,9 @@ document.addEventListener('DOMContentLoaded', () => {
             body.delete_scope = 'single';
             const hasAthlete = Number(canceledEvent?.athlete_id || 0) > 0 || Number(canceledEvent?.second_athlete_id || 0) > 0;
             body.replacement_mode = hasAthlete && (canceledEvent?.title_type || 'training') === 'training'
-                ? (confirm('Dát sportovci možnost náhrady do 14 kalendářních dní od termínu?\n\nOK = nabídnout náhradu\nStorno = bez náhrady') ? '14_days' : 'none')
+                ? await askCalendarReplacementChoice()
                 : 'none';
+            if (body.replacement_mode === null) return;
         }
         const payload = approveBtn
             ? await postCalendarWithBillingChoice('<?= BASE_URL ?>/api/calendar_approve_event.php', body)
@@ -3535,8 +3537,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedTitleType = getSelectedEventTitleType();
         const hasAthlete = Number(eventAthleteInput.value || 0) > 0 || Number(eventSecondAthleteInput.value || 0) > 0;
         const replacementMode = hasAthlete && selectedTitleType === 'training'
-            ? (confirm('Chcete sportovci dát možnost náhradního termínu? Lhůta bude 14 kalendářních dní od zrušeného termínu.\n\nOK = nabídnout náhradu\nStorno = zrušit bez náhrady') ? '14_days' : 'none')
+            ? await askCalendarReplacementChoice()
             : 'none';
+        if (replacementMode === null) return;
 
         const payload = await fetchJson('<?= BASE_URL ?>/api/calendar_delete_event.php', {
             method: 'POST',
