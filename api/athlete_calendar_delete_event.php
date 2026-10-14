@@ -150,7 +150,8 @@ if ($hasPayments) {
 
 $coachMakeupDeadlineDays = 14;
 $requiresReplacement = (string)($event['approval_status'] ?? '') === 'approved'
-    && (string)($event['title_type'] ?? 'training') === 'training';
+    && (string)($event['title_type'] ?? 'training') === 'training'
+    && in_array($paymentStatus, ['pending', 'paid'], true);
 
 $replacementDeadlineAtSql = null;
 if ($requiresReplacement && !empty($event['starts_at'])) {

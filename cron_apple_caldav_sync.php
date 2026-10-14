@@ -37,7 +37,7 @@ header('Content-Type: application/json; charset=utf-8');
 $limitRaw = isset($_GET['limit']) ? (int)$_GET['limit'] : 8;
 $limit = max(1, min(20, $limitRaw));
 
-$lock = acquireCronLock('calendar_workers');
+$lock = acquireCronLock('apple_caldav_workers');
 if (empty($lock['acquired'])) {
     echo json_encode([
         'success' => true,

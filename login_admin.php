@@ -289,6 +289,9 @@ $pending2fa = !empty($_SESSION['pending_superadmin_id']);
     <p class="text-center mt-3 small admin-auth-back">
         <a href="<?= $adminBase ?>/login.php" class="admin-auth-back text-decoration-none">← Zpět na přihlášení trenérů</a>
     </p>
+    <p class="text-center mt-2 small">
+        <a href="<?= h(BASE_URL) ?>/privacy_policy.php" class="text-decoration-none admin-auth-back">Zásady ochrany soukromí</a>
+    </p>
 </div>
 </body>
 </html>

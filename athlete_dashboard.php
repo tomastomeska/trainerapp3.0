@@ -258,6 +258,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . '/athlete_dashboard.php');
     }
 
+    if ($action === 'request_account_deletion') {
+        $deleteReason = trim((string)($_POST['delete_reason'] ?? ''));
+        $deleteReason = $deleteReason !== '' ? $deleteReason : 'Uživatel požádal o smazání účtu a přidružených dat bez doplňujícího textu.';
+        $description = "Žádost o smazání účtu a přidružených dat.\n\n"
+            . "Typ účtu: sportovec\n"
+            . "Jméno: " . trim((string)($athlete['first_name'] ?? '') . ' ' . (string)($athlete['last_name'] ?? '')) . "\n"
+            . "E-mail: " . (string)($athlete['email'] ?? '') . "\n"
+            . "ID účtu: " . (string)$athleteId . "\n"
+            . "Důvod: " . $deleteReason . "\n";
+        $ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? ($_SERVER['REMOTE_ADDR'] ?? '');
+        if (str_contains((string)$ip, ',')) {
+            $ip = trim(explode(',', (string)$ip)[0]);
+        }
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO support_tickets (
+                reporter_type, coach_id, athlete_id, reporter_name, reporter_email,
+                subject, issue_type, description, page_url,
+                ip_address, user_agent, status, created_at, updated_at
+             ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, "new", NOW(), NOW())'
+        );
+        $stmt->execute([
+            'athlete',
+            $athleteId,
+            trim((string)($athlete['first_name'] ?? '') . ' ' . (string)($athlete['last_name'] ?? '')) ?: 'Sportovec',
+            (string)($athlete['email'] ?? ''),
+            'Žádost o smazání účtu',
+            'Smazání účtu',
+            $description,
+            BASE_URL . '/athlete_dashboard.php',
+            mb_substr((string)$ip, 0, 45),
+            mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 1000),
+        ]);
+
+        flash('success', 'Žádost o smazání účtu byla odeslána. Správce ji zpracuje a údaje budou odstraněny v souladu s pravidly ochrany dat.');
+        redirect(BASE_URL . '/athlete_dashboard.php');
+    }
+
     if ($action === 'save_weight' || $action === 'update_weight') {
         $weightInput = str_replace(',', '.', trim((string)($_POST['weight_kg'] ?? '')));
         $measuredAt = preg_replace('/[^0-9\-]/', '', (string)($_POST['measured_at'] ?? date('Y-m-d')));
@@ -391,6 +429,7 @@ if ($hasCancellationTable
     && athleteDashboardPaymentColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_required')
     && athleteDashboardPaymentColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_event_id')
     && athleteDashboardPaymentColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_deadline_at')
+    && athleteDashboardPaymentColumnExists($pdo, 'coach_calendar_event_cancellations', 'payment_status_snapshot')
 ) {
     $replacementStmt = $pdo->prepare(
         'SELECT id, replacement_deadline_at
@@ -399,6 +438,7 @@ if ($hasCancellationTable
            AND athlete_id = ?
            AND canceled_by IN ("athlete", "coach")
            AND replacement_required = 1
+           AND payment_status_snapshot IN ("pending", "paid")
            AND replacement_deadline_at > NOW()
            AND replacement_event_id IS NULL
          ORDER BY replacement_deadline_at ASC, id ASC'
@@ -723,6 +763,7 @@ try {
             && athleteDashboardPaymentColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_required')
             && athleteDashboardPaymentColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_event_id')
             && athleteDashboardPaymentColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_deadline_at')
+            && athleteDashboardPaymentColumnExists($pdo, 'coach_calendar_event_cancellations', 'payment_status_snapshot')
         ) {
             $forfeitedStmt = $pdo->prepare(
                 "SELECT billing_month,
@@ -731,6 +772,7 @@ try {
                  WHERE coach_id = ?
                    AND athlete_id = ?
                    AND replacement_required = 1
+                   AND payment_status_snapshot IN ('pending', 'paid')
                    AND replacement_event_id IS NULL
                    AND replacement_deadline_at IS NOT NULL
                    AND replacement_deadline_at < NOW()
@@ -1209,6 +1251,30 @@ renderAthleteHeader('Profil sportovce', false, true);
         <span class="quick-tile__label"><i class="fas fa-file-contract me-1"></i>Podmínky</span>
         <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
     </a>
+</div>
+
+<div class="card border-danger shadow-sm mb-4">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+            <div>
+                <h5 class="text-danger mb-2"><i class="fas fa-user-slash me-2"></i>Smazání účtu a přidružených dat</h5>
+                <p class="mb-0 text-muted">
+                    Požádejte o smazání svého účtu. Systém odstraní profil, přístupová data a související záznamy v rozsahu aplikace.
+                    Zákonné účtování a evidenční záznamy mohou být uchovány podle právních povinností.
+                </p>
+            </div>
+            <form method="post" onsubmit="return confirm('Opravdu chcete požádat o smazání svého účtu a přidružených dat? Tato akce je nevratná.');">
+                <?= csrfField() ?>
+                <input type="hidden" name="action" value="request_account_deletion">
+                <div class="d-flex gap-2 flex-wrap align-items-center">
+                    <textarea name="delete_reason" class="form-control" rows="2" maxlength="1000" placeholder="Volitelný důvod žádosti"></textarea>
+                    <button type="submit" class="btn btn-outline-danger">
+                        <i class="fas fa-user-slash me-1"></i>Požádat o smazání účtu
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 
 <div class="d-md-none mb-4">

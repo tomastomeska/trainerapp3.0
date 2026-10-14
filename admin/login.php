@@ -98,6 +98,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <a href="mailto:info@reservio.online?subject=Zpr%C3%A1va%20z%20TrainerApp" class="text-warning text-decoration-none">
                 <i class="fas fa-envelope me-1"></i>info@reservio.online
             </a>
+            &nbsp;·&nbsp;
+            <a href="<?= h(BASE_URL) ?>/privacy_policy.php" class="text-warning text-decoration-none">Zásady ochrany soukromí</a>
         </div>
     </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>

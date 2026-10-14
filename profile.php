@@ -113,6 +113,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Při prvním přihlášení je nutné nejdříve změnit heslo.';
         }
 
+        if ($error === null && $action === 'request_account_deletion') {
+            $deleteReason = trim((string)($_POST['delete_reason'] ?? ''));
+            $deleteReason = $deleteReason !== '' ? $deleteReason : 'Uživatel požádal o smazání účtu a přidružených dat bez doplňujícího textu.';
+            $description = "Žádost o smazání účtu a přidružených dat.\n\n"
+                . "Typ účtu: trenér\n"
+                . "Jméno: " . (string)($coach['name'] ?? $coach['username'] ?? '') . "\n"
+                . "E-mail: " . (string)($coach['email'] ?? '') . "\n"
+                . "ID účtu: " . (string)$coachId . "\n"
+                . "Důvod: " . $deleteReason . "\n";
+            $ip = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? ($_SERVER['REMOTE_ADDR'] ?? '');
+            if (str_contains((string)$ip, ',')) {
+                $ip = trim(explode(',', (string)$ip)[0]);
+            }
+
+            $stmt = $pdo->prepare(
+                'INSERT INTO support_tickets (
+                    reporter_type, coach_id, athlete_id, reporter_name, reporter_email,
+                    subject, issue_type, description, page_url,
+                    ip_address, user_agent, status, created_at, updated_at
+                 ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, "new", NOW(), NOW())'
+            );
+            $stmt->execute([
+                'coach',
+                $coachId,
+                (string)($coach['name'] ?? $coach['username'] ?? 'Trenér'),
+                (string)($coach['email'] ?? ''),
+                'Žádost o smazání účtu',
+                'Smazání účtu',
+                $description,
+                BASE_URL . '/profile.php',
+                mb_substr((string)$ip, 0, 45),
+                mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 1000),
+            ]);
+
+            flash('success', 'Žádost o smazání účtu byla odeslána. Správce ji zpracuje a údaje budou odstraněny v souladu s pravidly ochrany dat.');
+            redirect(BASE_URL . '/profile.php');
+        }
+
         if ($error === null && $action === 'update_profile') {
             $name  = trim($_POST['name'] ?? '');
             $email = trim($_POST['email'] ?? '');
@@ -499,6 +537,30 @@ renderHeader('Můj profil', false, true);
 <?php if ($error): ?>
 <div class="alert alert-danger"><?= h($error) ?></div>
 <?php endif; ?>
+
+<div class="card border-danger shadow-sm mb-4">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+            <div>
+                <h5 class="text-danger mb-2"><i class="fas fa-user-slash me-2"></i>Smazání účtu a přidružených dat</h5>
+                <p class="mb-0 text-muted">
+                    Požádejte o smazání svého účtu. Systém odstraní profil, přístupová data a související záznamy v rozsahu aplikace.
+                    Zákonné účtování a evidenční záznamy mohou být uchovány podle právních povinností.
+                </p>
+            </div>
+            <form method="post" onsubmit="return confirm('Opravdu chcete požádat o smazání svého účtu a přidružených dat? Tato akce je nevratná.');">
+                <?= csrfField() ?>
+                <input type="hidden" name="action" value="request_account_deletion">
+                <div class="d-flex gap-2 flex-wrap align-items-center">
+                    <textarea name="delete_reason" class="form-control" rows="2" maxlength="1000" placeholder="Volitelný důvod žádosti"></textarea>
+                    <button type="submit" class="btn btn-outline-danger">
+                        <i class="fas fa-user-slash me-1"></i>Požádat o smazání účtu
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
 <div class="row g-3 mb-4">
     <div class="col-sm-6 col-xl-3">

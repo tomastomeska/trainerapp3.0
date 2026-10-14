@@ -116,7 +116,8 @@ if (athleteMakeupHintTableExists($pdo, 'coach_calendar_event_cancellations')
     && athleteMakeupHintColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_required')
     && athleteMakeupHintColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_deadline_at')
     && athleteMakeupHintColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_event_id')
-    && athleteMakeupHintColumnExists($pdo, 'coach_calendar_event_cancellations', 'second_athlete_id')) {
+    && athleteMakeupHintColumnExists($pdo, 'coach_calendar_event_cancellations', 'second_athlete_id')
+    && athleteMakeupHintColumnExists($pdo, 'coach_calendar_event_cancellations', 'payment_status_snapshot')) {
     $replacementBillingMonthSelect = athleteMakeupHintColumnExists($pdo, 'coach_calendar_event_cancellations', 'billing_month')
         ? 'billing_month'
         : 'NULL AS billing_month';
@@ -134,6 +135,7 @@ if (athleteMakeupHintTableExists($pdo, 'coach_calendar_event_cancellations')
            AND (c.athlete_id = ? OR c.second_athlete_id = ?)
            AND c.canceled_by IN ('athlete', 'coach')
            AND c.replacement_required = 1
+           AND c.payment_status_snapshot IN ('pending', 'paid')
            AND c.replacement_deadline_at > NOW()
          AND c.replacement_event_id IS NULL
          ORDER BY c.replacement_deadline_at ASC, c.id ASC"

@@ -1176,14 +1176,18 @@ renderHeader('Dashboard', false, true);
         align-items: center;
         justify-content: center;
         padding: 16px;
+        pointer-events: auto;
     }
     .force-password-card {
+        position: relative;
+        z-index: 2001;
         width: 100%;
         max-width: 520px;
         background: #fff;
         border-radius: 12px;
         box-shadow: 0 20px 40px rgba(0, 0, 0, 0.22);
         padding: 20px;
+        pointer-events: auto;
     }
 </style>
 <div class="force-password-overlay" role="dialog" aria-modal="true" aria-labelledby="forcePasswordChangeTitle">

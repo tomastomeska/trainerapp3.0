@@ -2276,7 +2276,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const ok = confirm('Opravdu chcete zrušit tuto událost? Náhradu musíte vybrat do 14 kalendářních dní od jejího termínu.');
+        const ok = confirm('Opravdu chcete zrušit tuto událost? Pokud je součástí vystavené výzvy k platbě, bude potřeba vybrat náhradu do 14 kalendářních dní.');
         if (!ok) {
             return;
         }

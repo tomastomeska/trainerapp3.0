@@ -1029,6 +1029,8 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
                 Vytvořil <strong>Tomáš Tomeška</strong>
                 &nbsp;·&nbsp;
                 <a href="mailto:info@reservio.online?subject=Zpr%C3%A1va%20z%20TrainerApp">Kontaktujte nás</a>
+                &nbsp;·&nbsp;
+                <a href="<?= h(BASE_URL) ?>/privacy_policy.php">Zásady ochrany soukromí</a>
             </div>
         </div>
     </div>
