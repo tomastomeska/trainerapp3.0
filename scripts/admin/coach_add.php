@@ -45,13 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     function coachEmailAlreadyUsed(PDO $pdo, string $email): bool {
         $stmtCoach = $pdo->prepare('SELECT id FROM coaches WHERE LOWER(email) = LOWER(?) LIMIT 1');
         $stmtCoach->execute([$email]);
-        if ($stmtCoach->fetch()) {
-            return true;
-        }
-
-        $stmtAthlete = $pdo->prepare('SELECT id FROM athletes WHERE LOWER(email) = LOWER(?) LIMIT 1');
-        $stmtAthlete->execute([$email]);
-        return (bool)$stmtAthlete->fetch();
+        return (bool)$stmtCoach->fetch();
     }
         $sourceTicketId = intParam($_POST, 'source_ticket_id');
 

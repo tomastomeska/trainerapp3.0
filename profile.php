@@ -538,23 +538,22 @@ renderHeader('Můj profil', false, true);
 <div class="alert alert-danger"><?= h($error) ?></div>
 <?php endif; ?>
 
-<div class="card border-danger shadow-sm mb-4">
-    <div class="card-body">
-        <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
-            <div>
-                <h5 class="text-danger mb-2"><i class="fas fa-user-slash me-2"></i>Smazání účtu a přidružených dat</h5>
-                <p class="mb-0 text-muted">
-                    Požádejte o smazání svého účtu. Systém odstraní profil, přístupová data a související záznamy v rozsahu aplikace.
-                    Zákonné účtování a evidenční záznamy mohou být uchovány podle právních povinností.
-                </p>
-            </div>
+<div class="mb-4">
+    <button class="btn btn-outline-danger btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#coachAccountDeletionForm" aria-expanded="false" aria-controls="coachAccountDeletionForm">
+        <i class="fas fa-user-slash me-1"></i>Požádat o smazání účtu
+    </button>
+    <div class="collapse mt-2" id="coachAccountDeletionForm">
+        <div class="border border-danger rounded p-3">
+            <p class="small text-muted mb-3">
+                Systém odstraní profil, přístupová data a související záznamy v rozsahu aplikace. Zákonné účetní a evidenční záznamy mohou být uchovány podle právních povinností.
+            </p>
             <form method="post" onsubmit="return confirm('Opravdu chcete požádat o smazání svého účtu a přidružených dat? Tato akce je nevratná.');">
                 <?= csrfField() ?>
                 <input type="hidden" name="action" value="request_account_deletion">
-                <div class="d-flex gap-2 flex-wrap align-items-center">
+                <div class="d-flex gap-2 flex-wrap align-items-start">
                     <textarea name="delete_reason" class="form-control" rows="2" maxlength="1000" placeholder="Volitelný důvod žádosti"></textarea>
                     <button type="submit" class="btn btn-outline-danger">
-                        <i class="fas fa-user-slash me-1"></i>Požádat o smazání účtu
+                        <i class="fas fa-user-slash me-1"></i>Odeslat žádost
                     </button>
                 </div>
             </form>
