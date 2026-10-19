@@ -135,6 +135,16 @@ renderAdminHeader('Návod pro SuperAdmin');
             <li>Při řešení podpory kontrolujte vazbu sportovec-trenér a historii aktivit.</li>
             <li>Zásahy do účtu vždy dělejte tak, aby byla zachována auditní stopa.</li>
         </ol>
+        <h6 class="fw-bold mt-3">Hromadný import sportovců z Excelu</h6>
+        <ol>
+            <li>Otevřete <a href="<?= BASE_URL ?>/admin/athlete_import.php">Import sportovců</a> a vyberte trenéra. Modul je dostupný i ze seznamu sportovců a přehledu sportovců trenéra.</li>
+            <li>Stáhněte českou šablonu .xlsx a předejte ji trenérovi. Na listu Sportovci se vyplňují údaje od řádku 6; list Návod obsahuje pokyny. Hlavičku a ID trenéra neměňte.</li>
+            <li>Povinné jsou jméno, příjmení a datum narození (dd.mm.rrrr). Volitelné jsou pohlaví, telefon, e-mail, sazba za trénink, sazba za párový trénink a poznámky. Sazby uvádějte bez Kč, nejvýše na dvě desetinná místa. Nepoužívejte vzorce.</li>
+            <li>Nahrajte vyplněný soubor pro stejného trenéra (nejvýše 1000 sportovců a 5 MB), zkontrolujte náhled a opravte všechny případné chyby v souboru.</li>
+            <li>Potvrďte import do 30 minut. Duplicity podle jména, příjmení a data narození u daného trenéra se přeskočí, existující údaje se nemění. Při chybě ukládání se celý import vrátí zpět.</li>
+            <li>Novým sportovcům vzniknou také složky v galerii a videích. Přístupy do aplikace se neaktivují a e-maily se neodesílají; přístup můžete připravit později v sekci Sportovci.</li>
+        </ol>
+        <p class="small text-muted mb-0">Technické požadavky: PHP rozšíření zip, dom a mbstring, zapisovatelný dočasný adresář, limit nahrávání alespoň 5 MB (post_max_size musí pokrýt i režii formuláře). Import využívá stávající tabulky sportovců, galerie a videí, které musí podporovat transakce.</p>
     </div>
 </div>
 

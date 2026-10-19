@@ -244,9 +244,14 @@ renderAdminHeader('Sportovci');
         </h4>
         <div class="text-muted small">Přehled všech registrovaných sportovců napříč trenéry, včetně přístupů do aplikace.</div>
     </div>
-    <a href="<?= BASE_URL ?>/admin/athlete_add.php" class="btn fw-bold" style="background:#7c3aed;color:#fff;border:none">
-        <i class="fas fa-user-plus me-1"></i>Přidat sportovce za trenéra
-    </a>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="<?= BASE_URL ?>/admin/athlete_import.php<?= $coachFilter > 0 ? '?coach_id=' . $coachFilter : '' ?>" class="btn btn-outline-success">
+            <i class="fas fa-file-excel me-1"></i>Hromadný import
+        </a>
+        <a href="<?= BASE_URL ?>/admin/athlete_add.php" class="btn fw-bold" style="background:#7c3aed;color:#fff;border:none">
+            <i class="fas fa-user-plus me-1"></i>Přidat sportovce za trenéra
+        </a>
+    </div>
 </div>
 
 <div class="row g-3 mb-4">

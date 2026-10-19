@@ -106,6 +106,9 @@ renderAdminHeader('Sportovci trenéra');
         </h4>
     </div>
     <div class="small text-muted">
+        <a href="<?= BASE_URL ?>/admin/athlete_import.php?coach_id=<?= $coachId ?>" class="btn btn-outline-success btn-sm me-2">
+            <i class="fas fa-file-excel me-1"></i>Import sportovců
+        </a>
         Trenér: @<?= h((string)$coach['username']) ?>
         <?php if (!empty($coach['email'])): ?>
             · <a href="mailto:<?= h((string)$coach['email']) ?>"><?= h((string)$coach['email']) ?></a>

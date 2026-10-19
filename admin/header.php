@@ -91,6 +91,10 @@ function renderAdminHeader(string $title = ''): void {
 				   class="nav-link <?= in_array(basename($_SERVER['PHP_SELF']), ['athletes.php','athlete_add.php','athlete_edit.php','athlete_delete.php']) ? 'active' : '' ?>">
 					<i class="fas fa-users me-2"></i>Sportovci
 				</a>
+				<a href="<?= BASE_URL ?>/admin/athlete_import.php"
+				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'athlete_import.php' ? 'active' : '' ?>">
+					<i class="fas fa-file-excel me-2"></i>Import sportovců
+				</a>
 				<a href="<?= BASE_URL ?>/admin/exercises.php"
 				   class="nav-link <?= in_array(basename($_SERVER['PHP_SELF']), ['exercises.php','exercise_export.php','exercise_import.php']) ? 'active' : '' ?>">
 					<i class="fas fa-globe me-2"></i>Globální cviky
