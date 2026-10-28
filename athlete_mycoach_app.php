@@ -57,7 +57,7 @@ require_once __DIR__ . '/includes/header.php';
 renderHeader('MyCoach');
 ?>
 <link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/mycoach-app.css?v=20260813">
-<body class="mycoach-app-theme">
+<script>document.body.classList.add('mycoach-app-theme');</script>
 
 <?php if (!$canAccess): ?>
   <!-- ═══════════════════ PAYWALL ═══════════════════ -->

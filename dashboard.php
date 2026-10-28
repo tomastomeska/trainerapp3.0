@@ -406,6 +406,9 @@ if ($firstTomorrowEvent) {
     $firstTomorrowTime = (new DateTimeImmutable($firstTomorrowEvent['starts_at']))->format('H:i');
 }
 
+require __DIR__ . '/includes/dashboard_new.php';
+return;
+
 renderHeader('Dashboard', false, true);
 ?>
 

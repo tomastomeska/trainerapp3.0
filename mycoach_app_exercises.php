@@ -7,6 +7,6 @@ $appUrl = BASE_URL . '/mycoach_app.php';
 require_once __DIR__ . '/includes/header.php';
 renderHeader('MyCoach – Encyklopedie cviků');
 ?>
-<body class="mycoach-app-theme">
+<script>document.body.classList.add('mycoach-app-theme');</script>
 <?php require __DIR__ . '/includes/mycoach_app_exercises_body.php'; ?>
 <?php renderFooter(); ?>

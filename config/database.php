@@ -116,6 +116,9 @@ function getDB(): PDO {
 }
 
 function ensureSchemaUpgrades(PDO $pdo): void {
+    require_once __DIR__ . '/../includes/dashboard_layout.php';
+    dashboardLayoutEnsureSchema($pdo);
+
     $pdo->exec(" 
         CREATE TABLE IF NOT EXISTS `app_event_log` (
             `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

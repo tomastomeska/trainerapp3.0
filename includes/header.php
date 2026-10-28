@@ -2,9 +2,19 @@
 // includes/header.php
 // Volá se: renderHeader('Název stránky');
 require_once __DIR__ . '/support_widget.php';
+require_once __DIR__ . '/dashboard_layout.php';
 
-function renderHeader(string $title = '', bool $withCharts = false, bool $compactNav = false): void {
+function renderHeader(string $title = '', bool $withCharts = false, bool $compactNav = false, ?bool $sidebarNav = null): void {
+    if (!isLoggedIn() && athleteIsLoggedIn() && ($sidebarNav ?? true)) {
+        require_once __DIR__ . '/athlete_header.php';
+        renderAthleteHeader($title, $withCharts, $compactNav, true);
+        return;
+    }
     $coach   = getCurrentCoach();
+    $sidebarNav = $sidebarNav ?? (bool)$coach;
+    if ($sidebarNav) {
+        $compactNav = true;
+    }
     $flash   = getFlash();
     $appName = APP_NAME;
     $fullTitle = $title ? "$title – $appName" : $appName;
@@ -55,6 +65,23 @@ function renderHeader(string $title = '', bool $withCharts = false, bool $compac
             vertical-align: bottom;
         }
 
+        @media (min-width: 992px) {
+            .coach-navbar .navbar-collapse {
+                flex-wrap: wrap;
+                min-width: 0;
+            }
+
+            .coach-navbar .navbar-collapse > .navbar-nav:first-child {
+                flex-wrap: wrap;
+            }
+
+            .coach-navbar .navbar-collapse > .navbar-nav:last-child {
+                flex-direction: row;
+                flex-wrap: wrap;
+                align-items: center;
+            }
+        }
+
         @media (min-width: 1600px) {
             .coach-navbar .navbar-collapse {
                 display: flex !important;
@@ -64,7 +91,7 @@ function renderHeader(string $title = '', bool $withCharts = false, bool $compac
 
             .coach-navbar .navbar-collapse > .navbar-nav:first-child {
                 flex: 0 1 auto;
-                min-width: max-content;
+                min-width: 0;
                 margin-right: 0 !important;
                 margin-bottom: 0 !important;
                 justify-content: center;
@@ -128,11 +155,16 @@ function renderHeader(string $title = '', bool $withCharts = false, bool $compac
             }
         }
     </style>
+    <?php if ($sidebarNav): ?>
+    <link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/dashboard-sidebar.css?v=7">
+    <script src="<?= BASE_URL ?>/assets/js/dashboard-sidebar.js?v=3" defer></script>
+    <?php endif; ?>
     <?php if ($withCharts): ?>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <?php endif; ?>
 </head>
-<body>
+<body<?= $sidebarNav ? ' class="' . h(dashboardSidebarBodyClass('coach', (int)$coach['id'])) . '"' : '' ?>>
+<?php if ($sidebarNav) renderDashboardSidebarToggle('coach', (int)$coach['id']); ?>
 
 <?php
 $unreadMsgCount = 0;
@@ -202,7 +234,7 @@ if ($coach) {
 }
 ?>
 
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm sticky-top coach-navbar<?= $compactNav ? ' coach-navbar-compact-mobile' : '' ?>">
+<nav<?= $sidebarNav ? ' id="dashboard-sidebar-navigation"' : '' ?> aria-label="Hlavní navigace" class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm sticky-top coach-navbar<?= $compactNav ? ' coach-navbar-compact-mobile' : '' ?><?= $sidebarNav ? ' dashboard-sidebar' : '' ?>">
     <div class="container-fluid px-4">
         <a class="navbar-brand fw-bold text-warning" href="<?= BASE_URL ?>/dashboard.php">
             <i class="fas fa-dumbbell me-2"></i><?= h($appName) ?>
@@ -287,6 +319,7 @@ if ($coach) {
                 </a>
                 <a class="nav-link d-inline-flex align-items-center" href="<?= BASE_URL ?>/infokanal.php" title="Infokanál" aria-label="Infokanál">
                     <i class="fas fa-lightbulb" style="font-size:1.1rem"></i>
+                    <?php if ($sidebarNav): ?><span class="ms-2">Infokanál</span><?php endif; ?>
                     <?php if ($unreadInfoCount > 0): ?>
                     <span class="badge rounded-pill bg-danger ms-1 top-badge">
                         <?= $unreadInfoCount ?>
@@ -296,9 +329,15 @@ if ($coach) {
                 <a class="nav-link text-secondary" href="<?= BASE_URL ?>/profile.php">
                     <i class="fas fa-user-tie me-1"></i><span class="profile-link"><?= h($coach['name'] ?: $coach['username']) ?></span>
                 </a>
+                <a class="nav-link" href="<?= BASE_URL ?>/dashboard.php"><i class="fas fa-house me-1"></i>Domů</a>
                 <a class="nav-link text-danger" href="<?= BASE_URL ?>/logout.php">
                     <i class="fas fa-sign-out-alt me-1"></i>Odhlásit
                 </a>
+            </div>
+            <?php elseif (athleteIsLoggedIn()): ?>
+            <div class="navbar-nav">
+                <a class="nav-link" href="<?= BASE_URL ?>/athlete_dashboard.php"><i class="fas fa-house me-1"></i>Domů</a>
+                <a class="nav-link text-danger" href="<?= BASE_URL ?>/logout.php"><i class="fas fa-sign-out-alt me-1"></i>Odhlásit</a>
             </div>
             <?php endif; ?>
         </div>
@@ -401,7 +440,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <?php if ($compactNav && $coach): ?>
 <div class="d-flex coach-compact-topbar justify-content-between align-items-center gap-2 flex-wrap mb-3">
     <div class="fw-bold fs-5"><?= h($title ?: 'Přehled') ?></div>
-    <div class="d-flex align-items-center gap-2">
+    <div class="d-flex align-items-center gap-2 flex-wrap">
         <a href="<?= BASE_URL ?>/dashboard.php" class="btn btn-outline-secondary btn-sm fw-bold">
             <i class="fas fa-house me-1"></i>Domů
         </a>
@@ -498,6 +537,11 @@ document.addEventListener('DOMContentLoaded', function () {
 }
 
 function renderFooter(): void {
+    if (!isLoggedIn() && athleteIsLoggedIn()) {
+        require_once __DIR__ . '/athlete_header.php';
+        renderAthleteFooter();
+        return;
+    }
     $appName = APP_NAME;
     ?>
 </div><!-- /container-fluid -->

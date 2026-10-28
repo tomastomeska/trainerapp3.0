@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/header.php';
 
 requireLogin();
 
@@ -21,6 +22,8 @@ $venues = array_values(array_filter(getTrainingVenuesForCoach($coachId), fn($row
 $athletesJson = json_encode($athletes);
 $venuesJson = json_encode($venues, JSON_UNESCAPED_UNICODE);
 ?>
+<?php $sidebarCalendar = true; ?>
+<?php if (!$sidebarCalendar): ?>
 <!DOCTYPE html>
 <html lang="cs">
 <head>
@@ -29,6 +32,9 @@ $venuesJson = json_encode($venues, JSON_UNESCAPED_UNICODE);
     <title>Kalendář</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<?php else: ?>
+<?php renderHeader('Kalendář', false, true); ?>
+<?php endif; ?>
     <style>
         :root {
             --time-width: 60px;
@@ -45,7 +51,7 @@ $venuesJson = json_encode($venues, JSON_UNESCAPED_UNICODE);
             background: #f5f5f5;
         }
 
-        .navbar {
+        .navbar:not(.dashboard-sidebar) {
             background: white !important;
             border-bottom: 1px solid #ddd;
             box-shadow: 0 1px 3px rgba(0,0,0,0.05);
@@ -273,9 +279,10 @@ $venuesJson = json_encode($venues, JSON_UNESCAPED_UNICODE);
             }
         }
     </style>
+<?php if (!$sidebarCalendar): ?>
 </head>
 <body>
-    <?php include 'includes/header.php'; ?>
+<?php endif; ?>
 
     <div class="calendar-header">
         <h1><i class="fas fa-calendar-alt me-2"></i>Kalendář</h1>
@@ -692,5 +699,6 @@ $venuesJson = json_encode($venues, JSON_UNESCAPED_UNICODE);
         renderDays();
         loadEvents();
     </script>
+<?php if ($sidebarCalendar): ?></div><?php endif; ?>
 </body>
 </html>

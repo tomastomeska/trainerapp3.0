@@ -2,6 +2,7 @@
 // athlete_chat_mobile.php – odlehčená mobilní stránka jen pro chat sportovce s trenérem a administrátorem (pro záložku/plochu na mobilu)
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/athlete_header.php';
 
 requireAthleteLogin();
 $athleteId = (int)getCurrentAthleteId();
@@ -120,6 +121,8 @@ if ($target === '') {
 
 $targetName = $target === 'coach' ? ($coachName !== '' ? $coachName : 'Trenér') : ($target === 'admin' ? 'Administrátor' : '');
 ?>
+<?php $sidebarChat = true; ?>
+<?php if (!$sidebarChat): ?>
 <!DOCTYPE html>
 <html lang="cs">
 <head>
@@ -130,6 +133,9 @@ $targetName = $target === 'coach' ? ($coachName !== '' ? $coachName : 'Trenér')
 <meta name="mobile-web-app-capable" content="yes">
 <title><?= $target !== '' ? h($targetName) : 'Zprávy' ?></title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<?php else: ?>
+<?php renderAthleteHeader('Zprávy', false, true); ?>
+<?php endif; ?>
 <style>
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; }
@@ -203,8 +209,12 @@ $targetName = $target === 'coach' ? ($coachName !== '' ? $coachName : 'Trenér')
         border: none; background: #0d6efd; color: #fff; padding: 6px 12px; border-radius: 8px; font-size: 13px; white-space: nowrap;
     }
 </style>
+<?php if (!$sidebarChat): ?>
 </head>
 <body>
+<?php else: ?>
+<script>document.body.classList.add('dashboard-standalone-chat');</script>
+<?php endif; ?>
 
 <?php if ($target !== ''): ?>
 <div class="topbar">
@@ -389,5 +399,9 @@ $targetName = $target === 'coach' ? ($coachName !== '' ? $coachName : 'Trenér')
 </script>
 <?php endif; ?>
 
+<?php if ($sidebarChat): ?>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<?php endif; ?>
 </body>
 </html>

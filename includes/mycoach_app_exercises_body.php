@@ -98,7 +98,7 @@ $diffOpts = [''=>'Vše','beginner'=>'Začátečník','intermediate'=>'Střední'
         <div class="mca-hero-sub"><?= count($exercises) ?> cviků</div>
       </div>
       <div class="d-flex align-items-center gap-2 flex-wrap">
-        <a href="<?= BASE_URL ?>/dashboard.php" class="mca-btn-outline" style="padding:.35rem .9rem;font-size:.8rem;">
+        <a href="<?= h(BASE_URL . ($userType === 'athlete' ? '/athlete_dashboard.php' : '/dashboard.php')) ?>" class="mca-btn-outline" style="padding:.35rem .9rem;font-size:.8rem;">
           <i class="fas fa-house me-1"></i>Domů
         </a>
         <a href="<?= BASE_URL ?>/logout.php" class="mca-btn-outline" style="padding:.35rem .9rem;font-size:.8rem; border-color:rgba(220,53,69,.45); color:#ff9aa2;">

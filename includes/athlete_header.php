@@ -1,8 +1,13 @@
 <?php
 require_once __DIR__ . '/support_widget.php';
+require_once __DIR__ . '/dashboard_layout.php';
 
-function renderAthleteHeader(string $title = '', bool $withCharts = false, bool $compactNav = false): void {
+function renderAthleteHeader(string $title = '', bool $withCharts = false, bool $compactNav = false, ?bool $sidebarNav = null): void {
     $athlete = getCurrentAthlete();
+    $sidebarNav = $sidebarNav ?? (bool)$athlete;
+    if ($sidebarNav) {
+        $compactNav = true;
+    }
     $flash = getFlash();
     $fullTitle = $title !== '' ? ($title . ' - ' . APP_NAME) : APP_NAME;
     $unread = 0;
@@ -82,14 +87,39 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
         .athlete-compact-topbar {
             display: flex !important;
         }
+
+        .athlete-navbar .nav-link {
+            white-space: nowrap;
+        }
+
+        @media (min-width: 992px) {
+            .athlete-navbar .navbar-collapse {
+                flex-wrap: wrap;
+                min-width: 0;
+            }
+
+            .athlete-navbar .navbar-nav {
+                flex-wrap: wrap;
+            }
+
+            .athlete-navbar .navbar-nav:last-child {
+                flex-direction: row;
+                align-items: center;
+            }
+        }
     </style>
+    <?php if ($sidebarNav): ?>
+    <link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/dashboard-sidebar.css?v=7">
+    <script src="<?= BASE_URL ?>/assets/js/dashboard-sidebar.js?v=3" defer></script>
+    <?php endif; ?>
     <?php if ($withCharts): ?>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <?php endif; ?>
 </head>
-<body>
-<?php if (!$compactNav): ?>
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm sticky-top">
+<body<?= $sidebarNav ? ' class="' . h(dashboardSidebarBodyClass('athlete', (int)$athlete['id'])) . '"' : '' ?>>
+<?php if ($sidebarNav) renderDashboardSidebarToggle('athlete', (int)$athlete['id']); ?>
+<?php if (!$compactNav || $sidebarNav): ?>
+<nav<?= $sidebarNav ? ' id="dashboard-sidebar-navigation"' : '' ?> aria-label="Hlavní navigace" class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm sticky-top athlete-navbar<?= $sidebarNav ? ' dashboard-sidebar' : '' ?>">
     <div class="container-fluid px-4">
         <a class="navbar-brand fw-bold text-warning" href="<?= BASE_URL ?>/athlete_dashboard.php">
             <i class="fas fa-dumbbell me-2"></i><?= h(APP_NAME) ?>
@@ -128,12 +158,14 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
             </ul>
             <div class="navbar-nav">
                 <a class="nav-link d-inline-flex align-items-center" href="<?= BASE_URL ?>/athlete_infokanal.php" title="Infokanál" aria-label="Infokanál"><i class="fas fa-lightbulb" style="font-size:1.1rem"></i>
+                    <?php if ($sidebarNav): ?><span class="ms-2">Infokanál</span><?php endif; ?>
                     <?php if ($unreadInfo > 0): ?>
                     <span class="badge rounded-pill bg-danger ms-1" style="font-size:.65rem"><?= $unreadInfo ?></span>
                     <?php endif; ?>
                 </a>
                 <?php if ($athlete): ?>
                 <span class="nav-link text-secondary"><i class="fas fa-user me-1"></i><?= h(trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name'])) ?></span>
+                <a class="nav-link" href="<?= BASE_URL ?>/athlete_dashboard.php"><i class="fas fa-house me-1"></i>Domů</a>
                 <?php endif; ?>
                 <a class="nav-link text-danger" href="<?= BASE_URL ?>/logout.php"><i class="fas fa-sign-out-alt me-1"></i>Odhlásit</a>
             </div>
@@ -152,7 +184,7 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
 <?php if ($compactNav && $athlete): ?>
 <div class="d-flex athlete-compact-topbar justify-content-between align-items-center gap-2 flex-wrap mb-3">
     <div class="fw-bold fs-5"><?= h($title !== '' ? $title : 'Přehled') ?></div>
-    <div class="d-flex align-items-center gap-2">
+    <div class="d-flex align-items-center gap-2 flex-wrap">
         <a href="<?= BASE_URL ?>/athlete_dashboard.php" class="btn btn-outline-secondary btn-sm fw-bold">
             <i class="fas fa-house me-1"></i>Domů
         </a>

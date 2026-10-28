@@ -1,0 +1,213 @@
+/* Shared by all opted-in pages; legacy navigation remains unchanged. */
+.dashboard-sidebar-controls {
+    display: none;
+}
+
+.dashboard-standalone-chat > .container-fluid {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    max-width: none;
+    padding: 0 !important;
+}
+
+.dashboard-standalone-chat .coach-compact-topbar,
+.dashboard-standalone-chat .athlete-compact-topbar {
+    padding: .5rem;
+}
+
+@media (min-width: 992px) {
+    body.dashboard-sidebar-layout {
+        padding-left: 256px;
+    }
+
+    body.dashboard-sidebar-layout.dashboard-sidebar-collapsed {
+        padding-left: 0;
+    }
+
+    .dashboard-sidebar-layout .dashboard-sidebar-controls {
+        display: block;
+        position: fixed;
+        top: 50%;
+        left: 240px;
+        transform: translateY(-50%);
+        z-index: 1031;
+    }
+
+    .dashboard-sidebar-layout .dashboard-sidebar-controls button {
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 48px;
+        padding: 0;
+        border: 1px solid #4b5563;
+        border-radius: 0 .75rem .75rem 0;
+        box-shadow: 2px 0 6px #0003;
+    }
+
+    .dashboard-sidebar-layout.dashboard-sidebar-collapsed .dashboard-sidebar-controls {
+        left: 0;
+    }
+
+    .dashboard-sidebar-layout.dashboard-sidebar-collapsed .dashboard-sidebar {
+        display: none;
+    }
+
+    .dashboard-sidebar-layout .dashboard-sidebar {
+        display: flex;
+        position: fixed;
+        inset: 0 auto 0 0;
+        width: 256px;
+        height: 100vh;
+        height: 100dvh;
+        padding: min(1.25rem, 2vh) .75rem;
+        overflow: hidden;
+        align-items: flex-start;
+        border-right: 1px solid #374151;
+        z-index: 1030;
+    }
+
+    .dashboard-sidebar-layout .dashboard-sidebar > .container-fluid {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        min-height: 100%;
+        padding: 0 !important;
+    }
+
+    .dashboard-sidebar-layout .dashboard-sidebar .navbar-brand {
+        margin: 0 0 min(1.25rem, 2vh);
+        padding: min(.5rem, 1vh) .5rem;
+        font-size: min(1.3rem, 2.8vh);
+        line-height: 1.25;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .dashboard-sidebar-layout .dashboard-sidebar .navbar-toggler {
+        display: none;
+    }
+
+    .dashboard-sidebar-layout .dashboard-sidebar .navbar-collapse {
+        display: flex !important;
+        flex: 1 0 auto;
+        flex-direction: column;
+        flex-wrap: nowrap;
+        align-items: stretch;
+        width: 100%;
+    }
+
+    .dashboard-sidebar-layout .dashboard-sidebar .navbar-collapse > .navbar-nav {
+        flex: 0 0 auto;
+        flex-direction: column;
+        flex-wrap: nowrap;
+        align-items: stretch;
+        justify-content: flex-start;
+        min-width: 0;
+        margin: 0 !important;
+    }
+
+    .dashboard-sidebar-layout .dashboard-sidebar .navbar-collapse > .navbar-nav:last-child {
+        margin-top: auto !important;
+        padding-top: min(1rem, 1.5vh);
+        border-top: 1px solid #374151;
+    }
+
+    .dashboard-sidebar-layout .dashboard-sidebar .navbar-collapse .nav-link {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        padding: min(.55rem, .5vh) .75rem;
+        font-size: min(.9rem, 2vh);
+        line-height: 1.3;
+        text-align: left;
+        white-space: normal;
+        border-radius: .5rem;
+    }
+
+    .dashboard-sidebar-layout .dashboard-sidebar a.nav-link:hover,
+    .dashboard-sidebar-layout .dashboard-sidebar button.nav-link:hover,
+    .dashboard-sidebar-layout .dashboard-sidebar .nav-link:focus-visible {
+        background-color: #374151;
+        color: #fff !important;
+    }
+
+    .dashboard-sidebar-layout .dashboard-sidebar .nav-link > i {
+        width: 1.25rem;
+        flex-shrink: 0;
+        text-align: center;
+        font-size: inherit !important;
+    }
+
+    .dashboard-sidebar-layout .dashboard-sidebar .nav-link .badge {
+        font-size: .65em !important;
+        line-height: 1;
+    }
+
+    .dashboard-sidebar-layout .dashboard-sidebar .profile-link {
+        max-width: none;
+        overflow-wrap: anywhere;
+        white-space: normal;
+    }
+
+    .dashboard-sidebar-layout .dashboard-sidebar .d-none.d-xl-inline {
+        display: inline !important;
+    }
+
+    .dashboard-sidebar-layout .coach-compact-topbar,
+    .dashboard-sidebar-layout .athlete-compact-topbar {
+        display: none !important;
+    }
+
+    .dashboard-sidebar-layout .impersonation-banner {
+        top: 0;
+    }
+}
+
+@media (min-width: 992px) and (max-width: 1228px) {
+    body.dashboard-sidebar-layout {
+        padding-left: 0;
+    }
+
+    .dashboard-sidebar-layout .dashboard-sidebar {
+        display: none;
+    }
+
+    .dashboard-sidebar-layout.dashboard-sidebar-overlay-open .dashboard-sidebar {
+        display: flex;
+    }
+
+    .dashboard-sidebar-layout .dashboard-sidebar-controls {
+        left: 0;
+    }
+
+    .dashboard-sidebar-layout.dashboard-sidebar-overlay-open .dashboard-sidebar-controls {
+        left: 240px;
+    }
+}
+
+@media (max-width: 991.98px) {
+    .dashboard-sidebar-layout .dashboard-sidebar {
+        display: none;
+    }
+
+    .personal-quick-menu .dashboard-quick-tiles {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin-bottom: 0 !important;
+    }
+
+    .personal-quick-menu .quick-tile {
+        min-width: 0;
+    }
+
+    .personal-quick-menu .quick-menu-editor-list label {
+        min-width: 0;
+    }
+
+    @media (max-width: 575.98px) {
+        .personal-quick-menu .dashboard-quick-tiles {
+            grid-template-columns: minmax(0, 1fr);
+        }
+    }
+}
