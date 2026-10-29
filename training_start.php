@@ -16,11 +16,16 @@ $workoutSetId = intParam($_POST, 'workout_set_id');
 $pdo          = getDB();
 
 // Ověření sportovce
-$stmt = $pdo->prepare('SELECT id FROM athletes WHERE id = ? AND coach_id = ?');
+$stmt = $pdo->prepare('SELECT id, online_only FROM athletes WHERE id = ? AND coach_id = ?');
 $stmt->execute([$athleteId, $coachId]);
-if (!$stmt->fetch()) {
+$athlete = $stmt->fetch();
+if (!$athlete) {
     flash('danger', 'Sportovec nenalezen.');
     redirect(BASE_URL . '/dashboard.php');
+}
+if (!empty($athlete['online_only'])) {
+    flash('danger', 'Sportovec je pouze ONLINE. Klasický trénink nelze zahájit.');
+    redirect(BASE_URL . '/athlete_detail.php?id=' . $athleteId);
 }
 
 // Ověření sady (u archivace pustíme pouze aktivní)
@@ -56,6 +61,15 @@ if ($existing) {
 }
 
 // Vytvoř novou session
+$pdo->beginTransaction();
+try {
+$lock = $pdo->prepare('SELECT online_only FROM athletes WHERE id = ? AND coach_id = ? FOR UPDATE');
+$lock->execute([$athleteId, $coachId]);
+$lockedAthlete = $lock->fetch();
+if (!$lockedAthlete || !empty($lockedAthlete['online_only'])) throw new RuntimeException('Sportovec je pouze ONLINE. Klasický trénink nelze zahájit.');
+$activeCheck = $pdo->prepare('SELECT id FROM training_sessions WHERE athlete_id = ? AND completed_at IS NULL AND deleted_by_coach_at IS NULL LIMIT 1');
+$activeCheck->execute([$athleteId]);
+if ($activeCheck->fetch()) throw new RuntimeException('Sportovec má stále neukončený trénink.');
 $stmt = $pdo->prepare(
     'INSERT INTO training_sessions (athlete_id, workout_set_id) VALUES (?, ?)'
 );
@@ -72,5 +86,12 @@ $snapshotStmt = $pdo->prepare(
      ORDER BY wse.exercise_order ASC'
 );
 $snapshotStmt->execute([$sessionId, $workoutSetId]);
+$pdo->commit();
+} catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    error_log('Training start: ' . $e->getMessage());
+    flash('danger', 'Trénink se nepodařilo zahájit: ' . $e->getMessage());
+    redirect(BASE_URL . '/athlete_detail.php?id=' . $athleteId);
+}
 
 redirect(BASE_URL . '/training_session.php?id=' . $sessionId);

@@ -44,10 +44,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Ověř vlastnictví každého sportovce + sady, zkontroluj nedokončené tréninky
     if (empty($errors)) {
         foreach ($pairs as $pair) {
-            $stmt = $pdo->prepare('SELECT id FROM athletes WHERE id = ? AND coach_id = ?');
+            $stmt = $pdo->prepare('SELECT id, online_only FROM athletes WHERE id = ? AND coach_id = ?');
             $stmt->execute([$pair['athlete_id'], $coachId]);
-            if (!$stmt->fetch()) {
+            $athleteRow = $stmt->fetch();
+            if (!$athleteRow) {
                 $errors[] = 'Sportovec nenalezen.';
+                break;
+            }
+            if (!empty($athleteRow['online_only'])) {
+                $errors[] = 'Sportovec pouze ONLINE se nemůže účastnit klasického tréninku.';
                 break;
             }
 
@@ -85,6 +90,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($errors)) {
         $pdo->beginTransaction();
         try {
+            $idsToLock = array_column($pairs, 'athlete_id');
+            sort($idsToLock);
+            $lock = $pdo->prepare('SELECT online_only FROM athletes WHERE id = ? AND coach_id = ? FOR UPDATE');
+            $activeCheck = $pdo->prepare('SELECT id FROM training_sessions WHERE athlete_id = ? AND completed_at IS NULL AND deleted_by_coach_at IS NULL LIMIT 1');
+            foreach ($idsToLock as $idToLock) {
+                $lock->execute([$idToLock, $coachId]);
+                $lockedAthlete = $lock->fetch();
+                if (!$lockedAthlete || !empty($lockedAthlete['online_only'])) throw new RuntimeException('Sportovec je pouze ONLINE nebo nebyl nalezen.');
+                $activeCheck->execute([$idToLock]);
+                if ($activeCheck->fetch()) throw new RuntimeException('Sportovec má rozpracovaný trénink.');
+            }
             // Vytvoř skupinu párového tréninku
             $pdo->prepare('INSERT INTO paired_sessions (coach_id) VALUES (?)')->execute([$coachId]);
             $pairedId = (int)$pdo->lastInsertId();
@@ -120,7 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Načtení sportovců a sad pro formulář
 $stmtA = $pdo->prepare(
-    'SELECT id, first_name, last_name FROM athletes WHERE coach_id = ? ORDER BY first_name, last_name'
+    'SELECT id, first_name, last_name FROM athletes WHERE coach_id = ? AND online_only = 0 ORDER BY first_name, last_name'
 );
 $stmtA->execute([$coachId]);
 $athletes = $stmtA->fetchAll();
@@ -132,7 +148,7 @@ $stmtS = $pdo->prepare(
      LEFT JOIN workout_set_exercises wse ON ws.id = wse.workout_set_id
     WHERE ' . ((workoutSetsHasColumn('is_global') && workoutSetsHasColumn('description')) ? '(ws.coach_id = ? OR ws.is_global = 1)' : 'ws.coach_id = ?') . (workoutSetArchivingEnabled() ? ' AND ws.is_active = 1' : '') . '
      GROUP BY ws.id
-     ORDER BY ws.name'
+      ORDER BY ' . ((workoutSetsHasColumn('is_global') && workoutSetsHasColumn('description')) ? 'ws.is_global ASC, ' : '') . 'ws.name'
 );
 $stmtS->execute([$coachId]);
 $sets = $stmtS->fetchAll();

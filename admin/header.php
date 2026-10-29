@@ -45,6 +45,7 @@ function renderAdminHeader(string $title = ''): void {
 	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
 	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 	<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/style.css">
+	<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/medals.css">
 </head>
 <body class="admin-layout">
 
@@ -127,9 +128,17 @@ function renderAdminHeader(string $title = ''): void {
 				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'online_trainings.php' ? 'active' : '' ?>">
 					<i class="fas fa-laptop me-2"></i>Online tréninky
 				</a>
+				<a href="<?= BASE_URL ?>/admin/online_training_billing.php"
+				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'online_training_billing.php' ? 'active' : '' ?>" style="padding-left:2.2rem;font-size:.87rem;">
+					<i class="fas fa-file-invoice-dollar me-2"></i>Vyúčtování online tréninků
+				</a>
 				<a href="<?= BASE_URL ?>/admin/health_questionnaire.php"
 				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'health_questionnaire.php' ? 'active' : '' ?>">
 					<i class="fas fa-heart-pulse me-2"></i>Zdravotní dotazník
+				</a>
+				<a href="<?= BASE_URL ?>/admin/medals.php"
+				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'medals.php' ? 'active' : '' ?>">
+					<i class="fas fa-medal me-2"></i>Medaile
 				</a>
 				<a href="<?= BASE_URL ?>/admin/mycoach.php"
 				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'mycoach.php' ? 'active' : '' ?>">

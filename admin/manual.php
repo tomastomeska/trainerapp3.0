@@ -230,6 +230,7 @@ renderAdminHeader('Návod pro SuperAdmin');
         <ol class="mb-0">
             <li>V Online trénincích kontrolujte stav databázového schématu a spusťte migraci po nasazení nové verze modulu.</li>
             <li>Servisní přehled umožňuje filtrovat online tréninky podle trenéra, sportovce a stavu.</li>
+            <li>Ve Vyúčtování online tréninků nastavte číslo účtu pro QR platby a sazbu trenéra, vyberte měsíc a zkontrolujte počet odeslaných tréninků. Výzva uloží částku i účet, trenérovi pošle interní zprávu a zobrazí se mu na stránce Platby jako účtenka s QR kódem; výzvu lze zrušit, úhradu označit v administraci. Po nasazení změn znovu spusťte migraci <code>scripts/migrate_admin_online_training_billing.php</code>.</li>
             <li>Trvalé smazání používejte pouze pro testovací nebo chybně vytvořená data; smaže výsledky, přílohy, soubory i účetní položky navázané na konkrétní trénink.</li>
             <li>Před zásahem do produkčního účtování ověřte, zda sportovci nebo trenérovi již neodešla měsíční výzva.</li>
             <li>Pro oznámení funkce trenérům použijte tlačítko Připravit zprávu trenérům v administraci Online tréninků.</li>

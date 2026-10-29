@@ -56,6 +56,10 @@ function getCurrentAthleteId(): int {
     return 101;
 }
 
+function mycoachAppEnabled(): bool {
+    return false;
+}
+
 $check = static function (bool $passed, string $message) use (&$checks): void {
     if (!$passed) {
         throw new RuntimeException($message);
@@ -99,6 +103,9 @@ try {
             $check(str_contains($html, 'dashboard-sidebar.js') === $sidebar, 'Only beta may load the sidebar toggle script.');
             if ($sidebar) {
                 $nav = $sidebars->item(0);
+                if (!$nav instanceof DOMElement) {
+                    throw new RuntimeException('Sidebar navigation element was not found.');
+                }
                 $check($nav->getAttribute('id') === 'dashboard-sidebar-navigation', 'Toggle must target the sidebar navigation.');
                 $check($xpath->query('.//a[contains(@href, "calendar.php")]', $nav)->length > 0, 'Sidebar must retain role navigation.');
                 $check(str_contains($nav->textContent, 'Infokanál'), 'Sidebar must label the information channel.');
@@ -138,9 +145,54 @@ try {
 
     foreach (['dashboard', 'athlete_dashboard'] as $name) {
         $beta = str_replace("\r\n", "\n", file_get_contents(__DIR__ . '/../includes/' . $name . '_new.php'));
-        $check(str_contains($beta, 'renderDashboardQuickMenu('), 'Beta must render a personalized quick menu: ' . $name);
+        $menu = $name === 'athlete_dashboard'
+            ? str_replace("\r\n", "\n", file_get_contents(__DIR__ . '/../includes/athlete_quick_menu.php'))
+            : $beta;
+        if ($name === 'athlete_dashboard') {
+            $main = file_get_contents(__DIR__ . '/../athlete_dashboard.php');
+            $check(str_contains($beta, "athlete_quick_menu.php") && str_contains($main, "athlete_quick_menu.php"), 'Both athlete dashboards must use the shared quick menu.');
+            $newDashboardPosition = strpos($main, "require __DIR__ . '/includes/athlete_dashboard_new.php';");
+            $legacyHeaderPosition = strpos($main, "renderAthleteHeader('Profil sportovce', false, true);");
+            $check(
+                $newDashboardPosition !== false
+                && $legacyHeaderPosition !== false
+                && $newDashboardPosition < $legacyHeaderPosition,
+                'Athlete dashboard must render the new template before the legacy dashboard.'
+            );
+            $quickMenuPosition = strpos($beta, "require __DIR__ . '/athlete_quick_menu.php';");
+            $desktopPlanPosition = strpos($beta, '<div class="card border-0 shadow-sm mb-4 athlete-desktop-only">');
+            $mobileNextTrainingPosition = strpos($beta, 'class="athlete-mobile-summary-card mb-3 athlete-mobile-next-training"');
+            $mobileProfilePosition = strpos($beta, 'class="athlete-mobile-summary-card mb-3 athlete-mobile-profile-photo"');
+            $accountDeletionPosition = strpos($beta, 'id="athleteAccountDeletionForm"');
+            $check(
+                $quickMenuPosition !== false
+                && $desktopPlanPosition !== false
+                && $quickMenuPosition < $desktopPlanPosition
+                && $desktopPlanPosition < $mobileNextTrainingPosition
+                && $mobileNextTrainingPosition < $mobileProfilePosition
+                && $mobileProfilePosition < $accountDeletionPosition,
+                'Training plan must immediately follow the quick menu on desktop and mobile.'
+            );
+            $detailsPosition = strpos($beta, '<div class="athlete-dashboard-details" id="athlete-dashboard-details">');
+            $activityGridPosition = strpos($beta, '<div class="athlete-activity-grid mb-4 athlete-desktop-only">');
+            $structuralHtml = preg_replace('/<\?.*?\?>/s', '', $beta);
+            $dashboardDom = new DOMDocument();
+            @$dashboardDom->loadHTML('<?xml encoding="UTF-8">' . $structuralHtml);
+            $dashboardXPath = new DOMXPath($dashboardDom);
+            $check(
+                $detailsPosition !== false
+                && $activityGridPosition !== false
+                && $detailsPosition < $activityGridPosition,
+                'Activity grid must follow the container-query wrapper.'
+            );
+            $check(
+                $dashboardXPath->query('//*[@id="athlete-dashboard-details"]/div[contains(concat(" ", normalize-space(@class), " "), " athlete-activity-grid ")]')->length === 1,
+                'Activity grid must be a full-width row inside the container-query wrapper.'
+            );
+        }
+        $check(str_contains($menu, 'renderDashboardQuickMenu('), 'Beta must render a personalized quick menu: ' . $name);
         $check(str_contains($beta, ', false, true, true);'), 'Both beta views must request desktop sidebar navigation.');
-        preg_match_all('/data-shortcut="([a-z]+)"/', $beta, $tileKeys);
+        preg_match_all('/data-shortcut="([a-z]+)"/', $menu, $tileKeys);
         $role = $name === 'dashboard' ? 'coach' : 'athlete';
         $check(!array_diff(array_keys(dashboardQuickMenuCatalog($role)), $tileKeys[1]), 'Every catalog entry must have a tile.');
         $check(!array_diff($tileKeys[1], array_keys(dashboardQuickMenuCatalog($role))), 'Every tile must have a catalog entry.');
@@ -170,6 +222,7 @@ try {
         $check(str_contains($html, 'id="quick-menu-all"'), 'Hidden functions must remain accessible.');
         $check(str_contains($html, 'name="csrf_token"'), 'Editor must be CSRF protected.');
         $check(strpos($html, 'value="terms"') < strpos($html, 'value="messages"'), 'Editor must reflect saved order.');
+        $check(!str_contains($html, 'data-shortcut="mycoach"') && !str_contains($html, 'value="mycoach"'), 'Disabled MyCoach must not appear in the quick menu or editor.');
     }
     dashboardQuickMenuSave($testPdo, 'coach', 203, ['athletes']);
     $check(dashboardQuickMenuLoad($testPdo, 'athlete', 203) === array_keys(dashboardQuickMenuCatalog('athlete')), 'Coach and athlete shortcuts must be isolated.');

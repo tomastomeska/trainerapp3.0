@@ -4,6 +4,12 @@ require_once __DIR__ . '/../includes/functions.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
+if (!mycoachAppEnabled()) {
+    http_response_code(404);
+    echo json_encode(['ok' => false, 'error' => 'feature_disabled']);
+    exit;
+}
+
 // Podpora pro coach i athlete session
 $userType = null;
 $userId   = 0;

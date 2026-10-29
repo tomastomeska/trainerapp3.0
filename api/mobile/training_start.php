@@ -14,11 +14,12 @@ if ($athleteId <= 0 || $workoutSetId <= 0) {
 
 $pdo = getDB();
 
-$athleteStmt = $pdo->prepare('SELECT id, first_name, last_name FROM athletes WHERE id = ? LIMIT 1');
-$athleteStmt->execute([$athleteId]);
+$athleteStmt = $pdo->prepare('SELECT id, first_name, last_name, online_only FROM athletes WHERE id = ? AND coach_id = ? LIMIT 1');
+$athleteStmt->execute([$athleteId, (int)$coach['id']]);
 $athlete = $athleteStmt->fetch();
 
 if (!$athlete) mobileJson(['success' => false, 'error' => 'Sportovec nebyl nalezen.'], 404);
+if (!empty($athlete['online_only'])) mobileJson(['success' => false, 'error' => 'Sportovec je pouze ONLINE. Klasický trénink nelze zahájit.'], 403);
 
 $hasIsGlobal = false;
 try {
@@ -56,6 +57,23 @@ if ($active) {
 
 $pdo->beginTransaction();
 try {
+    $lock = $pdo->prepare('SELECT online_only FROM athletes WHERE id = ? AND coach_id = ? FOR UPDATE');
+    $lock->execute([$athleteId, (int)$coach['id']]);
+    $lockedAthlete = $lock->fetch();
+    if (!$lockedAthlete) {
+        $pdo->rollBack();
+        mobileJson(['success' => false, 'error' => 'Sportovec nebyl nalezen.'], 404);
+    }
+    if (!empty($lockedAthlete['online_only'])) {
+        $pdo->rollBack();
+        mobileJson(['success' => false, 'error' => 'Sportovec je pouze ONLINE. Klasický trénink nelze zahájit.'], 403);
+    }
+    $activeStmt->execute([$athleteId]);
+    $active = $activeStmt->fetch();
+    if ($active) {
+        $pdo->rollBack();
+        mobileJson(['success' => false, 'error' => 'Sportovec už má rozpracovaný trénink.', 'existing_session_id' => (int)$active['id']], 409);
+    }
     $insert = $pdo->prepare('INSERT INTO training_sessions (athlete_id, workout_set_id) VALUES (?, ?)');
     $insert->execute([$athleteId, $workoutSetId]);
     $sessionId = (int)$pdo->lastInsertId();
@@ -92,7 +110,8 @@ try {
     $pdo->commit();
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
-    mobileJson(['success' => false, 'error' => 'Trénink se nepodařilo spustit: ' . $e->getMessage()], 500);
+    error_log('Mobile training start: ' . $e->getMessage());
+    mobileJson(['success' => false, 'error' => 'Trénink se nepodařilo spustit.'], 500);
 }
 
 mobileJson([

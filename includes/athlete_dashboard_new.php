@@ -1,12 +1,59 @@
 <?php
+/**
+ * @var PDO $pdo
+ * @var array $athlete
+ * @var bool $athleteSpecialTrainingEnabled
+ * @var bool $mycoachAppUserCanAccess
+ * @var bool $healthQuestionnaireAccessEnabled
+ * @var array $athleteMedals
+ * @var bool $showHealthQuestionnairePrompt
+ * @var array|null $editingWeightLog
+ * @var string $weightFormAction
+ * @var string $weightFormDate
+ * @var string|float $weightFormValue
+ * @var array $weightStats
+ * @var array $weightHistory
+ * @var array $weightVisibleRows
+ * @var array $weightMobileRows
+ * @var bool $weightShouldExpandAll
+ * @var array $trainingMobileRows
+ * @var array $trainingVisibleRows
+ * @var array $onlineHistoryVisibleRows
+ * @var array $onlineHistoryCollapsedRows
+ * @var string|null $supportBankAccountForQr
+ * @var string $supportBankAccount
+ * @var string $supportContributorName
+ * @var string $supportQrNote
+ */
 require_once __DIR__ . '/dashboard_quick_menu.php';
 // Dashboard view; data and POST actions stay in athlete_dashboard.php.
+$latestWeightLog = $weightHistory[0] ?? null;
+$weightTodayLog = null;
+foreach ($weightHistory as $weightLog) {
+    if (($weightLog['measured_at'] ?? '') === date('Y-m-d')) {
+        $weightTodayLog = $weightLog;
+        break;
+    }
+}
 renderAthleteHeader('Profil sportovce', false, true, true);
 ?>
 
 <style>
 .athlete-dashboard-details {
     container-type: inline-size;
+}
+
+.athlete-mobile-dashboard {
+    display: flex;
+    flex-direction: column;
+}
+
+.athlete-mobile-next-training {
+    order: 0;
+}
+
+.athlete-mobile-profile-photo {
+    order: 1;
 }
 
 .athlete-profile-grid,
@@ -179,93 +226,8 @@ renderAthleteHeader('Profil sportovce', false, true, true);
     <h2 class="mb-0"><i class="fas fa-user me-2 text-warning"></i>Můj profil</h2>
 </div>
 
-<?php ob_start(); ?>
-<div class="dashboard-quick-tiles mb-3">
-    <a data-shortcut="messages" href="<?= BASE_URL ?>/athlete_zpravy.php" class="quick-tile quick-tile-danger">
-        <span class="quick-tile__label"><i class="fas fa-envelope me-1"></i>Zprávy</span>
-        <span class="quick-tile__value"><?= (int)$unreadInboxCount ?></span>
-    </a>
-    <a data-shortcut="mealplans" href="<?= BASE_URL ?>/athlete_mealplans.php" class="quick-tile quick-tile-success">
-        <span class="quick-tile__label"><i class="fas fa-utensils me-1"></i>Jídelníčky</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a data-shortcut="food" href="<?= BASE_URL ?>/athlete_food_diary.php" class="quick-tile quick-tile-warning">
-        <span class="quick-tile__label"><i class="fas fa-bowl-food me-1"></i>Strava</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a data-shortcut="graphs" href="<?= BASE_URL ?>/athlete_graphs.php" class="quick-tile quick-tile-info">
-        <span class="quick-tile__label"><i class="fas fa-chart-line me-1"></i>Grafy</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a data-shortcut="calendar" href="<?= BASE_URL ?>/athlete_calendar.php" class="quick-tile quick-tile-warning">
-        <span class="quick-tile__label"><i class="fas fa-calendar-alt me-1"></i>Kalendář</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a data-shortcut="password" href="<?= BASE_URL ?>/athlete_change_password.php" class="quick-tile quick-tile-muted">
-        <span class="quick-tile__label"><i class="fas fa-key me-1"></i>Heslo</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a data-shortcut="gallery" href="<?= BASE_URL ?>/athlete_gallery.php" class="quick-tile quick-tile-info">
-        <span class="quick-tile__label"><i class="fas fa-images me-1"></i>Galerie</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a data-shortcut="files" href="<?= BASE_URL ?>/athlete_files.php" class="quick-tile quick-tile-info">
-        <span class="quick-tile__label"><i class="fas fa-folder-open me-1"></i>Soubory</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a data-shortcut="videos" href="<?= BASE_URL ?>/athlete_videos.php" class="quick-tile quick-tile-danger">
-        <span class="quick-tile__label"><i class="fas fa-video me-1"></i>Videa</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <?php if ($athleteSpecialTrainingEnabled): ?>
-    <a data-shortcut="events" href="<?= BASE_URL ?>/athlete_special_training.php" class="quick-tile quick-tile-info">
-        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-flag-checkered me-1"></i>Events</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <?php else: ?>
-    <div data-shortcut="events" class="quick-tile quick-tile-muted">
-        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-lock me-1"></i>Events <span class="badge rounded-pill bg-secondary">Uzamčeno</span></span>
-        <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
-    </div>
-    <?php endif; ?>
-    <a data-shortcut="online" href="<?= BASE_URL ?>/online_training.php" class="quick-tile quick-tile-warning">
-        <span class="quick-tile__label"><i class="fas fa-laptop me-1"></i>Online tréninky</span>
-        <span class="quick-tile__value"><?= (int)$onlineTrainingCount ?></span>
-    </a>
-    <?php if ($mycoachAppUserCanAccess): ?>
-    <a data-shortcut="mycoach" href="<?= BASE_URL ?>/athlete_mycoach_app.php" class="quick-tile quick-tile-warning">
-    <?php else: ?>
-    <a data-shortcut="mycoach" href="#" class="quick-tile quick-tile-warning" data-bs-toggle="modal" data-bs-target="#modalMyCoachComingSoon">
-    <?php endif; ?>
-        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-brain me-1"></i>MyCoach <span class="badge rounded-pill <?= $mycoachAppUserCanAccess ? 'bg-success' : 'bg-warning text-dark' ?>"><?= $mycoachAppUserCanAccess ? 'Pro' : 'Brzy' ?></span></span>
-        <span class="quick-tile__value"><i class="fas fa-<?= $mycoachAppUserCanAccess ? 'star' : 'rocket' ?>"></i></span>
-    </a>
-    <?php if ($healthQuestionnaireAccessEnabled): ?>
-    <a data-shortcut="health" href="<?= BASE_URL ?>/athlete_health_questionnaire.php" class="quick-tile <?= h($healthTileClass) ?>">
-        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-heart-pulse me-1"></i>Z. dotazník</span>
-        <span class="quick-tile__value"><?= $healthTileValue ?></span>
-    </a>
-    <?php else: ?>
-    <div data-shortcut="health" class="quick-tile quick-tile-muted">
-        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-lock me-1"></i>Z. dotazník <span class="badge rounded-pill bg-secondary">Vypnuto</span></span>
-        <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
-    </div>
-    <?php endif; ?>
-    <a data-shortcut="manual" href="<?= BASE_URL ?>/athlete_manual.php" class="quick-tile quick-tile-success">
-        <span class="quick-tile__label"><i class="fas fa-circle-question me-1"></i>Návod</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <?php $athleteSurveyPending = surveySchemaAvailable($pdo) && count(array_filter(surveyFetchForUser($pdo, 'athlete', $athleteId), static fn(array $survey): bool => empty($survey['response_id']))) > 0; ?>
-    <a data-shortcut="surveys" href="<?= BASE_URL ?>/athlete_surveys.php" class="quick-tile quick-tile-info <?= $athleteSurveyPending ? 'survey-pending' : '' ?>">
-        <span class="quick-tile__label"><i class="fas fa-square-poll-vertical me-1"></i>Ankety</span>
-        <span class="quick-tile__value"><?= $athleteSurveyPending ? '<span class="badge rounded-pill bg-danger">!</span>' : '<i class="fas fa-chevron-right"></i>' ?></span>
-    </a>
-    <a data-shortcut="terms" href="<?= BASE_URL ?>/athlete_terms.php" class="quick-tile quick-tile-warning">
-        <span class="quick-tile__label"><i class="fas fa-file-contract me-1"></i>Podmínky</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-</div>
-<?php renderDashboardQuickMenu('athlete', (int)$athleteId, ob_get_clean()); ?>
+<?php require __DIR__ . '/athlete_subscription_alert.php'; ?>
+<div class="mb-3"><a href="<?= BASE_URL ?>/intake_questionnaire.php" class="btn btn-outline-dark btn-sm">Můj vstupní dotazník</a></div>
 
 <div class="card border-0 shadow-sm mb-4 athlete-desktop-only">
     <div class="card-header bg-dark text-white"><i class="fas fa-calendar-check me-2"></i>Plán tréninků</div>
@@ -293,55 +255,24 @@ renderAthleteHeader('Profil sportovce', false, true, true);
     </div>
 </div>
 
-<div class="mb-4">
-    <button class="btn btn-outline-danger btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#athleteAccountDeletionForm" aria-expanded="false" aria-controls="athleteAccountDeletionForm">
-        <i class="fas fa-user-slash me-1"></i>Požádat o smazání účtu
-    </button>
-    <div class="collapse mt-2" id="athleteAccountDeletionForm">
-        <div class="border border-danger rounded p-3">
-            <p class="small text-muted mb-3">
-                Systém odstraní profil, přístupová data a související záznamy v rozsahu aplikace. Zákonné účetní a evidenční záznamy mohou být uchovány podle právních povinností.
-            </p>
-            <form method="post" onsubmit="return confirm('Opravdu chcete požádat o smazání svého účtu a přidružených dat? Tato akce je nevratná.');">
-                <?= csrfField() ?>
-                <input type="hidden" name="action" value="request_account_deletion">
-                <div class="d-flex gap-2 flex-wrap align-items-start">
-                    <textarea name="delete_reason" class="form-control" rows="2" maxlength="1000" placeholder="Volitelný důvod žádosti"></textarea>
-                    <button type="submit" class="btn btn-outline-danger">
-                        <i class="fas fa-user-slash me-1"></i>Odeslat žádost
-                    </button>
-                </div>
-            </form>
+<section class="card border-0 shadow-sm mb-4" aria-labelledby="athlete-medals-title">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center gap-2 flex-wrap">
+        <span id="athlete-medals-title"><i class="fas fa-medal me-2 text-warning"></i>Moje ocenění</span>
+        <a href="<?= BASE_URL ?>/athlete_medals.php" class="btn btn-warning btn-sm fw-semibold">Všechny medaile</a>
+    </div>
+    <div class="card-body">
+        <div class="medal-grid medal-grid--preview">
+            <?php foreach (array_slice($athleteMedals, 0, 5) as $medal): ?>
+                <?php renderAthleteMedalCard($medal); ?>
+            <?php endforeach; ?>
         </div>
     </div>
-</div>
+</section>
 
-<div class="d-md-none mb-4">
-    <div class="athlete-mobile-summary-card mb-3">
-        <div class="athlete-mobile-summary-card__head">
-            <div class="athlete-mobile-summary-card__title"><i class="fas fa-camera me-2 text-warning"></i>Profilová fotografie</div>
-        </div>
-        <div class="athlete-mobile-summary-card__body">
-            <?php $athleteMobileProfilePhoto = photoUrl($athlete['photo'] ?? null, 'athletes'); ?>
-            <div class="d-flex align-items-center gap-3">
-                <?php if ($athleteMobileProfilePhoto): ?>
-                <img src="<?= h($athleteMobileProfilePhoto) ?>" alt="Profilová fotografie" class="rounded-circle" style="width:64px;height:64px;object-fit:cover;flex:0 0 auto;">
-                <?php else: ?>
-                <div class="rounded-circle bg-light border d-flex align-items-center justify-content-center text-muted" style="width:64px;height:64px;flex:0 0 auto;">
-                    <i class="fas fa-user fa-lg"></i>
-                </div>
-                <?php endif; ?>
-                <form method="post" enctype="multipart/form-data" class="flex-grow-1">
-                    <?= csrfField() ?>
-                    <input type="hidden" name="action" value="save_profile_photo">
-                    <input type="file" name="photo" class="form-control form-control-sm" accept="image/*" required>
-                    <button type="submit" class="btn btn-warning btn-sm mt-2"><i class="fas fa-upload me-1"></i>Nahrát fotografii</button>
-                </form>
-            </div>
-        </div>
-    </div>
+<?php require __DIR__ . '/athlete_quick_menu.php'; ?>
 
-    <div class="athlete-mobile-summary-card mb-3">
+<div class="d-md-none mb-4 athlete-mobile-dashboard">
+    <div class="athlete-mobile-summary-card mb-3 athlete-mobile-next-training">
         <div class="athlete-mobile-summary-card__head">
             <div>
                 <div class="athlete-mobile-summary-card__title"><i class="fas fa-calendar-check me-2 text-primary"></i>Nejbližší trénink</div>
@@ -368,6 +299,30 @@ renderAthleteHeader('Profil sportovce', false, true, true);
             <?php else: ?>
             <div class="text-muted">Nejbližší termín zatím není naplánovaný.</div>
             <?php endif; ?>
+        </div>
+    </div>
+
+    <div class="athlete-mobile-summary-card mb-3 athlete-mobile-profile-photo">
+        <div class="athlete-mobile-summary-card__head">
+            <div class="athlete-mobile-summary-card__title"><i class="fas fa-camera me-2 text-warning"></i>Profilová fotografie</div>
+        </div>
+        <div class="athlete-mobile-summary-card__body">
+            <?php $athleteMobileProfilePhoto = photoUrl($athlete['photo'] ?? null, 'athletes'); ?>
+            <div class="d-flex align-items-center gap-3">
+                <?php if ($athleteMobileProfilePhoto): ?>
+                <img src="<?= h($athleteMobileProfilePhoto) ?>" alt="Profilová fotografie" class="rounded-circle" style="width:64px;height:64px;object-fit:cover;flex:0 0 auto;">
+                <?php else: ?>
+                <div class="rounded-circle bg-light border d-flex align-items-center justify-content-center text-muted" style="width:64px;height:64px;flex:0 0 auto;">
+                    <i class="fas fa-user fa-lg"></i>
+                </div>
+                <?php endif; ?>
+                <form method="post" enctype="multipart/form-data" class="flex-grow-1">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="action" value="save_profile_photo">
+                    <input type="file" name="photo" class="form-control form-control-sm" accept="image/*" required>
+                    <button type="submit" class="btn btn-warning btn-sm mt-2"><i class="fas fa-upload me-1"></i>Nahrát fotografii</button>
+                </form>
+            </div>
         </div>
     </div>
 
@@ -590,7 +545,30 @@ renderAthleteHeader('Profil sportovce', false, true, true);
     </div>
 </div>
 
-<div class="athlete-dashboard-details">
+<div class="mb-4">
+    <button class="btn btn-outline-danger btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#athleteAccountDeletionForm" aria-expanded="false" aria-controls="athleteAccountDeletionForm">
+        <i class="fas fa-user-slash me-1"></i>Požádat o smazání účtu
+    </button>
+    <div class="collapse mt-2" id="athleteAccountDeletionForm">
+        <div class="border border-danger rounded p-3">
+            <p class="small text-muted mb-3">
+                Systém odstraní profil, přístupová data a související záznamy v rozsahu aplikace. Zákonné účetní a evidenční záznamy mohou být uchovány podle právních povinností.
+            </p>
+            <form method="post" onsubmit="return confirm('Opravdu chcete požádat o smazání svého účtu a přidružených dat? Tato akce je nevratná.');">
+                <?= csrfField() ?>
+                <input type="hidden" name="action" value="request_account_deletion">
+                <div class="d-flex gap-2 flex-wrap align-items-start">
+                    <textarea name="delete_reason" class="form-control" rows="2" maxlength="1000" placeholder="Volitelný důvod žádosti"></textarea>
+                    <button type="submit" class="btn btn-outline-danger">
+                        <i class="fas fa-user-slash me-1"></i>Odeslat žádost
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="athlete-dashboard-details" id="athlete-dashboard-details">
 <div class="athlete-profile-grid mb-4 athlete-desktop-only">
     <div class="athlete-profile-information">
         <div class="card border-0 shadow-sm h-100">
@@ -971,7 +949,6 @@ renderAthleteHeader('Profil sportovce', false, true, true);
         <?php endif; ?>
         <?php endif; ?>
     </div>
-</div>
 </div>
 
 </div>

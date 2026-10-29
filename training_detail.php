@@ -122,6 +122,9 @@ renderHeader('Detail tréninku');
         </span>
         <?php endif; ?>
         <?= formatDateTime($session['completed_at'] ?? $session['started_at']) ?>
+        <?php if ($session['duration_centiseconds'] !== null): ?>
+        <span class="badge bg-secondary ms-1"><i class="fas fa-stopwatch me-1"></i><?= h(formatTrainingDuration((int)$session['duration_centiseconds'])) ?></span>
+        <?php endif; ?>
         <?php if ($session['location']): ?>
         <span class="ms-2 text-muted"><i class="fas fa-map-marker-alt me-1"></i><?= h($session['location']) ?></span>
         <?php endif; ?>

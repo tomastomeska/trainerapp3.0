@@ -37,7 +37,7 @@ $stmtSets = $pdo->prepare(
     'SELECT ws.id, ws.name' . $globalSetFields . '
      FROM workout_sets ws
     WHERE ' . ((workoutSetsHasColumn('is_global') && workoutSetsHasColumn('description')) ? '(ws.coach_id = ? OR ws.is_global = 1)' : 'ws.coach_id = ?') . $activeSetFilter . '
-     ORDER BY ws.name'
+      ORDER BY ' . ((workoutSetsHasColumn('is_global') && workoutSetsHasColumn('description')) ? 'ws.is_global ASC, ' : '') . 'ws.name'
 );
 $stmtSets->execute([$coachId]);
 $workoutSets = $stmtSets->fetchAll(PDO::FETCH_ASSOC);

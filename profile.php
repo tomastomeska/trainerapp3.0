@@ -466,6 +466,7 @@ if ($activeAgreement !== null) {
 
 renderHeader('Můj profil', false, true);
 ?>
+<div class="card border-warning shadow-sm mb-4"><div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-2"><div><strong>Vstupní dotazník</strong><div class="text-muted small">Vlastní otázky pro nové sportovce.</div></div><a href="<?= BASE_URL ?>/intake_settings.php" class="btn btn-outline-dark">Nastavit otázky</a></div></div>
 
 <div class="d-flex align-items-center mb-4 gap-3">
     <h2 class="mb-0"><i class="fas fa-user-circle me-2 text-warning"></i>Můj profil</h2>

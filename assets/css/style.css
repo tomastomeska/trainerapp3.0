@@ -48,8 +48,25 @@ body {
     border-radius: 14px;
 }
 
+.athlete-card--online {
+    background-color: #fff8df;
+    box-shadow: inset 3px 0 #e6c45a;
+}
+
 .athlete-card .card-body {
     padding: 1.25rem;
+}
+
+.training-elapsed-timer {
+    display: inline-block;
+    max-width: 100%;
+    padding: .5rem 1rem;
+    border: 3px solid #1f2937;
+    background: #fff;
+    color: #111827;
+    font: 700 clamp(1.2rem, 5vw, 2rem)/1.2 'Segoe UI', system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
 }
 
 /* Avatar with initials */

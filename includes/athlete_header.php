@@ -83,6 +83,7 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/style.css">
+    <link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/medals.css">
     <style>
         .athlete-compact-topbar {
             display: flex !important;
@@ -130,10 +131,13 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
         <div class="collapse navbar-collapse" id="athleteNav">
             <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_dashboard.php"><i class="fas fa-user me-1"></i>Profil</a></li>
+                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_medals.php"><i class="fas fa-medal me-1"></i>Moje ocenění</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_calendar.php"><i class="fas fa-calendar-alt me-1"></i>Kalendář</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_special_training.php"><i class="fas fa-flag-checkered me-1"></i>Events</a></li>
                 <li class="nav-item"><a class="nav-link d-inline-flex align-items-center" href="<?= BASE_URL ?>/online_training.php"><i class="fas fa-laptop me-1"></i>Online tréninky<?php if ($onlineTrainingCount > 0): ?><span class="badge rounded-pill bg-danger ms-1" style="font-size:.65rem"><?= $onlineTrainingCount ?></span><?php endif; ?></a></li>
+                <?php if (mycoachAppEnabled()): ?>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_mycoach.php"><i class="fas fa-brain me-1"></i>MYCoach</a></li>
+                <?php endif; ?>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_payments.php"><i class="fas fa-wallet me-1"></i>Platby</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_mealplans.php"><i class="fas fa-utensils me-1"></i>Jídelníčky</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_food_diary.php"><i class="fas fa-bowl-food me-1"></i>Strava</a></li>

@@ -172,6 +172,7 @@ $pendingCalendarCount = 0;
 $unreadInfoCount = 0;
 $unreadGalleryCount = 0;
 $onlineTrainingCount = 0;
+$pendingOnlineInvoiceCount = 0;
 if ($coach) {
     try {
         $pdo = getDB();
@@ -207,9 +208,22 @@ if ($coach) {
         $infoUnreadStmt->execute([(int)$coach['id']]);
         $unreadInfoCount = (int)$infoUnreadStmt->fetchColumn();
 
-        $onlineTrainingStmt = $pdo->prepare("SELECT COUNT(*) FROM online_trainings WHERE trainer_id = ? AND status = 'completed'");
+        $onlineTrainingStmt = $pdo->prepare("SELECT COUNT(*) FROM online_trainings WHERE trainer_id = ? AND status = 'completed' AND (trainer_reviewed_at IS NULL OR coach_reaction IS NULL OR TRIM(coach_reaction) = '')");
         $onlineTrainingStmt->execute([(int)$coach['id']]);
         $onlineTrainingCount = (int)$onlineTrainingStmt->fetchColumn();
+
+        $onlineInvoiceTable = $pdo->query("SHOW TABLES LIKE 'admin_online_training_invoices'");
+        if ($onlineInvoiceTable !== false && $onlineInvoiceTable->fetchColumn()) {
+            $onlineInvoiceViewedColumn = $pdo->query("SHOW COLUMNS FROM admin_online_training_invoices LIKE 'viewed_at'");
+            if ($onlineInvoiceViewedColumn !== false && $onlineInvoiceViewedColumn->fetch()) {
+                $pendingOnlineInvoiceStmt = $pdo->prepare(
+                    "SELECT COUNT(*) FROM admin_online_training_invoices
+                     WHERE coach_id = ? AND status = 'pending' AND viewed_at IS NULL"
+                );
+                $pendingOnlineInvoiceStmt->execute([(int)$coach['id']]);
+                $pendingOnlineInvoiceCount = (int)$pendingOnlineInvoiceStmt->fetchColumn();
+            }
+        }
 
         $coachChatTable = $pdo->query("SHOW TABLES LIKE 'admin_coach_chat_messages'");
         if ($coachChatTable !== false && (bool)$coachChatTable->fetchColumn()) {
@@ -230,6 +244,7 @@ if ($coach) {
         $unreadInfoCount = 0;
         $unreadGalleryCount = 0;
         $onlineTrainingCount = 0;
+        $pendingOnlineInvoiceCount = 0;
     }
 }
 ?>
@@ -272,10 +287,14 @@ if ($coach) {
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/special_training.php"><i class="fas fa-flag-checkered me-1"></i>Events</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/calendar_replacements.php"><i class="fas fa-calendar-check me-1"></i>Náhrady</a></li>
                 <li class="nav-item"><a class="nav-link d-inline-flex align-items-center" href="<?= BASE_URL ?>/online_training.php"><i class="fas fa-laptop me-1"></i>Online tréninky<?php if ($onlineTrainingCount > 0): ?><span class="badge rounded-pill bg-warning text-dark ms-1 top-badge"><?= $onlineTrainingCount ?></span><?php endif; ?></a></li>
+                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/online_subscriptions.php"><i class="fas fa-calendar-check me-1"></i>Online předplatná</a></li>
+                <?php if (mycoachAppEnabled()): ?>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/mycoach.php"><i class="fas fa-brain me-1"></i>MYCoach</a></li>
+                <?php endif; ?>
                 <li class="nav-item">
-                    <a class="nav-link" href="<?= BASE_URL ?>/payments.php">
+                    <a class="nav-link d-inline-flex align-items-center" href="<?= BASE_URL ?>/payments.php">
                         <i class="fas fa-wallet me-1"></i>Platby
+                        <?php if ($pendingOnlineInvoiceCount > 0): ?><span class="badge rounded-pill bg-danger ms-1 top-badge"><?= $pendingOnlineInvoiceCount ?></span><?php endif; ?>
                     </a>
                 </li>
                 <li class="nav-item">

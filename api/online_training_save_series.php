@@ -21,7 +21,8 @@ try {
     $athleteId = (int)getCurrentAthleteId();
     $pdo = getDB();
 
-    $trainingStmt = $pdo->prepare("SELECT id FROM online_trainings WHERE id = ? AND athlete_id = ? AND status = 'in_progress' LIMIT 1");
+    $pdo->beginTransaction();
+    $trainingStmt = $pdo->prepare("SELECT id FROM online_trainings WHERE id = ? AND athlete_id = ? AND status = 'in_progress' LIMIT 1 FOR UPDATE");
     $trainingStmt->execute([$trainingId, $athleteId]);
     if (!$trainingStmt->fetch()) onlineSeriesJson(['success' => false, 'error' => 'Trénink není rozpracovaný nebo k němu nemáte přístup.'], 403);
 
@@ -50,8 +51,10 @@ try {
     $saved = $verifyStmt->fetch();
     if (!$saved) onlineSeriesJson(['success' => false, 'error' => 'Záznam se po uložení nepodařilo načíst.'], 500);
 
+    $pdo->commit();
     onlineSeriesJson(['success' => true, 'result_id' => (int)$saved['id'], 'weight' => $saved['actual_weight'], 'reps' => $saved['actual_reps'], 'duration' => $saved['actual_duration_seconds']]);
 } catch (Throwable $e) {
+    if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
     error_log('online_training_save_series: ' . $e->getMessage());
     onlineSeriesJson(['success' => false, 'error' => $e->getMessage()], 500);
 }

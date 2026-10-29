@@ -267,7 +267,9 @@ if ($action === 'complete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $pdo->prepare(
             'UPDATE training_sessions ts
              JOIN athletes a ON a.id = ts.athlete_id
-             SET ts.completed_at = NOW(), ts.location = ?, ts.notes = ?
+             SET ts.completed_at = NOW(),
+                 ts.duration_centiseconds = GREATEST(0, TIMESTAMPDIFF(MICROSECOND, ts.started_at, NOW(3)) DIV 10000),
+                 ts.location = ?, ts.notes = ?
              WHERE ts.id = ? AND a.coach_id = ? AND ts.completed_at IS NULL'
         );
         $stmt->execute([$location ?: null, $notes ?: null, $sessionId, $coach['id']]);

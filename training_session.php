@@ -128,6 +128,17 @@ renderHeader('Aktivní trénink', false, true);
     </div>
 </div>
 
+<?php if (empty($session['completed_at']) || $session['duration_centiseconds'] !== null): ?>
+<div class="text-center mb-3">
+    <div class="training-elapsed-timer" id="trainingElapsedTimer"
+         data-started-at-ms="<?= (int)(strtotime((string)$session['started_at']) * 1000) ?>"
+         data-completed="<?= !empty($session['completed_at']) ? '1' : '0' ?>"
+         data-duration-centiseconds="<?= (int)($session['duration_centiseconds'] ?? 0) ?>">
+        <?= formatTrainingDuration(!empty($session['completed_at']) ? (int)($session['duration_centiseconds'] ?? 0) : trainingElapsedCentiseconds((string)$session['started_at'])) ?>
+    </div>
+    <?php endif; ?>
+</div>
+
 <?php if (empty($exercises)): ?>
 <div class="alert alert-warning">Sada zatím neobsahuje žádné cviky. Přidejte první cvik pomocí pole nahoře.</div>
 <?php else: ?>
@@ -634,6 +645,17 @@ $exerciseMode = ((int)($ex['is_timed'] ?? 0) === 1)
                 </div>
                 <div class="modal-body">
                     <p class="text-muted">Chcete ukončit trénink?</p>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" for="duration-minutes">Celková doba tréninku</label>
+                        <?php $durationCentiseconds = trainingElapsedCentiseconds((string)$session['started_at']); ?>
+                        <div class="input-group">
+                            <input type="number" class="form-control" id="duration-minutes" name="duration_minutes" min="0" max="999999" value="<?= intdiv($durationCentiseconds, 6000) ?>" required aria-label="Minuty">
+                            <span class="input-group-text">min</span>
+                            <input type="number" class="form-control" id="duration-seconds" name="duration_seconds" min="0" max="59" value="<?= intdiv($durationCentiseconds % 6000, 100) ?>" required aria-label="Sekundy">
+                            <span class="input-group-text">s</span>
+                        </div>
+                        <div class="form-text">Čas se předvyplní podle časomíry a před uložením ho můžete upravit.</div>
+                    </div>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">
                             <i class="fas fa-map-marker-alt me-1"></i>Místo tréninku
@@ -1611,5 +1633,6 @@ document.addEventListener('DOMContentLoaded', function() {
     syncLocationInput();
 });
 </script>
+<script src="<?= BASE_URL ?>/assets/js/training-timer.js"></script>
 
 <?php renderFooter(); ?>

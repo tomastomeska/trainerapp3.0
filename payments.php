@@ -9,22 +9,6 @@ requireLogin();
 
 $coachId = (int)getCurrentCoachId();
 $pdo = getDB();
-$onlineBillingRows = [];
-try {
-    $onlineBillingStmt = $pdo->prepare(
-        'SELECT ob.*, a.first_name, a.last_name, ot.sequence_number
-         FROM online_training_billing ob
-         JOIN athletes a ON a.id = ob.athlete_id
-         LEFT JOIN online_trainings ot ON ot.id = ob.online_training_id
-         WHERE ob.trainer_id = ? AND DATE_FORMAT(COALESCE(ob.billing_month, ob.billing_date), "%Y-%m") = ?
-         ORDER BY ob.billing_date DESC, ob.id DESC'
-    );
-    $onlineBillingStmt->execute([$coachId, (string)($_GET['month'] ?? date('Y-m'))]);
-    $onlineBillingRows = $onlineBillingStmt->fetchAll();
-} catch (Throwable $e) {
-    $onlineBillingRows = [];
-}
-
 function parseBillingMonthValue(?string $raw): DateTimeImmutable
 {
     $raw = trim((string)$raw);
@@ -296,40 +280,6 @@ function accountForSpd(?string $bankAccount): ?string
     }
 
     return buildCzIbanFromLocal($bankAccount);
-}
-
-function paymentAsciiText(string $value): string
-{
-    $text = trim($value);
-    if ($text === '') {
-        return '';
-    }
-
-    $converted = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $text);
-    if ($converted !== false) {
-        $text = $converted;
-    }
-
-    $text = preg_replace('/[^A-Za-z0-9 .\/-]/', '', $text) ?? '';
-    $text = preg_replace('/\s+/', ' ', $text) ?? '';
-    return trim($text);
-}
-
-function buildPaymentQrUrl(string $bankAccount, float $amount, string $note): string
-{
-    $parts = [
-        'SPD*1.0',
-        'ACC:' . $bankAccount,
-        'CC:CZK',
-        'AM:' . number_format($amount, 2, '.', ''),
-    ];
-
-    if ($note !== '') {
-        $parts[] = 'MSG:' . str_replace('*', ' ', $note);
-    }
-
-    $spd = implode('*', $parts);
-    return 'https://quickchart.io/qr?size=220&text=' . rawurlencode($spd);
 }
 
 function fetchBillingStats(PDO $pdo, int $coachId, string $billingMonthSql, bool $hasIsMakeupSession, bool $hasBillingMonth, bool $hasSecondAthlete, ?int $athleteId = null, int $issueNumber = 1): array
@@ -658,7 +608,7 @@ function upsertAthleteMonthlyPayment(PDO $pdo, int $coachId, int $athleteId, str
 {
     $safeStatus = $status === 'paid' ? 'paid' : 'pending';
     if (!$amountIncludesOnline) {
-        $billedAmount += onlineTrainingBillingAmount($pdo, $coachId, $athleteId, $billingMonthSql);
+        $billedAmount += onlineTrainingBillingAmount($pdo, $coachId, $athleteId, $billingMonthSql, $issueNumber);
     }
     $receiptSnapshot = paymentBuildReceiptSnapshot($pdo, $coachId, $athleteId, $billingMonthSql, $issueNumber, null, $billedAmount);
     $sql = "INSERT INTO athlete_monthly_payments (coach_id, athlete_id, billing_month, issue_number, session_rate, planned_sessions, carryover_used_sessions, billed_amount, status, paid_at, receipt_snapshot_json)
@@ -898,7 +848,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $carryoverUsedNow = 0;
         $rate = $hasTrainingRate && $athlete['training_rate'] !== null ? (float)$athlete['training_rate'] : null;
 
-        if ($rate === null) {
+        if ($rate === null && onlineTrainingBillingAmount($pdo, $coachId, $athleteId, $selectedMonthSql, $issueNumber) <= 0) {
             flash('danger', 'Sportovec nemá nastavenou sazbu za trénink.');
             redirect(BASE_URL . '/payments.php?month=' . urlencode($selectedMonthParam));
         }
@@ -1042,7 +992,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $rate = $hasTrainingRate && $athlete['training_rate'] !== null ? (float)$athlete['training_rate'] : null;
-        if ($rate === null) {
+        if ($rate === null && onlineTrainingBillingAmount($pdo, $coachId, $athleteId, $selectedMonthSql, $issueNumber) <= 0) {
             flash('danger', 'Sportovec nemá nastavenou sazbu za trénink.');
             redirect(BASE_URL . '/payments.php?month=' . urlencode($selectedMonthParam));
         }
@@ -1065,6 +1015,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $plannedSessions = (int)($existingPayment['planned_sessions'] ?? 0);
             $carryoverUsedNow = (int)($existingPayment['carryover_used_sessions'] ?? 0);
             $billedAmount = (float)($existingPayment['billed_amount'] ?? 0.0);
+            $amountIncludesOnline = true;
             $storedRate = $existingPayment['session_rate'] !== null ? (float)$existingPayment['session_rate'] : $rate;
             $rate = $storedRate;
         } else {
@@ -1126,6 +1077,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     flash('danger', 'Neznámá akce.');
     redirect(BASE_URL . '/payments.php?month=' . urlencode($selectedMonthParam));
+}
+
+$onlineBillingRows = [];
+$pendingOnlineRequests = [];
+$onlineBillingError = null;
+$adminOnlineTrainingInvoices = [];
+$adminOnlineTrainingInvoiceError = null;
+$currentOnlinePaymentAccount = '';
+$openOnlineInvoiceId = (int)($_GET['view_online_invoice'] ?? 0);
+try {
+    $onlineBillingStmt = $pdo->prepare(
+        'SELECT ob.*, a.first_name, a.last_name, p.status AS payment_status
+         FROM online_training_billing ob
+         JOIN athletes a ON a.id = ob.athlete_id AND a.coach_id = ob.trainer_id
+         LEFT JOIN athlete_monthly_payments p ON p.coach_id = ob.trainer_id AND p.athlete_id = ob.athlete_id AND p.billing_month = ob.billing_month AND p.issue_number = ob.issue_number
+         WHERE ob.trainer_id = ? AND DATE_FORMAT(COALESCE(ob.billing_month, ob.billing_date), "%Y-%m") = ?
+         ORDER BY ob.billing_date DESC, ob.id DESC'
+    );
+    $onlineBillingStmt->execute([$coachId, $selectedMonthParam]);
+    $onlineBillingRows = $onlineBillingStmt->fetchAll();
+    $pendingOnlineRequests = onlineTrainingPendingPaymentRequests($pdo, $coachId);
+} catch (Throwable $e) {
+    error_log('Online payment overview: ' . $e->getMessage());
+    $onlineBillingError = 'Přehled online plateb se nepodařilo načíst. Zkontrolujte migraci a zkuste to znovu.';
+}
+try {
+    $invoiceTableStmt = $pdo->prepare(
+        'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?'
+    );
+    $invoiceTableStmt->execute(['admin_online_training_invoices']);
+    if ((int)$invoiceTableStmt->fetchColumn() > 0) {
+        $viewedAtColumnStmt = $pdo->prepare(
+            'SELECT COUNT(*) FROM information_schema.columns
+             WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?'
+        );
+        $viewedAtColumnStmt->execute(['admin_online_training_invoices', 'viewed_at']);
+        if ((int)$viewedAtColumnStmt->fetchColumn() > 0 && $openOnlineInvoiceId > 0) {
+            $markInvoiceViewedStmt = $pdo->prepare(
+                "UPDATE admin_online_training_invoices
+                 SET viewed_at = COALESCE(viewed_at, NOW())
+                 WHERE id = ? AND coach_id = ? AND status = 'pending'"
+            );
+            $markInvoiceViewedStmt->execute([$openOnlineInvoiceId, $coachId]);
+        }
+        $adminOnlineTrainingInvoiceStmt = $pdo->prepare(
+            'SELECT id, billing_month, sent_trainings_count, rate_per_training, amount, bank_account_at_issue, payment_note_at_issue, status, issued_at, paid_at, cancelled_at, viewed_at
+             FROM admin_online_training_invoices
+             WHERE coach_id = ?
+             ORDER BY billing_month DESC, issued_at DESC'
+        );
+        $adminOnlineTrainingInvoiceStmt->execute([$coachId]);
+        $adminOnlineTrainingInvoices = $adminOnlineTrainingInvoiceStmt->fetchAll();
+        $settingsTableStmt = $pdo->prepare(
+            'SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?'
+        );
+        $settingsTableStmt->execute(['admin_online_training_settings']);
+        if ((int)$settingsTableStmt->fetchColumn() > 0) {
+            $currentOnlinePaymentAccountStmt = $pdo->query('SELECT bank_account FROM admin_online_training_settings WHERE id = 1');
+            $currentOnlinePaymentAccount = (string)($currentOnlinePaymentAccountStmt->fetchColumn() ?: '');
+        }
+    }
+} catch (Throwable $e) {
+    error_log('Admin online training invoices overview: ' . $e->getMessage());
+    $adminOnlineTrainingInvoiceError = 'Výzvy za online tréninky se nepodařilo načíst.';
 }
 
 $athletesStmt = $pdo->prepare(
@@ -1261,11 +1276,145 @@ foreach ($athletes as $athlete) {
 renderHeader('Platby', false, true);
 ?>
 
+<?php if ($adminOnlineTrainingInvoices || $adminOnlineTrainingInvoiceError): ?>
+<div class="card border-primary shadow-sm mb-4" id="admin-online-training-invoices">
+    <div class="card-header bg-primary text-white fw-bold"><i class="fas fa-laptop me-2"></i>Výzvy k úhradě online tréninků</div>
+    <div class="card-body">
+        <p class="small text-muted">Měsíční vyúčtování za online tréninky vystavené administrátorem.</p>
+        <?php if ($adminOnlineTrainingInvoiceError): ?>
+        <div class="alert alert-danger mb-0"><?= h($adminOnlineTrainingInvoiceError) ?></div>
+        <?php else: ?>
+        <?php $unreadOnlineInvoices = array_values(array_filter($adminOnlineTrainingInvoices, static fn(array $invoice): bool => $invoice['status'] === 'pending' && empty($invoice['viewed_at']))); ?>
+        <?php if ($unreadOnlineInvoices): ?>
+        <div class="alert alert-warning">
+            <strong><i class="fas fa-bell me-1"></i>Máte <?= count($unreadOnlineInvoices) ?> novou výzvu k úhradě online tréninků.</strong>
+            <ul class="mb-0 mt-2">
+                <?php foreach ($unreadOnlineInvoices as $newInvoice): ?>
+                <?php $newInvoiceMonth = date('m/Y', strtotime((string)$newInvoice['billing_month'])); ?>
+                <li><?= h($newInvoiceMonth) ?> · <?= number_format((float)$newInvoice['amount'], 2, ',', ' ') ?> Kč
+                    <a class="alert-link ms-1" href="<?= BASE_URL ?>/payments.php?view_online_invoice=<?= (int)$newInvoice['id'] ?>#admin-online-training-invoices">Zobrazit účtenku a QR</a>
+                </li>
+                <?php endforeach; ?>
+            </ul>
+        </div>
+        <?php endif; ?>
+        <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+            <thead><tr><th>Období</th><th>Počet tréninků</th><th>Sazba za trénink</th><th>Celkem</th><th>Vystaveno</th><th>Stav</th><th>Účtenka</th></tr></thead>
+            <tbody>
+            <?php foreach ($adminOnlineTrainingInvoices as $invoice): ?>
+            <?php
+            $invoiceMonthLabel = date('m/Y', strtotime((string)$invoice['billing_month']));
+            $invoiceBankAccount = accountForSpd((string)($invoice['bank_account_at_issue'] ?: $currentOnlinePaymentAccount));
+            $invoicePaymentNote = !empty($invoice['payment_note_at_issue'])
+                ? (string)$invoice['payment_note_at_issue']
+                : substr(paymentAsciiText($invoiceMonthLabel . ' ' . $coachName), 0, 60);
+            $invoiceQrUrl = $invoiceBankAccount !== null
+                ? buildPaymentQrUrl($invoiceBankAccount, (float)$invoice['amount'], $invoicePaymentNote, 440)
+                : null;
+            ?>
+            <tr>
+                <td><?= h($invoiceMonthLabel) ?></td>
+                <td><?= number_format((int)$invoice['sent_trainings_count'], 0, ',', ' ') ?></td>
+                <td><?= number_format((float)$invoice['rate_per_training'], 2, ',', ' ') ?> Kč</td>
+                <td class="fw-semibold"><?= number_format((float)$invoice['amount'], 2, ',', ' ') ?> Kč</td>
+                <td><?= h(formatDateTime((string)$invoice['issued_at'])) ?></td>
+                <td>
+                    <?php if ($invoice['status'] === 'paid'): ?>
+                    <span class="badge bg-success">Uhrazeno</span>
+                    <?php if (!empty($invoice['paid_at'])): ?><div class="small text-muted"><?= h(formatDateTime((string)$invoice['paid_at'])) ?></div><?php endif; ?>
+                    <?php elseif ($invoice['status'] === 'cancelled'): ?>
+                    <span class="badge bg-secondary">Zrušeno</span>
+                    <?php if (!empty($invoice['cancelled_at'])): ?><div class="small text-muted"><?= h(formatDateTime((string)$invoice['cancelled_at'])) ?></div><?php endif; ?>
+                    <?php else: ?>
+                    <span class="badge bg-warning text-dark">Čeká na úhradu</span>
+                    <?php if (empty($invoice['viewed_at'])): ?><span class="badge bg-danger ms-1">Nová</span><?php endif; ?>
+                    <?php endif; ?>
+                </td>
+                <td>
+                    <?php if ($invoice['status'] !== 'cancelled'): ?>
+                    <details<?= (int)$invoice['id'] === $openOnlineInvoiceId ? ' open' : '' ?>>
+                        <summary class="btn btn-outline-primary btn-sm"><i class="fas fa-receipt me-1"></i>Zobrazit účtenku a QR</summary>
+                        <div class="border rounded p-3 mt-2 bg-light" style="min-width: min(520px, 85vw);">
+                            <div class="row g-3 align-items-center">
+                                <div class="col">
+                                    <h3 class="h6 mb-3">Účtenka · online tréninky · <?= h($invoiceMonthLabel) ?></h3>
+                                    <div class="small">Počet účtovaných tréninků: <strong><?= number_format((int)$invoice['sent_trainings_count'], 0, ',', ' ') ?></strong></div>
+                                    <div class="small">Cena za jeden trénink: <strong><?= number_format((float)$invoice['rate_per_training'], 2, ',', ' ') ?> Kč</strong></div>
+                                    <hr class="my-2">
+                                    <div>Celkem k úhradě: <strong><?= number_format((float)$invoice['amount'], 2, ',', ' ') ?> Kč</strong></div>
+                                    <?php if ($invoiceBankAccount !== null): ?>
+                                    <div class="small mt-2">Číslo účtu: <?= h((string)($invoice['bank_account_at_issue'] ?: $currentOnlinePaymentAccount)) ?></div>
+                                    <div class="small">Zpráva pro příjemce: <?= h($invoicePaymentNote) ?></div>
+                                    <?php endif; ?>
+                                </div>
+                                <?php if ($invoice['status'] === 'pending' && $invoiceQrUrl !== null): ?>
+                                <div class="col-auto text-center">
+                                    <img src="<?= h($invoiceQrUrl) ?>" alt="QR platba <?= h($invoiceMonthLabel) ?>" width="280" height="280" class="img-fluid border rounded p-2 bg-white">
+                                    <div class="small text-muted mt-1">Naskenujte v bankovní aplikaci</div>
+                                </div>
+                                <?php elseif ($invoice['status'] === 'pending'): ?>
+                                <div class="col-12"><div class="alert alert-warning mb-0 small">QR platba není dostupná, protože účet nebyl nastaven.</div></div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </details>
+                    <?php else: ?>
+                    <span class="text-muted small">Výzva zrušena</span>
+                    <?php endif; ?>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table></div>
+        <div class="form-text mt-2">Po přijetí platby administrátor aktualizuje stav výzvy.</div>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
+<div class="card border-warning shadow-sm mb-4">
+    <div class="card-header bg-warning text-dark fw-bold"><i class="fas fa-laptop me-2"></i>Online předplatná – výzvy k úhradě</div>
+    <div class="card-body">
+        <p class="small text-muted">Zobrazeny jsou všechny neuhrazené výzvy obsahující online předplatné bez ohledu na vybraný měsíc. Úhradou označíte celou výzvu včetně případných dalších položek.</p>
+        <?php if ($onlineBillingError): ?>
+        <div class="alert alert-danger mb-0"><?= h($onlineBillingError) ?></div>
+        <?php elseif (!$pendingOnlineRequests): ?>
+        <div class="text-muted">Žádná online předplatná nečekají na úhradu.</div>
+        <?php else: ?>
+        <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+            <thead><tr><th>Sportovec</th><th>Předplatné</th><th>Výzva</th><th>Celá částka výzvy</th><th></th></tr></thead>
+            <tbody><?php foreach ($pendingOnlineRequests as $request): $requestMonth = substr((string)$request['billing_month'], 0, 7); ?>
+            <tr>
+                <td><?= h($request['first_name'] . ' ' . $request['last_name']) ?></td>
+                <td><?= h((string)$request['subscription_descriptions']) ?></td>
+                <td><a href="<?= BASE_URL ?>/payment_receipt.php?month=<?= urlencode($requestMonth) ?>&amp;athlete_id=<?= (int)$request['athlete_id'] ?>&amp;issue=<?= (int)$request['issue_number'] ?>"><?= h($requestMonth) ?> / #<?= (int)$request['issue_number'] ?></a></td>
+                <td><?= number_format((float)$request['billed_amount'], 2, ',', ' ') ?> Kč</td>
+                <td>
+                    <?php if ($request['release_status'] === 'released'): ?>
+                    <form method="post" onsubmit="return confirm('Označit celou tuto platební výzvu jako uhrazenou?');">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="month" value="<?= h($requestMonth) ?>">
+                        <input type="hidden" name="athlete_id" value="<?= (int)$request['athlete_id'] ?>">
+                        <input type="hidden" name="issue_number" value="<?= (int)$request['issue_number'] ?>">
+                        <input type="hidden" name="action" value="mark_paid">
+                        <button type="submit" class="btn btn-success btn-sm">Označit celou výzvu uhrazenou</button>
+                    </form>
+                    <?php else: ?>
+                    <a class="btn btn-outline-warning btn-sm" href="<?= BASE_URL ?>/payments.php?month=<?= urlencode($requestMonth) ?>">Otevřít výzvu v platbách</a>
+                    <?php endif; ?>
+                </td>
+            </tr>
+            <?php endforeach; ?></tbody>
+        </table></div>
+        <?php endif; ?>
+    </div>
+</div>
+
 <?php if (!empty($onlineBillingRows)): ?>
 <div class="card border-warning shadow-sm mb-4">
     <div class="card-header bg-warning text-dark fw-bold"><i class="fas fa-laptop me-2"></i>Online tréninky v tomto vyúčtování</div>
-    <div class="table-responsive"><table class="table table-sm mb-0 align-middle"><thead><tr><th>Datum</th><th>Položka</th><th>Sportovec</th><th class="text-end">Částka</th></tr></thead><tbody>
-    <?php foreach ($onlineBillingRows as $row): ?><tr><td><?= h(formatDate((string)$row['billing_date'])) ?></td><td><span class="badge bg-warning text-dark">ONLINE</span> <?= h((string)$row['description']) ?></td><td><?= h($row['first_name'] . ' ' . $row['last_name']) ?></td><td class="text-end fw-semibold"><?= number_format((float)$row['amount'], 2, ',', ' ') ?> Kč</td></tr><?php endforeach; ?>
+    <div class="table-responsive"><table class="table table-sm mb-0 align-middle"><thead><tr><th>Datum</th><th>Položka</th><th>Sportovec</th><th>Výzva</th><th class="text-end">Částka</th></tr></thead><tbody>
+    <?php foreach ($onlineBillingRows as $row): ?><tr><td><?= h(formatDate((string)$row['billing_date'])) ?></td><td><span class="badge bg-warning text-dark">ONLINE</span> <?= h((string)$row['description']) ?></td><td><?= h($row['first_name'] . ' ' . $row['last_name']) ?></td><td><?php if ((float)$row['amount'] === 0.0): ?>Zdarma<?php elseif ($row['payment_status']): ?><a href="<?= BASE_URL ?>/payment_receipt.php?month=<?= h(substr((string)$row['billing_month'], 0, 7)) ?>&amp;athlete_id=<?= (int)$row['athlete_id'] ?>&amp;issue=<?= (int)$row['issue_number'] ?>"><?= $row['payment_status'] === 'paid' ? 'Uhrazeno' : 'Čeká na úhradu' ?> (#<?= (int)$row['issue_number'] ?>)</a><?php else: ?>Nevystaveno<?php endif; ?></td><td class="text-end fw-semibold"><?= number_format((float)$row['amount'], 2, ',', ' ') ?> Kč</td></tr><?php endforeach; ?>
     </tbody></table></div>
 </div>
 <?php endif; ?>
@@ -1583,7 +1732,7 @@ renderHeader('Platby', false, true);
                                             <input type="hidden" name="athlete_id" value="<?= $athleteId ?>">
                                             <input type="hidden" name="issue_number" value="1">
                                             <input type="hidden" name="action" value="mark_paid">
-                                            <button type="submit" class="btn btn-success btn-sm" <?= ($rate === null || !$isAthleteReleased) ? 'disabled' : '' ?>>Označit uhrazeno</button>
+                                            <button type="submit" class="btn btn-success btn-sm" <?= (($rate === null && $onlineBillingAmount <= 0) || !$isAthleteReleased) ? 'disabled' : '' ?>>Označit uhrazeno</button>
                                         </form>
                                     <?php endif; ?>
                                 </div>

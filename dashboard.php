@@ -123,6 +123,10 @@ $sortOptions = [
         'label' => 'Poslední trénink (nejnovější)',
         'sql' => 'CASE WHEN last_session_date IS NULL THEN 1 ELSE 0 END ASC, last_session_date DESC, a.first_name ASC, a.last_name ASC, a.id ASC',
     ],
+    'online_first' => [
+        'label' => 'Pouze ONLINE nejdříve',
+        'sql' => 'a.online_only DESC, a.first_name ASC, a.last_name ASC, a.id ASC',
+    ],
 ];
 
 $selectedSort = (string)($_GET['sort'] ?? 'first_name');
@@ -131,6 +135,12 @@ if (!isset($sortOptions[$selectedSort])) {
 }
 
 $athleteOrderSql = $sortOptions[$selectedSort]['sql'];
+$selectedMode = (string)($_GET['mode'] ?? 'all');
+if (!in_array($selectedMode, ['all', 'online', 'standard'], true)) $selectedMode = 'all';
+$athleteModeSql = $selectedMode === 'online' ? ' AND a.online_only = 1' : ($selectedMode === 'standard' ? ' AND a.online_only = 0' : '');
+$pairedAthleteCountStmt = $pdo->prepare('SELECT COUNT(*) FROM athletes WHERE coach_id = ? AND online_only = 0');
+$pairedAthleteCountStmt->execute([$coachId]);
+$pairedAthleteCount = (int)$pairedAthleteCountStmt->fetchColumn();
 
 $supportBankAccount = trim(getAppSetting('support_bank_account', ''));
 $coachSupportStmt = $pdo->prepare('SELECT id, name, username FROM coaches WHERE id = ? LIMIT 1');
@@ -206,7 +216,7 @@ $stmt = $pdo->prepare(
                            WHERE hu.athlete_id = a.id
                             AND hu.coach_seen_at IS NULL) AS health_pending_updates
      FROM athletes a
-     WHERE a.coach_id = ?
+     WHERE a.coach_id = ?' . $athleteModeSql . '
      ORDER BY ' . $athleteOrderSql
 );
 $stmt->execute([$coachId]);
@@ -844,10 +854,14 @@ renderHeader('Dashboard', false, true);
                 </option>
                 <?php endforeach; ?>
             </select>
+            <label for="athleteMode" class="small text-muted">Typ</label>
+            <select id="athleteMode" name="mode" class="form-select form-select-sm" onchange="this.form.submit()">
+                <option value="all" <?= $selectedMode === 'all' ? 'selected' : '' ?>>Všichni</option><option value="online" <?= $selectedMode === 'online' ? 'selected' : '' ?>>Pouze ONLINE</option><option value="standard" <?= $selectedMode === 'standard' ? 'selected' : '' ?>>Ostatní</option>
+            </select>
         </form>
     </div>
     <div class="coach-dashboard-toolbar__actions">
-        <?php if (count($athletes) >= 2): ?>
+        <?php if ($pairedAthleteCount >= 2): ?>
         <a href="<?= BASE_URL ?>/training_paired_start.php" class="btn btn-sm fw-bold btn-paired-highlight">
             <i class="fas fa-people-group me-1"></i>Párový trénink
         </a>
@@ -957,8 +971,8 @@ renderHeader('Dashboard', false, true);
 <div class="card border-0 shadow-sm">
     <div class="card-body text-center py-5">
         <div class="display-3 text-muted mb-3">🏃</div>
-        <h4 class="text-muted">Zatím nemáte žádné sportovce</h4>
-        <p class="text-muted">Přidejte prvního sportovce a začněte trénovat!</p>
+        <h4 class="text-muted"><?= $selectedMode === 'all' ? 'Zatím nemáte žádné sportovce' : 'Tomuto filtru neodpovídá žádný sportovec' ?></h4>
+        <p class="text-muted"><?= $selectedMode === 'all' ? 'Přidejte prvního sportovce a začněte trénovat!' : 'Změňte výběr typu sportovce.' ?></p>
         <a href="<?= BASE_URL ?>/athlete_add.php" class="btn btn-warning fw-bold">
             <i class="fas fa-plus me-1"></i>Přidat sportovce
         </a>
@@ -968,7 +982,7 @@ renderHeader('Dashboard', false, true);
 <div class="row g-3">
     <?php foreach ($athletes as $a): ?>
     <div class="col-md-6 col-xl-4">
-        <div class="card athlete-card border-0 shadow-sm h-100">
+        <div class="card athlete-card<?= !empty($a['online_only']) ? ' athlete-card--online' : '' ?> border-0 shadow-sm h-100">
             <div class="card-body">
                 <div class="text-center mb-3">
                     <?php if ($a['photo']): ?>
@@ -987,6 +1001,7 @@ renderHeader('Dashboard', false, true);
                         <h5 class="card-title mb-0 fw-bold">
                             <?= h($a['first_name'] . ' ' . $a['last_name']) ?>
                         </h5>
+                        <?php if (!empty($a['online_only'])): ?><span class="badge bg-dark">Pouze ONLINE</span><?php endif; ?>
                         <?php $age = calculateAge($a['birth_date'] ?? null); ?>
                         <small class="text-muted"><?= $age !== null ? $age . ' let' : '' ?></small>
                     </div>
@@ -1077,7 +1092,7 @@ renderHeader('Dashboard', false, true);
                        class="btn <?= $a['active_paired_session_id'] ? 'btn-info text-dark' : 'btn-warning' ?> btn-sm flex-fill fw-bold">
                         <i class="fas fa-play me-1"></i>Pokračovat
                     </a>
-                    <?php else: ?>
+                    <?php elseif (empty($a['online_only'])): ?>
                     <a href="<?= BASE_URL ?>/training_new.php?athlete_id=<?= $a['id'] ?>"
                        class="btn btn-warning btn-sm flex-fill">
                         <i class="fas fa-play me-1"></i>Trénink

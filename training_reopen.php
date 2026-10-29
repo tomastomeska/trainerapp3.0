@@ -31,7 +31,7 @@ if (!$session) {
     redirect(BASE_URL . '/dashboard.php');
 }
 
-$pdo->prepare('UPDATE training_sessions SET completed_at = NULL WHERE id = ?')
+$pdo->prepare('UPDATE training_sessions SET completed_at = NULL, duration_centiseconds = NULL WHERE id = ?')
     ->execute([$sessionId]);
 
 flash('success', 'Trénink byl znovu otevřen.');

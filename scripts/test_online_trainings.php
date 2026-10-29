@@ -28,9 +28,12 @@ try {
     }
 
     $uniqueStmt = $pdo->query("SHOW INDEX FROM online_trainings WHERE Key_name = 'uq_online_training_sequence'");
-    if (!$uniqueStmt || !$uniqueStmt->fetch()) {
+    $sequenceColumns = $uniqueStmt ? $uniqueStmt->fetchAll(PDO::FETCH_ASSOC) : [];
+    usort($sequenceColumns, static fn(array $a, array $b): int => (int)$a['Seq_in_index'] <=> (int)$b['Seq_in_index']);
+    if (array_column($sequenceColumns, 'Column_name') !== ['trainer_id', 'athlete_id', 'sequence_number']
+        || array_filter($sequenceColumns, static fn(array $column): bool => (int)$column['Non_unique'] !== 0)) {
         http_response_code(500);
-        echo "FAIL: chybi unikatni cislovani online treningu." . PHP_EOL;
+        echo "FAIL: chybi unikatni cislovani online treningu pro dvojici trener/sportovec." . PHP_EOL;
         exit;
     }
 

@@ -1,6 +1,17 @@
 <?php
 /** @var \PDO $pdo @var string $userType @var int $userId @var string $appUrl */
 
+if (!mycoachAppEnabled()) {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(404);
+        echo json_encode(['ok' => false, 'error' => 'feature_disabled']);
+        exit;
+    }
+    flash('warning', 'Aplikace MyCoach je momentálně vypnutá.');
+    redirect($appUrl);
+}
+
 // ── API: uložení progress ─────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json; charset=utf-8');

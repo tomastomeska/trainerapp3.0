@@ -1,0 +1,193 @@
+.medal-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+    gap: 1rem;
+}
+
+.medal-grid--preview {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.admin-medal-grid {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    align-items: stretch;
+}
+
+.admin-medal-item {
+    min-width: 0;
+    position: relative;
+}
+
+.admin-medal-item:hover,
+.admin-medal-item:focus-within {
+    z-index: 2;
+}
+
+.admin-medal-card {
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    align-items: center;
+}
+
+.admin-medal-card .medal-card__image {
+    width: min(100%, 125px);
+}
+
+.admin-medal-card__description {
+    flex: 1;
+    margin-top: 0.6rem;
+    color: #64748b;
+    font-size: 0.88rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.admin-medal-card__stats {
+    width: 100%;
+    margin-top: 0.85rem;
+    padding-top: 0.65rem;
+    border-top: 1px solid #e2e8f0;
+    font-size: 0.84rem;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
+.admin-medal-card__stats strong {
+    color: #0f172a;
+    font-size: 1.1rem;
+}
+
+.admin-medal-card__share {
+    color: #64748b;
+    white-space: nowrap;
+}
+
+.admin-medal-holder-tooltip {
+    position: relative;
+    display: inline-block;
+    cursor: help;
+    outline-offset: 3px;
+}
+
+.admin-medal-holder-tooltip > strong {
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+}
+
+.admin-medal-holder-tooltip__content {
+    position: absolute;
+    z-index: 20;
+    bottom: calc(100% + 0.65rem);
+    left: 50%;
+    display: block;
+    width: 280px;
+    max-width: min(320px, calc(100vw - 2rem));
+    max-height: 240px;
+    padding: 0.55rem 0.75rem;
+    overflow-y: auto;
+    border: 1px solid #334155;
+    border-radius: 0.55rem;
+    background: #0f172a;
+    box-shadow: 0 6px 18px rgb(15 23 42 / 25%);
+    color: #fff;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    text-align: left;
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, 0.25rem);
+    transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+}
+
+.admin-medal-holder-tooltip:hover .admin-medal-holder-tooltip__content,
+.admin-medal-holder-tooltip:focus .admin-medal-holder-tooltip__content {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(-50%, 0);
+}
+
+.admin-medal-holder-tooltip__person {
+    display: block;
+    overflow-wrap: anywhere;
+}
+
+.admin-medal-holder-tooltip__person + .admin-medal-holder-tooltip__person {
+    margin-top: 0.25rem;
+    padding-top: 0.25rem;
+    border-top: 1px solid rgb(255 255 255 / 18%);
+}
+
+.admin-medal-holder-tooltip__person span {
+    color: #cbd5e1;
+}
+
+.medal-card {
+    min-width: 0;
+    padding: 0.75rem 0.5rem;
+    text-align: center;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.9rem;
+    background: #fff;
+}
+
+.medal-card__image {
+    display: block;
+    width: min(100%, 150px);
+    aspect-ratio: 1;
+    object-fit: contain;
+    margin: 0 auto 0.5rem;
+}
+
+.medal-card__title {
+    font-weight: 700;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+    hyphens: auto;
+}
+
+.medal-card__date {
+    margin-top: 0.25rem;
+    font-size: 0.78rem;
+    color: #64748b;
+    overflow-wrap: anywhere;
+}
+
+.medal-card.is-locked .medal-card__image {
+    filter: grayscale(1);
+    opacity: 0.48;
+}
+
+.medal-card.is-locked .medal-card__title {
+    color: #64748b;
+}
+
+.medal-card.is-earned {
+    border-color: #f2c14e;
+    box-shadow: 0 2px 8px rgb(15 23 42 / 7%);
+}
+
+@media (max-width: 767.98px) {
+    .medal-grid--preview {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 0.35rem;
+    }
+
+    .medal-grid--preview .medal-card {
+        padding: 0.35rem 0.2rem;
+    }
+
+    .medal-grid--preview .medal-card__image {
+        width: 100%;
+    }
+
+    .medal-grid--preview .medal-card__title {
+        font-size: 0.7rem;
+    }
+
+    .medal-grid--preview .medal-card__date {
+        font-size: 0.62rem;
+    }
+}

@@ -4,6 +4,7 @@ require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/online_training.php';
 require_once __DIR__ . '/includes/athlete_header.php';
 require_once __DIR__ . '/includes/health_questionnaire.php';
+require_once __DIR__ . '/includes/medals.php';
 
 if (!function_exists('getAthleteWeightLogById')) {
     function getAthleteWeightLogById(int $logId, int $athleteId = 0): ?array {
@@ -169,6 +170,7 @@ if (!$athlete) {
 }
 
 $athleteSpecialTrainingEnabled = ((int)($athlete['special_training_enabled'] ?? 0)) === 1;
+$activeOnlineSubscription = onlineTrainingActiveSubscription($pdo, (int)$athlete['coach_id'], $athleteId);
 $athleteMyCoachEnabled = mycoachAccessEnabledForAthlete($pdo, $athleteId);
 $onlineTrainingCount = 0;
 try {
@@ -204,6 +206,7 @@ try {
 }
 
 $healthQuestionnaireStatus = healthQuestionnaireFetchStatus($pdo, $athleteId);
+$athleteMedals = athleteMedalsLoad($pdo, $athleteId);
 $healthQuestionnaireAccessEnabled = healthQuestionnaireAthleteAccessEnabled();
 $healthTileClass = 'quick-tile-warning';
 $healthTileValue = '<i class="fas fa-chevron-right"></i>';
@@ -900,6 +903,9 @@ try {
                     $nearestPlannedTraining = null;
                 }
 
+require __DIR__ . '/includes/athlete_dashboard_new.php';
+return;
+
 renderAthleteHeader('Profil sportovce', false, true);
 ?>
 
@@ -1028,86 +1034,10 @@ renderAthleteHeader('Profil sportovce', false, true);
     </div>
 </div>
 
-<div class="dashboard-quick-tiles mb-3">
-    <a href="<?= BASE_URL ?>/athlete_zpravy.php" class="quick-tile quick-tile-danger">
-        <span class="quick-tile__label"><i class="fas fa-envelope me-1"></i>Zprávy</span>
-        <span class="quick-tile__value"><?= (int)$unreadInboxCount ?></span>
-    </a>
-    <a href="<?= BASE_URL ?>/athlete_mealplans.php" class="quick-tile quick-tile-success">
-        <span class="quick-tile__label"><i class="fas fa-utensils me-1"></i>Jídelníčky</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a href="<?= BASE_URL ?>/athlete_food_diary.php" class="quick-tile quick-tile-warning">
-        <span class="quick-tile__label"><i class="fas fa-bowl-food me-1"></i>Strava</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a href="<?= BASE_URL ?>/athlete_graphs.php" class="quick-tile quick-tile-info">
-        <span class="quick-tile__label"><i class="fas fa-chart-line me-1"></i>Grafy</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a href="<?= BASE_URL ?>/athlete_calendar.php" class="quick-tile quick-tile-warning">
-        <span class="quick-tile__label"><i class="fas fa-calendar-alt me-1"></i>Kalendář</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a href="<?= BASE_URL ?>/athlete_change_password.php" class="quick-tile quick-tile-muted">
-        <span class="quick-tile__label"><i class="fas fa-key me-1"></i>Heslo</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a href="<?= BASE_URL ?>/athlete_gallery.php" class="quick-tile quick-tile-info">
-        <span class="quick-tile__label"><i class="fas fa-images me-1"></i>Galerie</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a href="<?= BASE_URL ?>/athlete_files.php" class="quick-tile quick-tile-info">
-        <span class="quick-tile__label"><i class="fas fa-folder-open me-1"></i>Soubory</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a href="<?= BASE_URL ?>/athlete_videos.php" class="quick-tile quick-tile-danger">
-        <span class="quick-tile__label"><i class="fas fa-video me-1"></i>Videa</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <?php if ($athleteSpecialTrainingEnabled): ?>
-    <a href="<?= BASE_URL ?>/athlete_special_training.php" class="quick-tile quick-tile-info">
-        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-flag-checkered me-1"></i>Events</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <?php else: ?>
-    <div class="quick-tile quick-tile-muted">
-        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-lock me-1"></i>Events <span class="badge rounded-pill bg-secondary">Uzamčeno</span></span>
-        <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
-    </div>
-    <?php endif; ?>
-    <a href="<?= BASE_URL ?>/online_training.php" class="quick-tile quick-tile-warning">
-        <span class="quick-tile__label"><i class="fas fa-laptop me-1"></i>Online tréninky</span>
-        <span class="quick-tile__value"><?= (int)$onlineTrainingCount ?></span>
-    </a>
-    <?php if ($mycoachAppUserCanAccess): ?>
-    <a href="<?= BASE_URL ?>/athlete_mycoach_app.php" class="quick-tile quick-tile-warning">
-    <?php else: ?>
-    <a href="#" class="quick-tile quick-tile-warning" data-bs-toggle="modal" data-bs-target="#modalMyCoachComingSoon">
-    <?php endif; ?>
-        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-brain me-1"></i>MyCoach <span class="badge rounded-pill <?= $mycoachAppUserCanAccess ? 'bg-success' : 'bg-warning text-dark' ?>"><?= $mycoachAppUserCanAccess ? 'Pro' : 'Brzy' ?></span></span>
-        <span class="quick-tile__value"><i class="fas fa-<?= $mycoachAppUserCanAccess ? 'star' : 'rocket' ?>"></i></span>
-    </a>
-    <?php if ($healthQuestionnaireAccessEnabled): ?>
-    <a href="<?= BASE_URL ?>/athlete_health_questionnaire.php" class="quick-tile <?= h($healthTileClass) ?>">
-        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-heart-pulse me-1"></i>Z. dotazník</span>
-        <span class="quick-tile__value"><?= $healthTileValue ?></span>
-    </a>
-    <?php else: ?>
-    <div class="quick-tile quick-tile-muted">
-        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-lock me-1"></i>Z. dotazník <span class="badge rounded-pill bg-secondary">Vypnuto</span></span>
-        <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
-    </div>
-    <?php endif; ?>
-    <a href="<?= BASE_URL ?>/athlete_manual.php" class="quick-tile quick-tile-success">
-        <span class="quick-tile__label"><i class="fas fa-circle-question me-1"></i>Návod</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a href="<?= BASE_URL ?>/athlete_terms.php" class="quick-tile quick-tile-warning">
-        <span class="quick-tile__label"><i class="fas fa-file-contract me-1"></i>Podmínky</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-</div>
+<?php require __DIR__ . '/includes/athlete_subscription_alert.php'; ?>
+<div class="mb-3"><a href="<?= BASE_URL ?>/intake_questionnaire.php" class="btn btn-outline-dark btn-sm">Můj vstupní dotazník</a></div>
+
+<?php require __DIR__ . '/includes/athlete_quick_menu.php'; ?>
 
 <div class="d-md-none mb-4">
     <div class="athlete-mobile-summary-card mb-3">

@@ -13,7 +13,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verifyCsrf($_POST['csrf_token'] ??
 $coachId  = getCurrentCoachId();
 $pairedId = intParam($_POST, 'paired_session_id');
 $location = normalizeTrainingVenueName($_POST['location'] ?? '');
+$durationCentiseconds = trainingDurationCentisecondsFromInput($_POST);
 $pdo      = getDB();
+
+if ($durationCentiseconds === null) {
+    flash('danger', 'Zadejte platnou dobu tréninku.');
+    redirect(BASE_URL . '/training_paired_session.php?id=' . $pairedId);
+}
 
 // Načti všechny nedokončené session v tomto párovém tréninku
 $stmt = $pdo->prepare(
@@ -42,9 +48,9 @@ foreach ($sessions as $s) {
     $notes = trim($_POST['notes_' . $s['id']] ?? '');
     $pdo->prepare(
         'UPDATE training_sessions
-         SET completed_at = ?, location = ?, notes = ?
+         SET completed_at = ?, duration_centiseconds = ?, location = ?, notes = ?
          WHERE id = ?'
-    )->execute([$now, $location ?: null, $notes ?: null, $s['id']]);
+    )->execute([$now, $durationCentiseconds, $location ?: null, $notes ?: null, $s['id']]);
 }
 
 // Sestaví flash zprávu s názvy sportovců (bez HTML)

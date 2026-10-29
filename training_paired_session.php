@@ -117,6 +117,14 @@ renderHeader('Párový trénink', false, true);
     </div>
 </div>
 
+<div class="text-center mb-3">
+    <div class="training-elapsed-timer" id="trainingElapsedTimer"
+         data-started-at-ms="<?= (int)(strtotime((string)$paired['started_at']) * 1000) ?>"
+         data-completed="0">
+        <?= formatTrainingDuration(trainingElapsedCentiseconds((string)$paired['started_at'])) ?>
+    </div>
+</div>
+
 <!-- Mobilní záložky (skryté na md+) -->
 <ul class="nav nav-tabs mb-3 d-md-none" id="pairedTabs" role="tablist">
     <?php foreach ($sessionData as $idx => $sd): ?>
@@ -380,6 +388,17 @@ renderHeader('Párový trénink', false, true);
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" for="duration-minutes">Celková doba tréninku</label>
+                        <?php $durationCentiseconds = trainingElapsedCentiseconds((string)$paired['started_at']); ?>
+                        <div class="input-group">
+                            <input type="number" class="form-control" id="duration-minutes" name="duration_minutes" min="0" max="999999" value="<?= intdiv($durationCentiseconds, 6000) ?>" required aria-label="Minuty">
+                            <span class="input-group-text">min</span>
+                            <input type="number" class="form-control" id="duration-seconds" name="duration_seconds" min="0" max="59" value="<?= intdiv($durationCentiseconds % 6000, 100) ?>" required aria-label="Sekundy">
+                            <span class="input-group-text">s</span>
+                        </div>
+                        <div class="form-text">Čas se předvyplní podle časomíry a před uložením ho můžete upravit.</div>
+                    </div>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">
                             <i class="fas fa-map-marker-alt me-1"></i>Místo tréninku
@@ -824,5 +843,6 @@ function updatePairedCount(key) {
     window.addEventListener('resize', applyTabs);
 })();
 </script>
+<script src="<?= BASE_URL ?>/assets/js/training-timer.js"></script>
 
 <?php renderFooter(); ?>

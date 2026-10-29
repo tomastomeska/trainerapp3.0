@@ -160,7 +160,7 @@ $stmt = $pdo->prepare(
      WHERE (ws.coach_id = ? OR ws.is_global = 1 OR ws.coach_id IS NULL)
        AND COALESCE(ws.is_active, 1) = 1
      GROUP BY ws.id, ws.name, ws.description, ws.is_active, ws.is_global
-     ORDER BY CASE WHEN ws.name = "Flexibilní sada" THEN 0 ELSE 1 END, ws.is_global DESC, ws.name ASC'
+     ORDER BY COALESCE(ws.is_global, 0) ASC, CASE WHEN ws.name = "Flexibilní sada" THEN 0 ELSE 1 END, ws.name ASC'
 );
 $stmt->execute([$coach['id']]);
 

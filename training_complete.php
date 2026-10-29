@@ -14,7 +14,13 @@ $coachId   = getCurrentCoachId();
 $sessionId = intParam($_POST, 'session_id');
 $location  = normalizeTrainingVenueName($_POST['location'] ?? '');
 $notes     = trim($_POST['notes']    ?? '');
+$durationCentiseconds = trainingDurationCentisecondsFromInput($_POST);
 $pdo       = getDB();
+
+if ($durationCentiseconds === null) {
+    flash('danger', 'Zadejte platnou dobu tréninku.');
+    redirect(BASE_URL . '/training_session.php?id=' . $sessionId);
+}
 
 $uploadedPhotos = [];
 try {
@@ -52,9 +58,9 @@ if ($location !== '') {
 try {
     $pdo->prepare(
         'UPDATE training_sessions
-         SET completed_at = NOW(), location = ?, notes = ?, training_photo = ?
+         SET completed_at = NOW(), duration_centiseconds = ?, location = ?, notes = ?, training_photo = ?
          WHERE id = ?'
-    )->execute([$location ?: null, $notes ?: null, $trainingPhoto, $sessionId]);
+    )->execute([$durationCentiseconds, $location ?: null, $notes ?: null, $trainingPhoto, $sessionId]);
 
     if (!empty($uploadedPhotos)) {
         addTrainingSessionPhotos($sessionId, $uploadedPhotos);

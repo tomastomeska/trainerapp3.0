@@ -157,6 +157,9 @@ renderHeader('Návod pro trenéry', false, true);
             <li>V horním menu otevřete Sportovci.</li>
             <li>Klikněte na Přidat sportovce.</li>
             <li>Vyplňte povinná pole (jméno, příjmení, přihlašovací údaje a další zobrazená pole) a zkontrolujte, že sportovec patří pod správného trenéra.</li>
+            <li>Je-li sportovec pouze online, zaškrtněte <strong>Pouze ONLINE</strong>. Režim lze později změnit v úpravě sportovce. Na dashboardu má žlutou kartu a lze jej filtrovat i řadit. Nový klasický ani párový trénink nelze spustit, již rozpracovaný lze dokončit.</li>
+            <li>Zvolte, zda chcete po vytvoření vyplnit vstupní dotazník. Otázky ANO/NE, textové nebo ANO/NE s nepovinným textem nastavíte v profilu trenéra v sekci <strong>Vstupní dotazník</strong>.</li>
+            <li>Dotazník můžete vyplnit i později v detailu sportovce. Po uložení jej vidí trenér i sportovec, odpovědi již nelze upravit a pozdější změny otázek je nemění. Zdravotní dotazník je samostatný.</li>
             <li>Zkontrolujte, že nejsou překlepy v e-mailu a uživatelském jménu.</li>
             <li>Klikněte na Uložit.</li>
             <li>Po uložení otevřete detail sportovce a ověřte, že se profil vytvořil správně.</li>
@@ -271,7 +274,7 @@ renderHeader('Návod pro trenéry', false, true);
             <li>V hlavičce tréninku zkontrolujte poslední hmotnost sportovce (kg + datum vážení).</li>
             <li>U každého cviku vyplňujte série (opakování, váha nebo čas podle typu cviku).</li>
             <li>Průběžně kontrolujte, že se data ukládají do správného cviku/série.</li>
-            <li>Na konci klikněte na Dokončit trénink.</li>
+            <li>Na konci klikněte na Dokončit trénink. Časomíra běží od zahájení a v okně pro ukončení můžete celkovou dobu upravit v minutách a sekundách.</li>
             <li>Zkontrolujte detail dokončeného tréninku.</li>
         </ol>
 
@@ -292,7 +295,7 @@ renderHeader('Návod pro trenéry', false, true);
             <li>Zvolte sadu pro párovou jednotku.</li>
             <li>U obou sportovců zkontrolujte stav zdravotního dotazníku a případná omezení.</li>
             <li>U obou sportovců v hlavičce ověřte poslední hmotnost (kg + datum).</li>
-            <li>Zapisujte průběh tréninku a dokončete párovou session.</li>
+            <li>Zapisujte průběh tréninku a dokončete párovou session. Časomíra běží od zahájení a celkovou dobu můžete před uložením upravit.</li>
             <li>Zkontrolujte výsledek v detailu obou sportovců.</li>
         </ol>
     </div>
@@ -302,17 +305,22 @@ renderHeader('Návod pro trenéry', false, true);
     <div class="card-header fw-semibold"><i class="fas fa-laptop me-2 text-warning"></i>Online tréninky</div>
     <div class="card-body">
         <p>Online trénink je samostatně odcvičený trénink sportovce. Je oddělený od klasického tréninku s trenérem a jeho výsledky se nepoužijí jako poslední výkon pro klasickou session.</p>
+        <p>Každý sportovec má u každého trenéra vlastní číselnou řadu online tréninků od 1. Číslo online tréninku není databázové ID.</p>
         <h6 class="fw-bold">Příprava a odeslání</h6>
         <ol>
-            <li>V detailu sportovce nastavte cenu jednorázového online tréninku nebo vytvořte předplatný balík.</li>
+            <li>V detailu sportovce vytvořte předplatné s cenou a začátkem a koncem platnosti. Výzva k platbě se otevře ihned.</li>
+            <li>V nabídce <strong>Online předplatná</strong> uvidíte platná, budoucí uhrazená i neuhrazená předplatná. Platná předplatná končící do 15 dní jsou zvýrazněná; z přehledu otevřete detail sportovce nebo platby. Budoucí předplatné opravňuje k odesílání až od začátku platnosti.</li>
+            <li>V sekci <strong>Platby → Online předplatná – výzvy k úhradě</strong> uvidíte neuhrazené výzvy ze všech měsíců. Tlačítko označí jako uhrazenou celou výzvu včetně ostatních případných položek.</li>
             <li>Otevřete Online tréninky a klikněte na Nový online trénink.</li>
-            <li>Vyberte sportovce a sadu. Aplikace ukáže automatické čerpání předplatného, jednorázovou sazbu nebo nutnost výslovně zvolit bezplatný trénink.</li>
+            <li>Vyberte sportovce a sadu. K vytvoření i odeslání je nutné platné a uhrazené předplatné.</li>
+            <li>Vyplňte instrukce, vyberte fotografie a videa a přidejte internetové odkazy. Ke každému odkazu můžete doplnit vysvětlení; přílohy a odkazy lze přidat také v detailu tréninku.</li>
             <li>V draftu nastavte počet sérií a předepsané váhy a opakování. Hodnoty se průběžně ukládají.</li>
             <li>Přidejte fotografie, videa nebo odkazy k celému tréninku či konkrétnímu cviku.</li>
             <li>Po odeslání sportovec dostane interní zprávu a e-mail se seznamem cviků.</li>
+            <li>Ve výpisu a detailu tréninku sledujte stav: po odeslání <strong>Odesláno</strong>, po zahájení sportovcem <strong>Trénink zahájen – probíhá</strong> a po ukončení <strong>Dokončený</strong>. Pro zobrazení změny již otevřenou stránku obnovte. Skutečné výsledky jsou pod předepsanými cviky; fotografie, videa a odkazy od sportovce najdete v sekci <strong>Přílohy sportovce</strong>.</li>
         </ol>
         <h6 class="fw-bold mt-3">Účtování</h6>
-        <ul class="mb-0"><li>Aktivní předplatné má automaticky přednost a odečte se při odeslání tréninku.</li><li>Bez předplatného se použije jednorázová sazba sportovce.</li><li>Online položky patří do aktuální výzvy, pokud ještě není odeslaná; jinak do následujícího měsíce.</li></ul>
+        <ul class="mb-0"><li>Počet tréninků v platném předplatném není omezen. Cena 0 Kč znamená bezplatné předplatné.</li><li>Předplatné se přidá do neuhrazené měsíční výzvy; pokud už byla uhrazena, vznikne dodatečná výzva. Sportovec dostane upozornění a podle dostupných údajů také e-mail.</li><li>Již odeslaný trénink lze dokončit i po skončení předplatného. Historické balíky zůstávají v přehledu, ale neopravňují k novému odeslání.</li></ul>
     </div>
 </div>
 

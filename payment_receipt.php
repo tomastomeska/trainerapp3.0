@@ -403,15 +403,9 @@ $carryoverForMonth = receiptResolveCarryoverUsage(
 );
 $breakdown = receiptBuildBillable($singleSessions, $pairedSessions, $carryoverForMonth, $singleRate, $pairedRate, $paidReplacementSingle, $paidReplacementPaired);
 $onlineBillingRows = [];
-if ($issueNumber === 1) {
-    try {
-        $onlineBillingStmt = $pdo->prepare('SELECT description, amount, billing_date FROM online_training_billing WHERE trainer_id = ? AND athlete_id = ? AND billing_month = ? ORDER BY billing_date, id');
-        $onlineBillingStmt->execute([$coachId, $athleteId, $monthSql]);
-        $onlineBillingRows = $onlineBillingStmt->fetchAll();
-    } catch (Throwable $e) {
-        $onlineBillingRows = [];
-    }
-}
+$onlineBillingStmt = $pdo->prepare('SELECT description, amount, billing_date FROM online_training_billing WHERE trainer_id = ? AND athlete_id = ? AND billing_month = ? AND issue_number = ? ORDER BY billing_date, id');
+$onlineBillingStmt->execute([$coachId, $athleteId, $monthSql, $issueNumber]);
+$onlineBillingRows = $onlineBillingStmt->fetchAll();
 $onlineBillingAmount = array_sum(array_map(static fn(array $row): float => (float)$row['amount'], $onlineBillingRows));
 
 $paymentRow = null;

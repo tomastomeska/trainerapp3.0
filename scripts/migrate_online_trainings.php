@@ -16,7 +16,6 @@ header('Content-Type: application/json; charset=utf-8');
 
 try {
     $pdo = getDB();
-    $pdo->beginTransaction();
 
     $rateColumn = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'online_training_rate'");
     if (!$rateColumn || !$rateColumn->fetch()) {
@@ -71,9 +70,11 @@ try {
         price DECIMAL(10,2) NOT NULL DEFAULT 0,
         subscription_id INT NULL,
         coach_note TEXT NULL,
+        coach_reaction TEXT NULL,
         athlete_note TEXT NULL,
+        trainer_reviewed_at DATETIME NULL,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uq_online_training_sequence (athlete_id, sequence_number),
+        UNIQUE KEY uq_online_training_sequence (trainer_id, athlete_id, sequence_number),
         KEY idx_online_training_athlete_status (athlete_id, status, sent_at),
         KEY idx_online_training_trainer_status (trainer_id, status, sent_at),
         CONSTRAINT fk_online_training_trainer FOREIGN KEY (trainer_id) REFERENCES coaches(id) ON DELETE CASCADE,
@@ -81,6 +82,14 @@ try {
         CONSTRAINT fk_online_training_set FOREIGN KEY (training_set_id) REFERENCES workout_sets(id) ON DELETE RESTRICT,
         CONSTRAINT fk_online_training_subscription FOREIGN KEY (subscription_id) REFERENCES online_training_subscriptions(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $reviewedColumn = $pdo->query("SHOW COLUMNS FROM online_trainings LIKE 'trainer_reviewed_at'");
+    if (!$reviewedColumn || !$reviewedColumn->fetch()) {
+        $pdo->exec("ALTER TABLE online_trainings ADD COLUMN trainer_reviewed_at DATETIME NULL AFTER athlete_note");
+    }
+    $reactionColumn = $pdo->query("SHOW COLUMNS FROM online_trainings LIKE 'coach_reaction'");
+    if (!$reactionColumn || !$reactionColumn->fetch()) {
+        $pdo->exec("ALTER TABLE online_trainings ADD COLUMN coach_reaction TEXT NULL AFTER coach_note");
+    }
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS online_training_exercises (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -131,6 +140,7 @@ try {
         file_path VARCHAR(500) NULL,
         original_name VARCHAR(255) NULL,
         external_url VARCHAR(1000) NULL,
+        description TEXT NULL,
         uploaded_by ENUM('trainer','athlete') NOT NULL,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         KEY idx_online_attachment_training (online_training_id),
@@ -162,12 +172,8 @@ try {
         $pdo->exec("UPDATE online_training_billing SET billing_month = DATE_FORMAT(billing_date, '%Y-%m-01') WHERE billing_month IS NULL");
     }
 
-    $pdo->commit();
     echo json_encode(['success' => true, 'message' => 'Online training schema migration completed.']);
 } catch (Throwable $e) {
-    if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
-        $pdo->rollBack();
-    }
     http_response_code(500);
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }

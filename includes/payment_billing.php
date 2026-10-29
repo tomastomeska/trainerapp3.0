@@ -397,11 +397,11 @@ function calculateAthleteMonthlyBill(PDO $pdo, int $coachId, int $athleteId, str
     $rates = $rateStmt->fetch() ?: [];
     $singleRate = $sessionRateOverride ?? (($rates['training_rate'] ?? null) !== null ? (float)$rates['training_rate'] : null);
     $pairedRate = $sessionRateOverride ?? (($rates['paired_training_rate'] ?? null) !== null ? (float)$rates['paired_training_rate'] : $singleRate);
-    $amount = $singleRate !== null && $pairedRate !== null
-        ? ($billableSingle * $singleRate) + ($billablePaired * $pairedRate)
+    $amount = ($billableSingle === 0 || $singleRate !== null) && ($billablePaired === 0 || $pairedRate !== null)
+        ? ($billableSingle * ($singleRate ?? 0)) + ($billablePaired * ($pairedRate ?? 0))
         : null;
-    if ($amount !== null && $includeOnlineBilling && $issueNumber === 1) {
-        $amount += onlineTrainingBillingAmount($pdo, $coachId, $athleteId, $billingMonth);
+    if ($amount !== null && $includeOnlineBilling) {
+        $amount += onlineTrainingBillingAmount($pdo, $coachId, $athleteId, $billingMonth, $issueNumber);
     }
 
     return [
@@ -610,4 +610,3 @@ function paymentEnsureBillingIssueSchema(PDO $pdo): void
     } catch (Throwable $e) {
     }
 }
-

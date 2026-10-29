@@ -1329,6 +1329,13 @@ if (!function_exists('applyEmailTemplateOverride')) {
     }
 }
 
+    if (!function_exists('mycoachAppEnabled')) {
+      function mycoachAppEnabled(): bool {
+        // Global feature switch; set to true to restore MyCoach access.
+        return false;
+      }
+    }
+
     if (!function_exists('mycoachAccessMode')) {
       function mycoachAccessMode(): string {
         $rawMode = strtolower(trim(getAppSetting('mycoach_access_mode', 'selected')));
@@ -1341,6 +1348,9 @@ if (!function_exists('applyEmailTemplateOverride')) {
 
     if (!function_exists('mycoachAccessEnabledForCoach')) {
       function mycoachAccessEnabledForCoach(PDO $pdo, int $coachId): bool {
+        if (!mycoachAppEnabled()) {
+          return false;
+        }
         $mode = mycoachAccessMode();
         if ($mode === 'disabled') {
           return false;
@@ -1366,6 +1376,9 @@ if (!function_exists('applyEmailTemplateOverride')) {
 
     if (!function_exists('mycoachAccessEnabledForAthlete')) {
       function mycoachAccessEnabledForAthlete(PDO $pdo, int $athleteId): bool {
+        if (!mycoachAppEnabled()) {
+          return false;
+        }
         $mode = mycoachAccessMode();
         if ($mode === 'disabled') {
           return false;
@@ -3626,6 +3639,23 @@ if (!function_exists('paymentAsciiText')) {
   }
 }
 
+if (!function_exists('buildPaymentQrUrl')) {
+  function buildPaymentQrUrl(string $bankAccount, float $amount, string $note, int $size = 220): string {
+    $parts = [
+      'SPD*1.0',
+      'ACC:' . $bankAccount,
+      'CC:CZK',
+      'AM:' . number_format($amount, 2, '.', ''),
+    ];
+
+    if ($note !== '') {
+      $parts[] = 'MSG:' . str_replace('*', ' ', $note);
+    }
+
+    return 'https://quickchart.io/qr?size=' . max(220, $size) . '&text=' . rawurlencode(implode('*', $parts));
+  }
+}
+
 if (!function_exists('athletePaymentsAscii')) {
   function athletePaymentsAscii(string $value): string {
     return paymentAsciiText($value);
@@ -3755,6 +3785,47 @@ function formatSeriesDuration(int $seconds): string {
   }
 
   return sprintf('%d:%02d', $minutes, $restSeconds);
+}
+
+function formatTrainingDuration(int $centiseconds): string {
+    $centiseconds = max(0, $centiseconds);
+    $minutes = intdiv($centiseconds, 6000);
+    $seconds = intdiv($centiseconds % 6000, 100);
+
+    return sprintf('%d min %d s', $minutes, $seconds);
+}
+
+function trainingDurationCentisecondsFromInput(array $input): ?int {
+    $minutesInput = $input['duration_minutes'] ?? null;
+    $secondsInput = $input['duration_seconds'] ?? null;
+    if (!is_scalar($minutesInput) || !is_scalar($secondsInput)) {
+        return null;
+    }
+
+    $minutesRaw = (string)$minutesInput;
+    $secondsRaw = (string)$secondsInput;
+
+    if (!preg_match('/^\d{1,6}$/', $minutesRaw)
+        || !preg_match('/^\d{1,2}$/', $secondsRaw)) {
+        return null;
+    }
+
+    $minutes = (int)$minutesRaw;
+    $seconds = (int)$secondsRaw;
+    if ($seconds > 59) {
+        return null;
+    }
+
+    return ($minutes * 6000) + ($seconds * 100);
+}
+
+function trainingElapsedCentiseconds(?string $startedAt): int {
+    $startedAtTimestamp = $startedAt !== null ? strtotime($startedAt) : false;
+    if ($startedAtTimestamp === false) {
+        return 0;
+    }
+
+    return max(0, (int)floor((microtime(true) - $startedAtTimestamp) * 100));
 }
 
 // Vrátí celý obsah sady (cviky seřazené)
@@ -7392,7 +7463,8 @@ function processEmailNotificationQueue(int $limit = 20, ?string $templateKeyFilt
   $resetStale->execute();
 
   $jobStmt = $pdo->prepare(
-    'SELECT id, template_key, recipient_email, subject, payload_json, attempt_count
+    'SELECT id, template_key, recipient_email, subject, payload_json, attempt_count,
+            created_at < DATE_SUB(NOW(), INTERVAL 24 HOUR) AS is_expired
      FROM email_notification_jobs
      WHERE status IN ("pending", "failed")
        AND attempt_count < ' . $maxAttempts . '
@@ -7412,6 +7484,26 @@ function processEmailNotificationQueue(int $limit = 20, ?string $templateKeyFilt
     $subject = trim((string)($job['subject'] ?? ''));
 
     if ($jobId <= 0 || $templateKey === '' || $recipientEmail === '') {
+      continue;
+    }
+
+    $isApprovalNotification = $templateKey === 'athlete_calendar_notification'
+      && in_array($subject, ['Trénink byl schválen', 'Žádost o změnu byla schválena'], true);
+    if ($isApprovalNotification && (int)($job['is_expired'] ?? 0) === 1) {
+      $expireStmt = $pdo->prepare(
+        'UPDATE email_notification_jobs
+         SET status = "failed",
+             attempt_count = ?,
+             last_error = "Potvrzení tréninku vypršelo: nebylo odesláno do 24 hodin od zařazení do fronty.",
+             updated_at = NOW()
+         WHERE id = ?
+           AND status IN ("pending", "failed")
+           AND attempt_count < ?'
+      );
+      $expireStmt->execute([$maxAttempts, $jobId, $maxAttempts]);
+      if ($expireStmt->rowCount() === 1) {
+        $results[] = ['job_id' => $jobId, 'status' => 'expired', 'template' => $templateKey];
+      }
       continue;
     }
 
@@ -10502,7 +10594,7 @@ if (!function_exists('mycoachAppStatus')) {
 
 if (!function_exists('mycoachAppIsLive')) {
   function mycoachAppIsLive(): bool {
-    return mycoachAppStatus() === 'live';
+    return mycoachAppEnabled() && mycoachAppStatus() === 'live';
   }
 }
 
@@ -10589,6 +10681,9 @@ if (!function_exists('mycoachAppCheckStatus')) {
 
 if (!function_exists('mycoachAppCanAccess')) {
   function mycoachAppCanAccess(PDO $pdo, string $userType, int $userId): bool {
+    if (!mycoachAppEnabled()) {
+      return false;
+    }
     $s = mycoachAppCheckStatus($pdo, $userType, $userId);
     return in_array($s, ['subscribed', 'active_trial'], true);
   }

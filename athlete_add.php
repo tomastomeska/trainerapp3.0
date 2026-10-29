@@ -70,10 +70,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Zadejte platné datum narození.';
         } elseif ($error === null && $email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $error = 'Zadejte platnou e-mailovou adresu.';
-        } else {
+        } elseif ($error === null) {
             $stmt = $pdo->prepare(
-                'INSERT INTO athletes (coach_id, first_name, last_name, birth_date, gender, phone_contact, email, training_rate, paired_training_rate, notes)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                'INSERT INTO athletes (coach_id, first_name, last_name, birth_date, gender, phone_contact, email, training_rate, paired_training_rate, notes, online_only)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             );
             $stmt->execute([
                 $coachId,
@@ -86,6 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $trainingRate,
                 $pairedTrainingRate,
                 $notes ?: null,
+                !empty($_POST['online_only']) ? 1 : 0,
             ]);
             $newAthleteId = (int)$pdo->lastInsertId();
 
@@ -110,6 +111,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             flash('success', "Sportovec {$firstName} {$lastName} byl přidán.");
+            if (($_POST['fill_intake'] ?? '') === 'yes') {
+                redirect(BASE_URL . '/intake_questionnaire.php?athlete_id=' . $newAthleteId);
+            }
             redirect(BASE_URL . '/dashboard.php');
         }
     }
@@ -135,6 +139,16 @@ renderHeader('Přidat sportovce', false, true);
             <div class="card-body p-4">
                 <form method="post" novalidate>
                     <?= csrfField() ?>
+                    <div class="form-check form-switch mb-3">
+                        <input type="checkbox" class="form-check-input" id="onlineOnly" name="online_only" value="1" <?= !empty($_POST['online_only']) ? 'checked' : '' ?>>
+                        <label class="form-check-label fw-bold" for="onlineOnly">Pouze ONLINE</label>
+                        <div class="form-text">U sportovce nebude možné zahájit klasický trénink.</div>
+                    </div>
+                    <fieldset class="mb-3"><legend class="fs-6 fw-semibold">Chcete se sportovcem vyplnit vstupní dotazník?</legend>
+                        <label class="me-3"><input type="radio" name="fill_intake" value="yes" <?= ($_POST['fill_intake'] ?? '') === 'yes' ? 'checked' : '' ?> required> Ano</label>
+                        <label><input type="radio" name="fill_intake" value="no" <?= ($_POST['fill_intake'] ?? 'no') === 'no' ? 'checked' : '' ?> required> Ne</label>
+                        <div class="form-text">Otázky nastavíte ve <a href="<?= BASE_URL ?>/intake_settings.php">vstupním dotazníku trenéra</a>.</div>
+                    </fieldset>
                     <div class="row g-3 mb-3">
                         <div class="col-sm-6">
                             <label class="form-label fw-semibold">Jméno <span class="text-danger">*</span></label>

@@ -81,9 +81,18 @@ function dashboardQuickMenuLoad(PDO $pdo, string $role, int $userId): array {
 
 function renderDashboardQuickMenu(string $role, int $userId, string $tiles): void {
     $catalog = dashboardQuickMenuCatalog($role);
+    if (!mycoachAppEnabled()) {
+        unset($catalog['mycoach']);
+        $tiles = preg_replace(
+            '~<a\b(?=[^>]*\bdata-shortcut="mycoach")[^>]*>.*?</a>~s',
+            '',
+            $tiles
+        ) ?? $tiles;
+    }
     $available = true;
     try {
         $selected = dashboardQuickMenuLoad(getDB(), $role, $userId);
+        $selected = array_values(array_intersect($selected, array_keys($catalog)));
     } catch (PDOException | JsonException | UnexpectedValueException | InvalidArgumentException $e) {
         error_log('Dashboard quick menu: ' . $e->getMessage());
         $available = false;

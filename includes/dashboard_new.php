@@ -272,7 +272,7 @@ renderHeader('Dashboard', false, true, true);
                 <span class="quick-tile__label"><i class="fas fa-laptop me-1"></i>Online tréninky</span>
                 <span class="quick-tile__value"><?= (int)$onlineTrainingCount ?></span>
             </a>
-            <?php if ($mycoachAppIsLive): ?>
+            <?php if (mycoachAppEnabled() && $mycoachAppIsLive): ?>
             <a data-shortcut="mycoach" href="<?= BASE_URL ?>/mycoach_app.php" class="quick-tile quick-tile-warning">
             <?php else: ?>
             <a data-shortcut="mycoach" href="#" class="quick-tile quick-tile-warning" data-bs-toggle="modal" data-bs-target="#modalMyCoachComingSoon">
@@ -371,10 +371,14 @@ renderHeader('Dashboard', false, true, true);
                 </option>
                 <?php endforeach; ?>
             </select>
+            <label for="athleteMode" class="small text-muted">Typ</label>
+            <select id="athleteMode" name="mode" class="form-select form-select-sm" onchange="this.form.submit()">
+                <option value="all" <?= $selectedMode === 'all' ? 'selected' : '' ?>>Všichni</option><option value="online" <?= $selectedMode === 'online' ? 'selected' : '' ?>>Pouze ONLINE</option><option value="standard" <?= $selectedMode === 'standard' ? 'selected' : '' ?>>Ostatní</option>
+            </select>
         </form>
     </div>
     <div class="coach-dashboard-toolbar__actions">
-        <?php if (count($athletes) >= 2): ?>
+        <?php if ($pairedAthleteCount >= 2): ?>
         <a href="<?= BASE_URL ?>/training_paired_start.php" class="btn btn-sm fw-bold btn-paired-highlight">
             <i class="fas fa-people-group me-1"></i>Párový trénink
         </a>
@@ -484,8 +488,8 @@ renderHeader('Dashboard', false, true, true);
 <div class="card border-0 shadow-sm">
     <div class="card-body text-center py-5">
         <div class="display-3 text-muted mb-3">🏃</div>
-        <h4 class="text-muted">Zatím nemáte žádné sportovce</h4>
-        <p class="text-muted">Přidejte prvního sportovce a začněte trénovat!</p>
+        <h4 class="text-muted"><?= $selectedMode === 'all' ? 'Zatím nemáte žádné sportovce' : 'Tomuto filtru neodpovídá žádný sportovec' ?></h4>
+        <p class="text-muted"><?= $selectedMode === 'all' ? 'Přidejte prvního sportovce a začněte trénovat!' : 'Změňte výběr typu sportovce.' ?></p>
         <a href="<?= BASE_URL ?>/athlete_add.php" class="btn btn-warning fw-bold">
             <i class="fas fa-plus me-1"></i>Přidat sportovce
         </a>
@@ -495,7 +499,7 @@ renderHeader('Dashboard', false, true, true);
 <div class="row g-3">
     <?php foreach ($athletes as $a): ?>
     <div class="col-md-6 col-xl-4">
-        <div class="card athlete-card border-0 shadow-sm h-100">
+        <div class="card athlete-card<?= !empty($a['online_only']) ? ' athlete-card--online' : '' ?> border-0 shadow-sm h-100">
             <div class="card-body">
                 <div class="text-center mb-3">
                     <?php if ($a['photo']): ?>
@@ -514,6 +518,7 @@ renderHeader('Dashboard', false, true, true);
                         <h5 class="card-title mb-0 fw-bold">
                             <?= h($a['first_name'] . ' ' . $a['last_name']) ?>
                         </h5>
+                        <?php if (!empty($a['online_only'])): ?><span class="badge bg-dark">Pouze ONLINE</span><?php endif; ?>
                         <?php $age = calculateAge($a['birth_date'] ?? null); ?>
                         <small class="text-muted"><?= $age !== null ? $age . ' let' : '' ?></small>
                     </div>
@@ -604,7 +609,7 @@ renderHeader('Dashboard', false, true, true);
                        class="btn <?= $a['active_paired_session_id'] ? 'btn-info text-dark' : 'btn-warning' ?> btn-sm flex-fill fw-bold">
                         <i class="fas fa-play me-1"></i>Pokračovat
                     </a>
-                    <?php else: ?>
+                    <?php elseif (empty($a['online_only'])): ?>
                     <a href="<?= BASE_URL ?>/training_new.php?athlete_id=<?= $a['id'] ?>"
                        class="btn btn-warning btn-sm flex-fill">
                         <i class="fas fa-play me-1"></i>Trénink

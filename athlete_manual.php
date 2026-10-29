@@ -75,6 +75,7 @@ renderAthleteHeader('Návod pro sportovce', false, true);
         <li>modul <strong>Strava</strong> pro reálný denní záznam jídel a aktivit včetně fotek,</li>
         <li>ve Stravě nový <strong>pitný režim</strong> průběžně po dávkách (voda, sladký nápoj, káva, čaj, protein, pivo, tvrdý alkohol, vlastní nápoj),</li>
         <li>nová dlaždice <strong>Z. dotazník</strong> na dashboardu a samostatná stránka zdravotního dotazníku,</li>
+        <li><strong>Vstupní dotazník</strong> vyplněný s trenérem najdete na dashboardu; po uložení jsou odpovědi pouze ke čtení. Jde o jiný dotazník než zdravotní,</li>
         <li>dlaždice <strong>Events</strong> a <strong>MyCoach</strong> na dashboardu (podle odemčení účtu),</li>
         <li>dlaždice <strong>Soubory</strong> pro vlastní dokumenty s volitelným zpřístupněním trenérovi,</li>
         <li><strong>Apple Kalendář (CalDAV push)</strong> s možností stáhnout <strong>.mobileconfig</strong> profil,</li>
@@ -224,12 +225,13 @@ renderAthleteHeader('Návod pro sportovce', false, true);
 <div class="card border-0 shadow-sm mb-4" id="athlete-online-training">
     <div class="card-header fw-semibold"><i class="fas fa-laptop me-2 text-warning"></i>Online tréninky</div>
     <div class="card-body">
+        <p>Trenér může odesílat nové sady během platného a uhrazeného časového předplatného. Jeho stav a datum konce najdete na dashboardu; 15 dní před koncem se zobrazí upozornění. Výzva k úhradě je v sekci Platby. Již obdržené tréninky můžete dokončit i po skončení předplatného.</p>
         <ol>
             <li>Na dashboardu nebo v Online trénincích otevřete nový trénink od trenéra.</li>
             <li>Nejdříve klikněte na Zahájit online trénink. Teprve potom můžete zapisovat váhu a opakování.</li>
             <li>U každé série zapisujte skutečně odcvičenou váhu a počet opakování. Hodnoty se průběžně ukládají.</li>
             <li>Prohlédněte si instrukce, fotografie, video a odkazy připojené k tréninku nebo cviku.</li>
-            <li>V průběhu můžete přidat vlastní poznámku a fotografie.</li>
+            <li>V sekci <strong>Moje přílohy pro trenéra</strong> vyberte fotografii či video, případně vložte odkaz, a klikněte na <strong>Nahrát přílohu</strong>. Každou další přílohu přidejte samostatně. Můžete přidat i vlastní poznámku.</li>
             <li>Po dokončení klikněte na Dokončit online trénink. Poté už výsledky nelze měnit.</li>
         </ol>
         <p class="mb-0">Online trénink probíhá samostatně. Nevyžaduje místo, GPS ani potvrzení přítomnosti trenéra.</p>
