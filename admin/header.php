@@ -136,6 +136,10 @@ function renderAdminHeader(string $title = ''): void {
 				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'health_questionnaire.php' ? 'active' : '' ?>">
 					<i class="fas fa-heart-pulse me-2"></i>Zdravotní dotazník
 				</a>
+				<a href="<?= BASE_URL ?>/admin/intake_questionnaire.php"
+				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'intake_questionnaire.php' ? 'active' : '' ?>">
+					<i class="fas fa-clipboard-question me-2"></i>Výchozí vstupní dotazník
+				</a>
 				<a href="<?= BASE_URL ?>/admin/medals.php"
 				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'medals.php' ? 'active' : '' ?>">
 					<i class="fas fa-medal me-2"></i>Medaile

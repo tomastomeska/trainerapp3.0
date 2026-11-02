@@ -158,8 +158,8 @@ renderHeader('Návod pro trenéry', false, true);
             <li>Klikněte na Přidat sportovce.</li>
             <li>Vyplňte povinná pole (jméno, příjmení, přihlašovací údaje a další zobrazená pole) a zkontrolujte, že sportovec patří pod správného trenéra.</li>
             <li>Je-li sportovec pouze online, zaškrtněte <strong>Pouze ONLINE</strong>. Režim lze později změnit v úpravě sportovce. Na dashboardu má žlutou kartu a lze jej filtrovat i řadit. Nový klasický ani párový trénink nelze spustit, již rozpracovaný lze dokončit.</li>
-            <li>Zvolte, zda chcete po vytvoření vyplnit vstupní dotazník. Otázky ANO/NE, textové nebo ANO/NE s nepovinným textem nastavíte v profilu trenéra v sekci <strong>Vstupní dotazník</strong>.</li>
-            <li>Dotazník můžete vyplnit i později v detailu sportovce. Po uložení jej vidí trenér i sportovec, odpovědi již nelze upravit a pozdější změny otázek je nemění. Zdravotní dotazník je samostatný.</li>
+            <li>Výchozí otázky nastavuje administrátor. Při prvním použití se trenérovi zkopírují do jeho nastavení; trenér je může upravit, odebrat nebo přidat vlastní. K dispozici jsou ANO/NE, text, výběr jedné či více možností a volitelné textové upřesnění.</li>
+            <li>Dotazník můžete vyplnit se sportovcem při založení i později v detailu sportovce. Každou otázku lze přeskočit. Po uložení jej vidí trenér i sportovec, odpovědi již nelze upravit a změny otázek nemění uložené dotazníky. Zdravotní dotazník je samostatný.</li>
             <li>Zkontrolujte, že nejsou překlepy v e-mailu a uživatelském jménu.</li>
             <li>Klikněte na Uložit.</li>
             <li>Po uložení otevřete detail sportovce a ověřte, že se profil vytvořil správně.</li>

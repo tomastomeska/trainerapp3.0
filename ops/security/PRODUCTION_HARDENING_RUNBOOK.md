@@ -56,7 +56,6 @@ Example crontab:
 - Implemented in app login flows:
 - login_admin.php
 - admin/login_admin.php
-- scripts/login_admin.php
 
 Behavior:
 1. Admin enters username/password.
@@ -67,7 +66,6 @@ Behavior:
 DB migration included in:
 - config/database.php
 - admin/config/database.php
-- scripts/config/database.php
 (added `superadmins.two_factor_enabled` default 1)
 
 ## 6) Post-deployment verification checklist

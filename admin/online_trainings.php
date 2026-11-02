@@ -155,7 +155,7 @@ renderAdminHeader('Online tréninky');
 <div class="alert alert-warning"><i class="fas fa-triangle-exclamation me-1"></i>Databáze není kompletní. Spusťte migraci, která doplní chybějící tabulky nebo sloupce.</div>
 <?php endif; ?>
 <div class="alert alert-secondary small">
-    Po migraci lze technickou kontrolu schématu spustit přes <code>scripts/test_online_trainings.php</code>. Test nic nevytváří ani nemění.
+    Stav databázových tabulek a diagnostika výsledků jsou dostupné přímo na této stránce. Tyto kontroly nic nevytvářejí ani nemění.
 </div>
 
 <div class="card border-0 shadow-sm mb-4">
