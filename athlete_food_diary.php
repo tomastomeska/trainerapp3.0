@@ -3,6 +3,7 @@ require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/athlete_header.php';
 require_once __DIR__ . '/includes/food_diary.php';
+require_once __DIR__ . '/includes/athlete_analysis.php';
 
 requireAthleteLogin();
 
@@ -576,6 +577,16 @@ foreach (foodDiaryMealTypes() as $mealType => $meta) {
 
 $dayFillPercent = (int)round(($loggedMealCount / 6) * 100);
 
+$analysisTargets = null;
+$analysisDay = null;
+if (calculatorIsEnabled('analysis') && calculatorAppVisibleForUser('athlete', $athleteId) && analysisEnsureSchema($pdo)) {
+    $analysisTargets = analysisLatestTargets($pdo, $athleteId);
+    if ($analysisTargets) {
+        $analysisDay = analysisFoodDiaryTotals($pdo, $athleteId, $selectedDate, $selectedDate)[$selectedDate]
+            ?? ['kcal' => 0, 'protein' => 0, 'carbs' => 0, 'fat' => 0, 'fiber' => 0, 'items' => 0, 'hydration_ml' => 0];
+    }
+}
+
 renderAthleteHeader('Strava', false, true);
 ?>
 
@@ -875,6 +886,39 @@ renderAthleteHeader('Strava', false, true);
     </div>
 </div>
 
+<?php if ($analysisTargets && $analysisDay): ?>
+<div class="card border-0 shadow-sm mb-3" id="analysis-targets">
+    <div class="card-header text-white d-flex justify-content-between align-items-center flex-wrap gap-2" style="background:linear-gradient(150deg,#23272f 0%,#16181d 60%,#0e1013 100%);border-bottom:2px solid #d4a73c;">
+        <span><i class="fas fa-dna me-2" style="color:#d4a73c"></i>Den <?= h(date('j. n. Y', strtotime($selectedDate))) ?> vs. cíle z analýzy</span>
+        <a href="<?= BASE_URL ?>/athlete_analysis.php" class="btn btn-outline-light btn-sm">Analýza</a>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <?php foreach ([
+                ['Energie', $analysisDay['kcal'], $analysisTargets['kcal'], 'kcal'],
+                ['Bílkoviny', $analysisDay['protein'], $analysisTargets['protein_g'], 'g'],
+                ['Sacharidy', $analysisDay['carbs'], $analysisTargets['carbs_g'], 'g'],
+                ['Tuky', $analysisDay['fat'], $analysisTargets['fat_g'], 'g'],
+                ['Vláknina', $analysisDay['fiber'], $analysisTargets['fiber_g'], 'g'],
+                ['Pitný režim', $analysisDay['hydration_ml'], $analysisTargets['hydration_ml'], 'ml'],
+            ] as [$label, $actual, $target, $unit]):
+                $pct = $target > 0 ? (int)round($actual / $target * 100) : 0;
+                $bar = $pct >= 90 && $pct <= 110 ? 'bg-success' : ($pct > 110 ? 'bg-danger' : 'bg-warning'); ?>
+            <div class="col-6 col-md-4 col-xl-2">
+                <div class="small text-muted fw-semibold"><?= h($label) ?></div>
+                <div class="fw-bold"><?= number_format((float)$actual, 0, ',', ' ') ?> <span class="text-muted fw-normal">/ <?= number_format((float)$target, 0, ',', ' ') ?> <?= h($unit) ?></span></div>
+                <div class="progress mt-1" style="height:6px" role="progressbar" aria-label="<?= h($label) ?>" aria-valuenow="<?= $pct ?>" aria-valuemin="0" aria-valuemax="100">
+                    <div class="progress-bar <?= $bar ?>" style="width:<?= min(100, $pct) ?>%"></div>
+                </div>
+                <div class="small text-muted"><?= $pct ?> %</div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if ($analysisDay['items'] === 0): ?><div class="small text-muted mt-2">Pro tento den zatím nejsou zapsané žádné potraviny s nutričními hodnotami.</div><?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
 <div class="d-lg-none mb-3">
     <div class="card border-0 shadow-sm">
         <div class="card-body">
@@ -892,6 +936,9 @@ renderAthleteHeader('Strava', false, true);
             </div>
 
             <div class="food-diary-side-list">
+                <?php if (calculatorAppVisibleForUser('athlete', $athleteId) && calculatorIsEnabled('performance') && calculatorIsEnabled('performance_hydration')): ?>
+                <a class="btn btn-outline-primary btn-sm mb-3" href="<?= BASE_URL ?>/performance.php?module=hydration&amp;date=<?= h($selectedDate) ?>">Hydratace a regenerace</a>
+                <?php endif; ?>
                 <?php foreach ($dailyMealSummary as $mealType => $summary): ?>
                     <?php
                     $status = (string)$summary['status'];

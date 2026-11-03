@@ -2,6 +2,7 @@
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/athlete_header.php';
+require_once __DIR__ . '/includes/athlete_analysis.php';
 
 requireAthleteLogin();
 
@@ -70,6 +71,17 @@ if (!empty($assignments)) {
 }
 
 renderAthleteHeader('Jídelníčky', false, true);
+
+$analysisTargets = null;
+$planDayTotals = [];
+if (calculatorIsEnabled('analysis') && calculatorAppVisibleForUser('athlete', $athleteId) && analysisEnsureSchema($pdo)) {
+    $analysisTargets = analysisLatestTargets($pdo, $athleteId);
+    if ($analysisTargets && !empty($assignments)) {
+        foreach (analysisMealPlanTotals($pdo, $athleteId) as $planTotals) {
+            $planDayTotals[$planTotals['plan_id']] = $planTotals['days'];
+        }
+    }
+}
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
@@ -80,6 +92,19 @@ renderAthleteHeader('Jídelníčky', false, true);
         </a>
     </div>
 </div>
+
+<?php if ($analysisTargets): ?>
+<div class="card border-0 shadow-sm mb-4 text-white" style="background:linear-gradient(150deg,#23272f 0%,#16181d 60%,#0e1013 100%);border-bottom:2px solid #d4a73c !important;">
+    <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
+        <div>
+            <div class="small text-uppercase fw-semibold" style="letter-spacing:.14em;color:#8f97a3"><i class="fas fa-dna me-1" style="color:#d4a73c"></i>Vaše denní cíle z analýzy (<?= h(date('j. n. Y', strtotime($analysisTargets['date']))) ?>)</div>
+            <div class="fs-5 fw-bold mt-1" style="color:#f3e2b0"><?= number_format($analysisTargets['kcal'], 0, ',', ' ') ?> kcal · B <?= $analysisTargets['protein_g'] ?> g · S <?= $analysisTargets['carbs_g'] ?> g · T <?= $analysisTargets['fat_g'] ?> g · vláknina <?= $analysisTargets['fiber_g'] ?> g</div>
+            <div class="small" style="color:#c9ced6">U každého dne níže vidíte, kolik bílkovin, tuků a vlákniny jídelníček obsahuje oproti cíli (kalorie a sacharidy jídla v jídelníčku nemají zadané).</div>
+        </div>
+        <a href="<?= BASE_URL ?>/athlete_analysis.php" class="btn btn-warning btn-sm fw-semibold">Otevřít analýzu</a>
+    </div>
+</div>
+<?php endif; ?>
 
 <?php if (empty($assignments)): ?>
 <div class="alert alert-info">
@@ -119,6 +144,15 @@ renderAthleteHeader('Jídelníčky', false, true);
                             <?php if (empty($dayItems)) continue; ?>
                             <div class="mb-4">
                                 <h5 class="mb-3"><i class="fas fa-calendar-day me-2 text-primary"></i><?= h($dayLabel) ?></h5>
+                                <?php if ($analysisTargets && isset($planDayTotals[$planId][$dayKey])): $dt = $planDayTotals[$planId][$dayKey]; ?>
+                                <div class="d-flex flex-wrap gap-2 mb-2 small">
+                                    <?php foreach (['protein' => ['Bílkoviny', 'protein_g'], 'fat' => ['Tuky', 'fat_g'], 'fiber' => ['Vláknina', 'fiber_g']] as $nk => [$nl, $tk]):
+                                        $pct = $analysisTargets[$tk] > 0 ? (int)round($dt[$nk] / $analysisTargets[$tk] * 100) : 0;
+                                        $cls = $pct >= 90 && $pct <= 115 ? 'bg-success' : ($pct >= 70 && $pct <= 130 ? 'bg-warning text-dark' : 'bg-secondary'); ?>
+                                        <span class="badge <?= $cls ?>"><?= h($nl) ?> <?= number_format($dt[$nk], 0, ',', ' ') ?> / <?= (int)$analysisTargets[$tk] ?> g (<?= $pct ?> %)</span>
+                                    <?php endforeach; ?>
+                                </div>
+                                <?php endif; ?>
                                 <div class="table-responsive mealplan-table-wrap">
                                     <table class="table table-sm align-middle mb-0 mealplan-items-table" style="table-layout:fixed; width:100%;">
                                         <thead class="table-light">

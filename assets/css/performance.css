@@ -1,0 +1,26 @@
+.perf-app h2 { font-size: 1.4rem; font-weight: 800; }
+.perf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 1rem; }
+.perf-field { display: block; color: var(--calc-silver, #344256); font-weight: 600; }
+.perf-field .calc-input { margin-top: .5rem; font-size: 1rem; padding: .65rem; }
+.perf-table { --bs-table-bg: transparent; --bs-table-color: #202c3c; --bs-table-border-color: #b9c3cf; }
+.perf-values { margin-bottom: 0; overflow-wrap: anywhere; }
+.perf-values > div { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(0, 2fr); gap: 1rem; padding: .5rem 0; border-bottom: 1px solid #b9c3cf; }
+.perf-values dt { color: #536176; }
+.perf-values dd { margin: 0; }
+.perf-values .perf-values > div { display: block; }
+.perf-bars { max-height: 360px; overflow-y: auto; }
+.perf-bar-row { display: grid; grid-template-columns: 55px 1fr 150px; align-items: center; gap: .5rem; padding: .15rem 0; font-size: .85rem; }
+.perf-bar-row > div { background: #d2dbe6; height: 9px; border-radius: 6px; overflow: hidden; }
+.perf-bar-row i { display: block; background: linear-gradient(90deg, #a27a26, #f8df91); height: 100%; }
+.perf-disclaimer { color: #4b5563; }
+@media (max-width: 575px) {
+    .perf-values > div { display: block; }
+    .perf-bar-row { grid-template-columns: 45px 1fr 115px; }
+}
+@media print {
+    .perf-report { break-inside: auto; background: white !important; color: #17212f !important; border: 0; box-shadow: none; padding: 0; }
+    .perf-values > div { border-color: #ddd; break-inside: avoid; }
+    .perf-values dt { color: #475569; }
+    .perf-report .calc-note { background: #faf4df; color: #302614; }
+    .perf-report details { display: block; }
+}

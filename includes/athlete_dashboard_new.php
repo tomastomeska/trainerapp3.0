@@ -24,6 +24,7 @@
  * @var string $supportBankAccount
  * @var string $supportContributorName
  * @var string $supportQrNote
+ * @var array{settings: array, latest: array, height: array}|null $calculatorProfile
  */
 require_once __DIR__ . '/dashboard_quick_menu.php';
 // Dashboard view; data and POST actions stay in athlete_dashboard.php.
@@ -595,7 +596,7 @@ renderAthleteHeader('Profil sportovce', false, true, true);
                     </form>
                 </div>
                 <table class="table table-sm table-borderless mb-0">
-                    <tr><td class="text-muted fw-semibold" style="width:45%">Jméno</td><td><?= h(trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name'])) ?></td></tr>
+                    <tr><td class="text-muted fw-semibold" style="width:45%">Jméno</td><td><?= h(trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name'])) ?> <span class="text-muted">(ID: <?= (int)$athleteId ?>)</span></td></tr>
                     <tr><td class="text-muted fw-semibold">E-mail</td><td><?= h((string)$athlete['email']) ?></td></tr>
                     <tr><td class="text-muted fw-semibold">Trenér</td><td><?= h((string)($athlete['coach_name'] ?: $athlete['coach_username'])) ?></td></tr>
                     <tr><td class="text-muted fw-semibold">Datum narození</td><td><?= !empty($athlete['birth_date']) ? formatDate((string)$athlete['birth_date']) : '–' ?></td></tr>
@@ -738,6 +739,62 @@ renderAthleteHeader('Profil sportovce', false, true, true);
     </div>
 </div>
 </div>
+
+<?php if (!empty($calculatorProfile)): ?>
+<?php
+$calcLatestBmi = $calculatorProfile['latest']['bmi'] ?? null;
+$calcBmiToneClass = [
+    'info' => 'bg-info text-dark', 'success' => 'bg-success', 'warning' => 'bg-warning text-dark',
+    'orange' => 'bg-warning text-dark', 'danger' => 'bg-danger', 'dark' => 'bg-dark',
+][(string)($calcLatestBmi['inputs']['category_tone'] ?? '')] ?? 'bg-secondary';
+?>
+<div class="card border-0 shadow-sm mb-4" id="calculator-profile-card">
+    <div class="card-header text-white d-flex justify-content-between align-items-center flex-wrap gap-2" style="background:linear-gradient(150deg,#23272f 0%,#16181d 60%,#0e1013 100%);border-bottom:2px solid #d4a73c;">
+        <span><i class="fas fa-calculator me-2" style="color:#d4a73c"></i>Kalkulačky</span>
+        <div class="d-flex gap-2 flex-wrap">
+            <?php if (calculatorIsEnabled('performance')): ?><a href="<?= BASE_URL ?>/performance.php" class="btn btn-outline-light btn-sm">Výkonnost a regenerace</a><?php endif; ?>
+            <a href="<?= BASE_URL ?>/calculators_print.php?type=report&amp;print=1" target="_blank" rel="noopener" class="btn btn-outline-light btn-sm"><i class="fas fa-print me-1"></i>Tisk zprávy</a>
+            <a href="<?= BASE_URL ?>/calculators.php" class="btn btn-warning btn-sm fw-semibold"><i class="fas fa-arrow-right me-1"></i>Otevřít Kalkulačky</a>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="row g-3 align-items-center">
+            <div class="col-12 col-md-4">
+                <div class="text-muted small text-uppercase fw-semibold">Poslední BMI</div>
+                <?php if ($calcLatestBmi): ?>
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="fs-3 fw-bold"><?= number_format((float)$calcLatestBmi['result_value'], 2, ',', '') ?></span>
+                        <span class="badge <?= h($calcBmiToneClass) ?>"><?= h((string)$calcLatestBmi['result_label']) ?></span>
+                    </div>
+                    <div class="small text-muted"><?= h(calculatorResultSummary($calcLatestBmi)) ?> · <?= h(date('j. n. Y', strtotime((string)$calcLatestBmi['created_at']))) ?></div>
+                <?php else: ?>
+                    <div class="fs-5 fw-semibold">–</div>
+                    <a href="<?= BASE_URL ?>/calculators.php?calc=bmi" class="small">Spočítat a uložit BMI</a>
+                <?php endif; ?>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small text-uppercase fw-semibold">Výška</div>
+                <div class="fs-5 fw-semibold"><?= $calculatorProfile['height']['height_cm'] !== null ? number_format((float)$calculatorProfile['height']['height_cm'], 1, ',', '') . ' cm' : '–' ?></div>
+                <?php if ($calculatorProfile['height']['source'] !== null): ?><div class="small text-muted"><?= h((string)$calculatorProfile['height']['source']) ?></div><?php endif; ?>
+            </div>
+            <div class="col-12 col-md-5">
+                <form method="post" action="<?= BASE_URL ?>/calculators.php" class="m-0">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="action" value="save_share_setting">
+                    <input type="hidden" name="return_to" value="profile">
+                    <input type="hidden" name="share_with_coach" value="0">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="calcShareProfile" name="share_with_coach" value="1" <?= $calculatorProfile['settings']['share_with_coach'] ? 'checked' : '' ?> onchange="this.form.submit()">
+                        <label class="form-check-label fw-semibold" for="calcShareProfile">Sdílet výsledky kalkulaček s trenérem</label>
+                    </div>
+                    <div class="small text-muted"><?= $calculatorProfile['settings']['share_with_coach'] ? 'Trenér vidí vaše uložené výsledky a historii.' : 'Výsledky vidíte pouze vy.' ?></div>
+                    <noscript><button type="submit" class="btn btn-outline-dark btn-sm mt-2">Uložit</button></noscript>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <div class="athlete-activity-grid mb-4 athlete-desktop-only">
 <div class="card border-0 shadow-sm">

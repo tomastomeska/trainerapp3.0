@@ -403,12 +403,14 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <style>
         :root {
-            --brand-dark: #101f46;
-            --brand-darker: #070d1e;
-            --brand-gold: #f3b300;
-            --panel-bg: rgba(255, 255, 255, 0.97);
-            --text-main: #1b2433;
-            --text-soft: #6b7485;
+            --brand-navy: #243143;
+            --brand-steel: #3a404b;
+            --brand-gold-1: #fbe7a1;
+            --brand-gold-2: #d4a73c;
+            --brand-gold-3: #9c7420;
+            --panel-border: #b9c3cf;
+            --text-main: #202c3c;
+            --text-soft: #66758a;
         }
 
         html,
@@ -420,10 +422,12 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
             margin: 0;
             font-family: "Segoe UI", "Trebuchet MS", sans-serif;
             background:
-                radial-gradient(900px 600px at 12% 90%, rgba(243, 179, 0, 0.16), transparent 60%),
-                radial-gradient(820px 560px at 100% 10%, rgba(30, 73, 170, 0.28), transparent 58%),
-                linear-gradient(150deg, #050b18 0%, #0a1531 30%, #11285f 68%, #132d6e 100%);
+                radial-gradient(900px 600px at 12% 90%, rgba(212, 167, 60, 0.14), transparent 60%),
+                radial-gradient(820px 560px at 100% 8%, rgba(70, 83, 104, 0.16), transparent 58%),
+                repeating-linear-gradient(90deg, rgba(70, 85, 105, .02) 0 1px, transparent 1px 3px),
+                linear-gradient(150deg, #f8fafc 0%, #edf1f6 55%, #dce3ec 100%);
             color: var(--text-main);
+            color-scheme: light;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -460,18 +464,21 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
             cursor: pointer;
             user-select: none;
             border-radius: 8px;
+            filter: drop-shadow(0 16px 28px rgba(35, 50, 70, 0.22));
             transition: max-width .45s ease;
         }
 
         .brand-fallback {
-            color: #ffffff;
             font-size: 2rem;
             font-weight: 800;
             letter-spacing: 0.5px;
             margin: 0;
             cursor: pointer;
             user-select: none;
-            text-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+            background: linear-gradient(100deg, #735016 0%, #906717 45%, #735016 70%, #684612 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
         }
 
         .sublogo-wrap {
@@ -518,18 +525,18 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
             justify-content: center;
             gap: 12px;
             padding: 8px 14px;
-            border: 2px solid #87909e;
+            border: 1px solid var(--brand-steel);
             border-radius: 11px;
-            background: #050505;
+            background: linear-gradient(150deg, #2b303a 0%, #16181d 100%);
             color: #fff;
             text-decoration: none;
-            box-shadow: 0 4px 14px rgba(0, 0, 0, .28);
+            box-shadow: 0 8px 20px rgba(35, 50, 70, .22);
             transition: transform .16s ease, border-color .16s ease, background .16s ease;
         }
 
         a.app-store-badge:hover {
             color: #fff;
-            border-color: #fff;
+            border-color: var(--brand-gold-2);
             transform: translateY(-2px);
         }
 
@@ -561,19 +568,19 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
         }
 
         .app-store-badge.is-disabled {
-            border-color: #667080;
-            background: #323945;
-            color: #b5bbc4;
+            border-color: #c4ccd6;
+            background: linear-gradient(150deg, #eef2f7 0%, #dfe6ee 100%);
+            color: #8b95a3;
             box-shadow: none;
             cursor: default;
         }
 
         .app-store-badge.is-disabled i {
-            color: #a7adb6;
+            color: #9aa4b1;
         }
 
         .app-store-badge.is-disabled .app-store-copy small {
-            color: #a7adb6;
+            color: #9aa4b1;
         }
 
         .app-store-badge .development-label {
@@ -585,21 +592,27 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
             text-transform: uppercase;
         }
 
+        .app-store-badge.is-disabled .development-label {
+            color: #9aa4b1;
+        }
+
         .btn-request-access {
             width: min(92vw, 380px);
             margin-top: 8px;
             min-height: 42px;
-            border-radius: 10px;
+            border-radius: 12px;
             font-weight: 700;
-            border: 1px solid rgba(255, 255, 255, 0.45);
-            color: #f5f7ff;
-            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--panel-border);
+            color: #26354a;
+            background: linear-gradient(150deg, #ffffff 0%, #eef2f7 60%, #dfe6ee 100%);
+            box-shadow: 0 6px 16px rgba(35, 50, 70, .12), inset 0 1px 0 #fff;
         }
 
         .btn-request-access:hover {
-            color: #fff;
-            background: rgba(255, 255, 255, 0.16);
-            border-color: rgba(255, 255, 255, 0.65);
+            color: var(--text-main);
+            background: linear-gradient(150deg, #ffffff 0%, #f4f7fb 60%, #e8edf4 100%);
+            border-color: #9fb0c4;
+            transform: translateY(-1px);
         }
 
         .login-type-switch {
@@ -610,25 +623,29 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
         }
 
         .login-type-btn {
-            border-radius: 10px;
-            border: 1px solid #d6dced;
+            border-radius: 12px;
+            border: 1px solid var(--panel-border);
             background: #fff;
             font-weight: 700;
-            color: #273758;
+            color: #26354a;
             padding: .5rem .7rem;
+            transition: background .16s ease, border-color .16s ease, color .16s ease;
         }
 
         .login-type-btn.active {
-            background: #0f234f;
-            border-color: #0f234f;
+            background: linear-gradient(135deg, #465368, #303c4e 65%, #243143);
+            border-color: var(--brand-navy);
             color: #fff;
         }
 
         .login-card {
-            background: var(--panel-bg);
-            border: 0;
-            border-radius: 18px;
-            box-shadow: 0 18px 50px rgba(7, 18, 44, 0.45);
+            background:
+                linear-gradient(115deg, rgba(255, 255, 255, .65), transparent 38%, rgba(255, 255, 255, .4) 62%, transparent),
+                repeating-linear-gradient(90deg, rgba(70, 85, 105, .018) 0 1px, transparent 1px 3px),
+                linear-gradient(150deg, #ffffff 0%, #edf1f6 60%, #dde4ed 100%);
+            border: 1px solid var(--panel-border);
+            border-radius: 22px;
+            box-shadow: 0 10px 28px rgba(35, 50, 70, .14), inset 0 1px 0 #fff;
             overflow: hidden;
             opacity: 0;
             transform: translateY(20px);
@@ -648,48 +665,58 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
             font-size: 1.85rem;
             margin: 0 0 4px;
             font-weight: 800;
-            color: #0f234f;
+            letter-spacing: -.01em;
+            background: linear-gradient(100deg, #26354a 0%, #536176 40%, #35465c 60%, #26354a 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
         }
 
         .login-sub {
             text-align: center;
             margin: 0 0 22px;
+            text-transform: uppercase;
+            letter-spacing: .18em;
+            font-size: .76rem;
+            font-weight: 700;
             color: var(--text-soft);
         }
 
         .form-label {
             font-weight: 700;
-            color: #263552;
+            color: #26354a;
             margin-bottom: 7px;
         }
 
         .form-control {
-            border-radius: 10px;
-            border: 2px solid #d8dfeb;
+            border-radius: 12px;
+            border: 1px solid var(--panel-border);
+            background: #fff;
+            color: var(--text-main);
             min-height: 44px;
             font-size: 0.98rem;
         }
 
         .form-control:focus {
-            border-color: var(--brand-gold);
-            box-shadow: 0 0 0 0.25rem rgba(243, 179, 0, 0.2);
+            border-color: var(--brand-gold-2);
+            box-shadow: 0 0 0 0.25rem rgba(212, 167, 60, 0.22);
         }
 
         .btn-login {
             min-height: 46px;
             border: 0;
-            border-radius: 10px;
+            border-radius: 12px;
             font-weight: 800;
             font-size: 1.05rem;
-            color: #10275b;
-            background: linear-gradient(180deg, #ffca2f 0%, #f3b300 100%);
-            box-shadow: 0 8px 18px rgba(243, 179, 0, 0.35);
+            color: #1b1505;
+            background: linear-gradient(120deg, var(--brand-gold-1), var(--brand-gold-2) 60%, var(--brand-gold-3));
+            box-shadow: 0 8px 20px rgba(212, 167, 60, 0.38), inset 0 1px 0 rgba(255, 255, 255, .55);
         }
 
         .btn-login:hover {
-            color: #0a1a3d;
+            color: #1b1505;
             transform: translateY(-1px);
-            background: linear-gradient(180deg, #ffd34f 0%, #f7bc1f 100%);
+            background: linear-gradient(120deg, #fdf0bb, #e0b54e 60%, #aa8026);
         }
 
         .btn-login:active {
@@ -708,7 +735,7 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
         .login-links button {
             border: 0;
             background: transparent;
-            color: #35538f;
+            color: #805c12;
             font-size: 0.93rem;
             font-weight: 700;
             text-decoration: underline;
@@ -716,13 +743,13 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
         }
 
         .login-links button:hover {
-            color: #0f234f;
+            color: #5e430b;
         }
 
         .footer-meta {
             text-align: center;
             margin-top: 18px;
-            color: #d0d9ee;
+            color: var(--text-soft);
             font-size: 0.95rem;
             opacity: 0;
             transform: translateY(8px);
@@ -731,13 +758,112 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
         }
 
         .footer-meta a {
-            color: #ffd55b;
+            color: #805c12;
             text-decoration: none;
             font-weight: 700;
         }
 
         .footer-meta a:hover {
             text-decoration: underline;
+        }
+
+        .modal-content {
+            background:
+                linear-gradient(115deg, rgba(255, 255, 255, .65), transparent 38%, rgba(255, 255, 255, .4) 62%, transparent),
+                repeating-linear-gradient(90deg, rgba(70, 85, 105, .018) 0 1px, transparent 1px 3px),
+                linear-gradient(150deg, #ffffff 0%, #edf1f6 60%, #dde4ed 100%);
+            border: 1px solid var(--panel-border);
+            border-radius: 22px;
+            box-shadow: 0 18px 44px rgba(35, 50, 70, .28);
+            overflow: hidden;
+        }
+
+        .modal-header {
+            background: linear-gradient(135deg, #465368, #303c4e 65%, #243143);
+            border-bottom: 0;
+            padding: 1rem 1.25rem;
+        }
+
+        .modal-header .modal-title {
+            color: #f5f7fa;
+            font-weight: 800;
+            letter-spacing: .01em;
+        }
+
+        .modal-header .btn-close {
+            filter: invert(1) grayscale(100%) brightness(200%);
+        }
+
+        .modal-body {
+            color: var(--text-main);
+        }
+
+        .modal-body .alert-info {
+            background: linear-gradient(150deg, #eef2f7 0%, #e3e9f1 100%);
+            border: 1px solid var(--panel-border);
+            border-radius: 12px;
+            color: #26354a;
+        }
+
+        .modal-body .form-text {
+            color: var(--text-soft);
+        }
+
+        .modal-footer {
+            border-top: 1px solid rgba(185, 195, 207, .55);
+            background: transparent;
+        }
+
+        .modal .btn-primary {
+            border: 0;
+            border-radius: 12px;
+            font-weight: 800;
+            color: #1b1505;
+            background: linear-gradient(120deg, var(--brand-gold-1), var(--brand-gold-2) 60%, var(--brand-gold-3));
+            box-shadow: 0 6px 16px rgba(212, 167, 60, 0.35), inset 0 1px 0 rgba(255, 255, 255, .55);
+        }
+
+        .modal .btn-primary:hover,
+        .modal .btn-primary:focus,
+        .modal .btn-primary:active {
+            color: #1b1505;
+            background: linear-gradient(120deg, #fdf0bb, #e0b54e 60%, #aa8026);
+        }
+
+        .modal .btn-primary:disabled {
+            color: #4a3c15;
+            background: linear-gradient(120deg, #efe3b6, #d3bc7d 60%, #b39a59);
+            box-shadow: none;
+        }
+
+        .modal .btn-outline-secondary {
+            border: 1px solid var(--panel-border);
+            border-radius: 12px;
+            font-weight: 700;
+            color: #26354a;
+            background: linear-gradient(150deg, #ffffff 0%, #eef2f7 60%, #dfe6ee 100%);
+        }
+
+        .modal .btn-outline-secondary:hover,
+        .modal .btn-outline-secondary:focus,
+        .modal .btn-outline-secondary:active {
+            color: var(--text-main);
+            border-color: #9fb0c4;
+            background: linear-gradient(150deg, #ffffff 0%, #f4f7fb 60%, #e8edf4 100%);
+        }
+
+        .modal .form-select {
+            border-radius: 12px;
+            border: 1px solid var(--panel-border);
+            background-color: #fff;
+            color: var(--text-main);
+            min-height: 44px;
+        }
+
+        .modal .form-select:focus,
+        .modal textarea.form-control:focus {
+            border-color: var(--brand-gold-2);
+            box-shadow: 0 0 0 0.25rem rgba(212, 167, 60, 0.22);
         }
 
         body.show-form .login-wrap {

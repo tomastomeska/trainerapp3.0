@@ -59,7 +59,7 @@ if ($action === 'list') {
             $items[] = [
                 'type' => 'athlete',
                 'id' => (int)$r['id'],
-                'name' => trim((string)$r['first_name'] . ' ' . (string)$r['last_name']),
+                'name' => trim((string)$r['first_name'] . ' ' . (string)$r['last_name']) . ' (ID: ' . (int)$r['id'] . ')',
                 'last_body' => $r['last_body'],
                 'last_at' => $r['last_at'] ? formatDateTime((string)$r['last_at']) : null,
                 'last_at_raw' => $r['last_at'],

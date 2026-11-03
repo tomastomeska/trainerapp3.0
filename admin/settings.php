@@ -401,6 +401,18 @@ renderAdminHeader('Nastavení aplikace');
     </div>
 </div>
 
+<div id="calculator-access" class="card border-0 shadow-sm mt-4" style="max-width:760px">
+    <div class="card-header fw-bold" style="background:#1e1e2e;color:#fff">
+        <i class="fas fa-calculator me-2"></i>Kalkulačky
+    </div>
+    <div class="card-body">
+        <p class="text-muted mb-3">Nastavení aplikace Kalkulačky (včetně přístupu pro všechny uživatele) bylo přesunuto do samostatné administrace.</p>
+        <a href="<?= BASE_URL ?>/admin/calculators.php" class="btn fw-bold" style="background:#7c3aed;color:#fff;border:none">
+            <i class="fas fa-arrow-right me-1"></i>Otevřít administraci Kalkulaček
+        </a>
+    </div>
+</div>
+
 <div class="card border-0 shadow-sm mt-4" style="max-width:760px">
     <div class="card-header fw-bold" style="background:#1e1e2e;color:#fff">
         <i class="fas fa-brain me-2"></i>MyCoach administrace

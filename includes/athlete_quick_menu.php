@@ -66,6 +66,10 @@ require_once __DIR__ . '/surveys.php';
         <span class="quick-tile__label"><i class="fas fa-laptop me-1"></i>Online tréninky</span>
         <span class="quick-tile__value"><?= (int)$onlineTrainingCount ?></span>
     </a>
+    <a data-shortcut="calculators" href="<?= BASE_URL ?>/calculators.php" class="quick-tile quick-tile-muted">
+        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-calculator me-1"></i>Kalkulačky <span class="badge rounded-pill bg-secondary">Ve vývoji</span></span>
+        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
+    </a>
     <?php if (mycoachAppEnabled() && $mycoachAppUserCanAccess): ?>
     <a data-shortcut="mycoach" href="<?= BASE_URL ?>/athlete_mycoach_app.php" class="quick-tile quick-tile-warning">
     <?php else: ?>

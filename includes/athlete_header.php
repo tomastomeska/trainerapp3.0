@@ -135,6 +135,9 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_calendar.php"><i class="fas fa-calendar-alt me-1"></i>Kalendář</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_special_training.php"><i class="fas fa-flag-checkered me-1"></i>Events</a></li>
                 <li class="nav-item"><a class="nav-link d-inline-flex align-items-center" href="<?= BASE_URL ?>/online_training.php"><i class="fas fa-laptop me-1"></i>Online tréninky<?php if ($onlineTrainingCount > 0): ?><span class="badge rounded-pill bg-danger ms-1" style="font-size:.65rem"><?= $onlineTrainingCount ?></span><?php endif; ?></a></li>
+                <?php if ($athlete && calculatorAppVisibleForUser('athlete', (int)$athlete['id'])): ?>
+                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/calculators.php" title="Kalkulačky jsou ve vývoji"><i class="fas fa-calculator me-1"></i>Kalkulačky <span class="badge rounded-pill bg-secondary ms-1">Ve vývoji</span></a></li>
+                <?php endif; ?>
                 <?php if (mycoachAppEnabled()): ?>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_mycoach.php"><i class="fas fa-brain me-1"></i>MYCoach</a></li>
                 <?php endif; ?>

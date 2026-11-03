@@ -31,7 +31,23 @@ function intakeParseOptions(string $raw, string $questionType): array {
     return $options;
 }
 
+function intakeEnsureDefaultQuestionsTable(PDO $pdo): void {
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS default_intake_questions (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            question_text TEXT NOT NULL,
+            question_type ENUM('yes_no','text','combined','single_choice','multiple_choice') NOT NULL DEFAULT 'yes_no',
+            options_json TEXT NULL,
+            sort_order INT NOT NULL DEFAULT 0,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_default_intake_questions_active (is_active, sort_order)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+}
+
 function intakeEnsureCoachQuestions(PDO $pdo, int $coachId): void {
+    intakeEnsureDefaultQuestionsTable($pdo);
     $pdo->beginTransaction();
     try {
         $coach = $pdo->prepare('SELECT id FROM coaches WHERE id = ? FOR UPDATE');

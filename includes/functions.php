@@ -1169,6 +1169,17 @@ if (!function_exists('getAppSetting')) {
     }
 }
 
+if (!function_exists('calculatorAppVisibleForUser')) {
+    function calculatorAppVisibleForUser(string $userType, int $userId): bool {
+        if ($userType === 'athlete' && $userId === 6) {
+            return true;
+        }
+
+        return in_array($userType, ['athlete', 'coach'], true)
+            && getAppSetting('calculator_app_enabled_for_all', '0') === '1';
+    }
+}
+
 if (!function_exists('ensureEmailNotificationTemplatesTable')) {
     function ensureEmailNotificationTemplatesTable(): void {
         try {

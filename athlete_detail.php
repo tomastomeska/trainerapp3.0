@@ -5,6 +5,8 @@ require_once __DIR__ . '/includes/online_training.php';
 require_once __DIR__ . '/includes/payment_billing.php';
 require_once __DIR__ . '/includes/header.php';
 require_once __DIR__ . '/includes/health_questionnaire.php';
+require_once __DIR__ . '/includes/calculators.php';
+require_once __DIR__ . '/includes/athlete_analysis.php';
 
 requireLogin();
 
@@ -34,6 +36,31 @@ try {
     $newAthleteFilesCount = (int)$newAthleteFilesStmt->fetchColumn();
 } catch (Throwable $e) {
     $newAthleteFilesCount = 0;
+}
+
+// Kalkulačky – výsledky sdílené sportovcem
+$calcCoachSettings = calculatorGetAthleteSettings($pdo, $athleteId);
+$calcCoachResults = $calcCoachSettings['share_with_coach'] ? calculatorFetchResults($pdo, $athleteId, null, 50) : [];
+$calcCoachUnseen = count(array_filter($calcCoachResults, static fn(array $row): bool => $row['coach_viewed_at'] === null));
+$calcCoachVisible = $calcCoachResults !== [] || calculatorAppVisibleForUser('athlete', $athleteId);
+$calcCoachHeight = ['height_cm' => null, 'source' => null];
+$calcCoachTrend = [];
+if ($calcCoachVisible && $calcCoachSettings['share_with_coach']) {
+    $calcCoachHeight = calculatorFetchAthleteHeightCm($pdo, $athleteId);
+    $calcCoachTrend = calculatorBmiTrend($athleteId, $calcCoachHeight['height_cm']);
+}
+if ($calcCoachUnseen > 0 && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+    calculatorMarkSeenByCoach($pdo, $athleteId);
+}
+
+// Analýza sportovce – poslední viditelná analýza
+$analysisEnabled = calculatorIsEnabled('analysis') && analysisEnsureSchema($pdo);
+$analysisLatest = null;
+$analysisCount = 0;
+if ($analysisEnabled) {
+    $analysisRows = analysisFilterForCoach($pdo, $athleteId, analysisFetchFinals($pdo, $athleteId, 50));
+    $analysisLatest = $analysisRows[0] ?? null;
+    $analysisCount = count($analysisRows);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -393,14 +420,15 @@ $onlineSubscriptions = $onlineSubscriptionStmt->fetchAll();
 $activeOnlineSubscription = onlineTrainingActiveSubscription($pdo, (int)$coachId, $athleteId);
 $futureOnlineSubscription = $activeOnlineSubscription ? null : onlineTrainingFuturePaidSubscription($pdo, (int)$coachId, $athleteId);
 
-renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']), true, true);
+$athleteDisplayName = trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']) . ' (ID: ' . $athleteId . ')';
+renderHeader(h($athleteDisplayName), true, true);
 ?>
 
 <div class="d-flex align-items-center mb-4 gap-3 page-header">
     <a href="<?= BASE_URL ?>/dashboard.php" class="btn btn-outline-secondary btn-sm">
         <i class="fas fa-arrow-left"></i>
     </a>
-    <h2 class="mb-0 fw-bold"><?= h($athlete['first_name'] . ' ' . $athlete['last_name']) ?></h2>
+    <h2 class="mb-0 fw-bold"><?= h($athleteDisplayName) ?></h2>
     <?php if (!empty($athlete['online_only'])): ?><span class="badge bg-warning text-dark">Pouze ONLINE</span><?php endif; ?>
     <div class="ms-auto d-flex gap-2 flex-wrap">
         <a href="<?= BASE_URL ?>/training_manual_add.php?athlete_id=<?= $athleteId ?>"
@@ -423,6 +451,14 @@ renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']), true, true
                      class="btn btn-outline-primary btn-sm">
                     <i class="fas fa-folder-open me-1"></i>Soubory<?php if ($newAthleteFilesCount > 0): ?> <span class="badge rounded-pill bg-danger ms-1"><?= $newAthleteFilesCount ?></span><?php endif; ?>
                 </a>
+        <?php if ($calcCoachVisible): ?>
+        <a href="#calculator-results" class="btn btn-outline-dark btn-sm">
+            <i class="fas fa-calculator me-1"></i>Kalkulačky<?php if ($calcCoachUnseen > 0): ?> <span class="badge rounded-pill bg-danger ms-1"><?= $calcCoachUnseen ?></span><?php endif; ?>
+        </a>
+        <?php endif; ?>
+        <?php if (calculatorAppVisibleForUser('coach', (int)$coachId) && calculatorIsEnabled('performance')): ?>
+        <a href="<?= BASE_URL ?>/performance.php?athlete_id=<?= $athleteId ?>" class="btn btn-outline-dark btn-sm">Výkonnost a regenerace</a>
+        <?php endif; ?>
         <a href="<?= BASE_URL ?>/athlete_edit.php?id=<?= $athleteId ?>"
            class="btn btn-outline-secondary btn-sm">
             <i class="fas fa-edit me-1"></i>Upravit
@@ -439,6 +475,132 @@ renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']), true, true
 </div>
 
 <div class="card shadow-sm mb-4"><div class="card-body d-flex justify-content-between align-items-center gap-2"><strong>Vstupní dotazník</strong><a class="btn btn-outline-dark btn-sm" href="<?= BASE_URL ?>/intake_questionnaire.php?athlete_id=<?= $athleteId ?>">Zobrazit nebo vyplnit</a></div></div>
+
+<?php if ($calcCoachVisible): ?>
+<div class="card border-0 shadow-sm mb-4" id="calculator-results">
+    <div class="card-header text-white d-flex justify-content-between align-items-center flex-wrap gap-2" style="background:linear-gradient(150deg,#23272f 0%,#16181d 60%,#0e1013 100%);border-bottom:2px solid #d4a73c;">
+        <span>
+            <i class="fas fa-calculator me-2" style="color:#d4a73c"></i>Kalkulačky sportovce
+            <?php if ($calcCoachUnseen > 0): ?><span class="badge bg-danger ms-1"><?= $calcCoachUnseen ?> <?= $calcCoachUnseen === 1 ? 'nový výsledek' : ($calcCoachUnseen < 5 ? 'nové výsledky' : 'nových výsledků') ?></span><?php endif; ?>
+        </span>
+        <?php if ($calcCoachSettings['share_with_coach'] && $calcCoachResults): ?>
+        <a href="<?= BASE_URL ?>/calculators_print.php?type=report&amp;athlete_id=<?= $athleteId ?>&amp;print=1" target="_blank" rel="noopener" class="btn btn-warning btn-sm fw-semibold"><i class="fas fa-print me-1"></i>Tisk zprávy</a>
+        <?php endif; ?>
+    </div>
+    <div class="card-body">
+        <?php if (!$calcCoachSettings['share_with_coach']): ?>
+            <div class="text-muted"><i class="fas fa-lock me-1"></i>Sportovec výsledky kalkulaček se svým trenérem nesdílí.</div>
+        <?php elseif (!$calcCoachResults): ?>
+            <div class="text-muted"><i class="fas fa-circle-info me-1"></i>Sportovec zatím neuložil žádný výsledek kalkulačky.</div>
+        <?php else: ?>
+            <?php
+            $calcCoachLatestBmi = null;
+            foreach ($calcCoachResults as $calcRow) {
+                if ($calcRow['calculator_key'] === 'bmi') {
+                    $calcCoachLatestBmi = $calcRow;
+                    break;
+                }
+            }
+            $calcToneClass = ['info' => 'bg-info text-dark', 'success' => 'bg-success', 'warning' => 'bg-warning text-dark', 'orange' => 'bg-warning text-dark', 'danger' => 'bg-danger', 'dark' => 'bg-dark'];
+            $calcDefinitions = calculatorDefinitions();
+            ?>
+            <div class="row g-4">
+                <div class="col-lg-4">
+                    <?php if ($calcCoachLatestBmi): ?>
+                    <div class="text-muted small text-uppercase fw-semibold">Poslední BMI</div>
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="display-6 fw-bold"><?= number_format((float)$calcCoachLatestBmi['result_value'], 2, ',', '') ?></span>
+                        <span class="badge <?= h($calcToneClass[(string)($calcCoachLatestBmi['inputs']['category_tone'] ?? '')] ?? 'bg-secondary') ?>"><?= h((string)$calcCoachLatestBmi['result_label']) ?></span>
+                    </div>
+                    <div class="small text-muted mb-2"><?= h(calculatorResultSummary($calcCoachLatestBmi)) ?> · <?= h(date('j. n. Y', strtotime((string)$calcCoachLatestBmi['created_at']))) ?></div>
+                    <?php endif; ?>
+                    <div class="small text-muted">Výška: <strong><?= $calcCoachHeight['height_cm'] !== null ? number_format((float)$calcCoachHeight['height_cm'], 1, ',', '') . ' cm' : '–' ?></strong><?= $calcCoachHeight['source'] !== null ? ' (' . h((string)$calcCoachHeight['source']) . ')' : '' ?></div>
+                    <div class="small text-muted mt-2"><i class="fas fa-dumbbell me-1"></i>BMI nerozlišuje svalovou a tukovou hmotu – u svalnatých sportovců může nadhodnocovat podíl tuku.</div>
+                </div>
+                <div class="col-lg-8">
+                    <div class="text-muted small text-uppercase fw-semibold mb-1">Vývoj BMI z historie vážení</div>
+                    <?php if (count($calcCoachTrend) >= 2): ?>
+                        <?= calculatorTrendSvg($calcCoachTrend, ['theme' => 'light', 'band' => [18.5, 25.0], 'height' => 200]) ?>
+                    <?php else: ?>
+                        <div class="text-muted small">Pro graf jsou potřeba výška a alespoň dvě vážení.</div>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="table-responsive mt-3">
+                <table class="table table-sm align-middle mb-0">
+                    <thead><tr><th>Datum</th><th>Kalkulačka</th><th>Vstupy</th><th>Výsledek</th><th>Kategorie</th><th></th></tr></thead>
+                    <tbody>
+                    <?php foreach (array_slice($calcCoachResults, 0, 10) as $calcRow): ?>
+                        <tr class="<?= $calcRow['coach_viewed_at'] === null ? 'table-warning' : '' ?>">
+                            <td><?= h(date('j. n. Y H:i', strtotime((string)$calcRow['created_at']))) ?><?php if ($calcRow['coach_viewed_at'] === null): ?> <span class="badge bg-danger">Nové</span><?php endif; ?></td>
+                            <td><?= h($calcDefinitions[$calcRow['calculator_key']]['title'] ?? (string)$calcRow['calculator_key']) ?></td>
+                            <td class="small text-muted"><?= h(calculatorResultSummary($calcRow)) ?></td>
+                            <td class="fw-bold"><?= $calcRow['result_value'] !== null ? number_format((float)$calcRow['result_value'], 2, ',', '') : '–' ?></td>
+                            <td><?= h((string)$calcRow['result_label']) ?></td>
+                            <td class="text-end"><a href="<?= BASE_URL ?>/calculators_print.php?type=result&amp;id=<?= (int)$calcRow['id'] ?>&amp;athlete_id=<?= $athleteId ?>&amp;print=1" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-sm" title="Tisk protokolu"><i class="fas fa-print"></i></a></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php if (count($calcCoachResults) > 10): ?><div class="small text-muted mt-2">Zobrazeno posledních 10 výsledků – celou historii obsahuje tisková zpráva.</div><?php endif; ?>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if ($analysisEnabled): ?>
+<div class="card border-0 shadow-sm mb-4" id="athlete-analysis">
+    <div class="card-header text-white d-flex justify-content-between align-items-center flex-wrap gap-2" style="background:linear-gradient(150deg,#23272f 0%,#16181d 60%,#0e1013 100%);border-bottom:2px solid #d4a73c;">
+        <span><i class="fas fa-dna me-2" style="color:#d4a73c"></i>Analýza sportovce<?php if ($analysisCount > 0): ?> <span class="badge bg-secondary ms-1"><?= $analysisCount ?></span><?php endif; ?></span>
+        <span class="d-flex gap-2 flex-wrap">
+            <?php if ($analysisLatest): ?>
+            <a href="<?= BASE_URL ?>/athlete_analysis_print.php?id=<?= (int)$analysisLatest['id'] ?>&amp;athlete_id=<?= $athleteId ?>&amp;print=1" target="_blank" rel="noopener" class="btn btn-outline-light btn-sm"><i class="fas fa-print me-1"></i>Tisk</a>
+            <?php endif; ?>
+            <a href="<?= BASE_URL ?>/athlete_analysis.php?athlete_id=<?= $athleteId ?>&amp;view=wizard" class="btn btn-warning btn-sm fw-semibold"><i class="fas fa-plus me-1"></i>Nová analýza</a>
+        </span>
+    </div>
+    <div class="card-body">
+        <?php if (!$analysisLatest): ?>
+            <div class="text-muted"><i class="fas fa-circle-info me-1"></i><?= $calcCoachSettings['share_with_coach'] ? 'Sportovec zatím nemá dokončenou analýzu.' : 'Sportovec výsledky nesdílí – vidíte jen analýzy vytvořené vámi.' ?> Analýzu můžete vyplnit i za něj.</div>
+        <?php else: $al = $analysisLatest; $alr = $al['results']; ?>
+            <div class="d-flex justify-content-between flex-wrap gap-2 mb-3">
+                <div>
+                    <strong><?= h(analysisGoalShortLabels()[$al['inputs']['goal'] ?? ''] ?? 'Analýza') ?></strong>
+                    <span class="text-muted small ms-1"><?= h(date('j. n. Y', strtotime($al['date']))) ?> · <?= ($al['created_by_type'] ?? '') === 'coach' ? 'vytvořil trenér' : 'vyplnil sportovec' ?></span>
+                </div>
+                <a href="<?= BASE_URL ?>/athlete_analysis.php?athlete_id=<?= $athleteId ?>&amp;view=result&amp;id=<?= (int)$al['id'] ?>#coach-review" class="btn btn-outline-dark btn-sm"><i class="fas fa-user-tie me-1"></i>Výsledky a poznámka trenéra</a>
+            </div>
+            <div class="row g-2 text-center">
+                <?php foreach ([
+                    ['Hmotnost', ($al['metrics']['weight_kg'] ?? null), 1, 'kg'],
+                    ['Tuk', ($al['metrics']['body_fat_pct'] ?? null), 1, '%'],
+                    ['BMR', ($al['metrics']['bmr'] ?? null), 0, 'kcal'],
+                    ['TDEE', ($al['metrics']['tdee'] ?? null), 0, 'kcal'],
+                    ['Příjem', ($al['metrics']['kcal'] ?? null), 0, 'kcal'],
+                    ['B / S / T', null, 0, ''],
+                ] as [$label, $value, $dec, $unit]): ?>
+                <div class="col-6 col-md-2">
+                    <div class="border rounded-3 p-2 h-100">
+                        <div class="text-muted small text-uppercase fw-semibold"><?= h($label) ?></div>
+                        <div class="fw-bold">
+                            <?php if ($label === 'B / S / T'): ?>
+                                <?= !empty($alr['macros']) ? (int)$alr['macros']['protein_g'] . ' / ' . (int)$alr['macros']['carbs_g'] . ' / ' . (int)$alr['macros']['fat_g'] . ' g' : '–' ?>
+                            <?php else: ?>
+                                <?= $value !== null ? number_format((float)$value, $dec, ',', ' ') . ' ' . h($unit) : '–' ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php if (!empty($al['coach_note'])): ?><div class="alert alert-warning small mt-3 mb-0"><i class="fas fa-comment-dots me-1"></i><strong>Vaše poznámka:</strong> <?= nl2br(h((string)$al['coach_note'])) ?></div><?php endif; ?>
+            <?php foreach (array_slice($alr['warnings'] ?? [], 0, 3) as $msg): ?><div class="small text-warning-emphasis mt-2"><i class="fas fa-triangle-exclamation me-1"></i><?= h($msg) ?></div><?php endforeach; ?>
+            <div class="small mt-2"><a href="<?= BASE_URL ?>/athlete_analysis.php?athlete_id=<?= $athleteId ?>">Historie, grafy a porovnání období →</a></div>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
 
 <div class="card border-warning shadow-sm mb-4">
     <div class="card-header bg-warning text-dark fw-bold"><i class="fas fa-laptop me-2"></i>Online tréninky a účtování</div>

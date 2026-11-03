@@ -5,14 +5,15 @@ function dashboardQuickMenuCatalog(string $role): array {
         'messages' => 'Zprávy', 'calendar' => 'Kalendář', 'gallery' => 'Galerie',
         'events' => 'Events', 'online' => 'Online tréninky', 'mycoach' => 'MyCoach',
         'manual' => 'Návod', 'surveys' => 'Ankety', 'terms' => 'Podmínky',
-        'mealplans' => 'Jídelníčky',
+        'mealplans' => 'Jídelníčky', 'calculators' => 'Kalkulačky',
     ];
     if ($role === 'coach') {
         return [
             'athletes' => 'Sportovci', 'messages' => $common['messages'],
             'calendar' => $common['calendar'], 'info' => 'Infokanál',
             'exercises' => 'Cviky', 'sets' => 'Sady', 'payments' => 'Platby',
-            'mealplans' => $common['mealplans'], 'gallery' => $common['gallery'],
+            'mealplans' => $common['mealplans'], 'calculators' => $common['calculators'],
+            'gallery' => $common['gallery'],
             'profile' => 'Můj profil', 'events' => $common['events'], 'online' => $common['online'],
             'mycoach' => $common['mycoach'], 'surveys' => $common['surveys'],
             'manual' => $common['manual'], 'terms' => $common['terms'],
@@ -25,6 +26,7 @@ function dashboardQuickMenuCatalog(string $role): array {
             'password' => 'Heslo', 'gallery' => $common['gallery'], 'files' => 'Soubory',
             'videos' => 'Videa', 'events' => $common['events'], 'online' => $common['online'],
             'mycoach' => $common['mycoach'], 'health' => 'Zdravotní dotazník',
+            'calculators' => $common['calculators'],
             'manual' => $common['manual'], 'surveys' => $common['surveys'], 'terms' => $common['terms'],
         ];
     }
@@ -85,6 +87,14 @@ function renderDashboardQuickMenu(string $role, int $userId, string $tiles): voi
         unset($catalog['mycoach']);
         $tiles = preg_replace(
             '~<a\b(?=[^>]*\bdata-shortcut="mycoach")[^>]*>.*?</a>~s',
+            '',
+            $tiles
+        ) ?? $tiles;
+    }
+    if (!calculatorAppVisibleForUser($role, $userId)) {
+        unset($catalog['calculators']);
+        $tiles = preg_replace(
+            '~<(a|div)\b(?=[^>]*\bdata-shortcut="calculators")[^>]*>.*?</\1>~s',
             '',
             $tiles
         ) ?? $tiles;

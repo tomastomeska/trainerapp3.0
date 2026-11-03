@@ -4,12 +4,14 @@ require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/surveys.php';
 require_once __DIR__ . '/includes/header.php';
 require_once __DIR__ . '/includes/health_questionnaire.php';
+require_once __DIR__ . '/includes/calculators.php';
 
 requireLogin();
 
 $coachId = getCurrentCoachId();
 $pdo     = getDB();
 healthQuestionnaireEnsureSchema($pdo);
+$calculatorUnseenCounts = calculatorCoachUnseenCounts($pdo, (int)$coachId);
 $mustChangePassword = !empty($_SESSION['coach_force_password_change']);
 $forcePasswordError = null;
 $coachSpecialTrainingEnabled = false;

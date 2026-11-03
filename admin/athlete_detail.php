@@ -70,7 +70,8 @@ $stmtSets = $pdo->prepare(
 $stmtSets->execute([$coachId]);
 $workoutSets = $stmtSets->fetchAll();
 
-renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']));
+$athleteDisplayName = trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']) . ' (ID: ' . $athleteId . ')';
+renderHeader(h($athleteDisplayName));
 ?>
 
 <style>
@@ -170,7 +171,7 @@ renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']));
     <a href="<?= BASE_URL ?>/dashboard.php" class="btn btn-outline-secondary btn-sm">
         <i class="fas fa-arrow-left"></i>
     </a>
-    <h2 class="mb-0 fw-bold"><?= h($athlete['first_name'] . ' ' . $athlete['last_name']) ?></h2>
+    <h2 class="mb-0 fw-bold"><?= h($athleteDisplayName) ?></h2>
     <div class="ms-auto d-flex gap-2 flex-wrap">
         <a href="<?= BASE_URL ?>/graphs.php?athlete_id=<?= $athleteId ?>"
            class="btn btn-outline-info btn-sm">
@@ -227,7 +228,7 @@ renderHeader(h($athlete['first_name'] . ' ' . $athlete['last_name']));
     <div class="admin-athlete-mobile-card mb-3">
         <div class="admin-athlete-mobile-card__head">
             <div>
-                <div class="admin-athlete-mobile-card__title"><i class="fas fa-user me-2 text-warning"></i><?= h($athlete['first_name'] . ' ' . $athlete['last_name']) ?></div>
+                <div class="admin-athlete-mobile-card__title"><i class="fas fa-user me-2 text-warning"></i><?= h($athleteDisplayName) ?></div>
                 <div class="small text-muted">Rychlý přehled sportovce</div>
             </div>
             <a href="<?= BASE_URL ?>/athlete_edit.php?id=<?= $athleteId ?>" class="btn btn-outline-secondary btn-sm">

@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/online_training.php';
+require_once __DIR__ . '/includes/calculators.php';
 
 if (isLoggedIn()) {
     requireLogin();
@@ -113,6 +114,10 @@ $progressBadgeClass = static fn(bool $done): string => $done ? 'bg-success' : 'b
 <?php if (!$trainingCompleted): ?><span class="badge bg-<?= h($athleteStatusClass) ?>"><?= h($athleteStatusLabel) ?></span><?php endif; ?>
 </div>
 <h5 class="mt-2"><?= h($training['title']) ?></h5>
+<?php if ($trainingCompleted && calculatorAppVisibleForUser('athlete', $athleteId)): ?>
+<?php if (calculatorIsEnabled('performance') && calculatorIsEnabled('performance_load')): ?>
+<a class="btn btn-outline-dark btn-sm" href="<?= BASE_URL ?>/performance.php?module=load&amp;date=<?= h(substr($training['started_at'] ?: $training['completed_at'], 0, 10)) ?>">Potvrdit aktivní minuty a RPE</a>
+<?php endif; endif; ?>
 <div class="d-flex flex-wrap gap-1 mt-2">
 <span class="badge <?= $progressBadgeClass($trainingCompleted) ?>">Dokončeno</span>
 <span class="badge <?= $progressBadgeClass($trainingReviewed) ?>">Zkontrolováno</span>

@@ -189,7 +189,7 @@ renderAdminHeader('Zpráva sportovcům');
             <div class="card-body text-muted">Žádný sportovec s aktivním přístupem do aplikace.</div>
             <?php else: ?>
             <div class="list-group list-group-flush">
-                <?php foreach ($individualChatList as $row): $name = trim((string)$row['first_name'] . ' ' . (string)$row['last_name']); $unreadN = (int)$row['unread_count']; ?>
+                <?php foreach ($individualChatList as $row): $name = trim((string)$row['first_name'] . ' ' . (string)$row['last_name']) . ' (ID: ' . (int)$row['id'] . ')'; $unreadN = (int)$row['unread_count']; ?>
                 <a href="<?= BASE_URL ?>/admin/zprava_sportovec_chat.php?athlete_id=<?= (int)$row['id'] ?>" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
                     <div>
                         <div class="fw-semibold"><?= h($name) ?></div>

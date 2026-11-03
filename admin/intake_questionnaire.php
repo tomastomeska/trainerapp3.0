@@ -6,6 +6,7 @@ require_once __DIR__ . '/header.php';
 requireAdminLogin();
 
 $pdo = getDB();
+intakeEnsureDefaultQuestionsTable($pdo);
 $error = null;
 $types = intakeQuestionTypes();
 

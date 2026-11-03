@@ -17,6 +17,7 @@ if (!$athlete) {
 }
 
 $athleteName = trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']);
+$athleteContactName = $athleteName . ' (ID: ' . $athleteId . ')';
 $errors = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'send') {
@@ -96,7 +97,7 @@ renderAdminHeader('Chat se sportovcem');
 
 <div class="d-flex align-items-center mb-4 gap-3">
     <a href="<?= BASE_URL ?>/admin/zprava_sportovci.php" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left"></i></a>
-    <h2 class="fw-bold mb-0"><i class="fas fa-comments me-2 text-primary"></i>Chat: <?= h($athleteName) ?></h2>
+    <h2 class="fw-bold mb-0"><i class="fas fa-comments me-2 text-primary"></i>Chat: <?= h($athleteContactName) ?></h2>
 </div>
 
 <?php if (!empty($errors)): ?>
@@ -121,7 +122,7 @@ renderAdminHeader('Chat se sportovcem');
                         </div>
                         <?php endif; ?>
                         <div class="small mt-1 <?= $isAdmin ? 'text-white-50' : 'text-muted' ?>">
-                            <?= $isAdmin ? 'Vy' : h($athleteName) ?> · <?= formatDateTime((string)$m['created_at']) ?>
+                            <?= $isAdmin ? 'Vy' : h($athleteContactName) ?> · <?= formatDateTime((string)$m['created_at']) ?>
                         </div>
                     </div>
                 </div>

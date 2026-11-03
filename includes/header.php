@@ -288,6 +288,9 @@ if ($coach) {
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/calendar_replacements.php"><i class="fas fa-calendar-check me-1"></i>Náhrady</a></li>
                 <li class="nav-item"><a class="nav-link d-inline-flex align-items-center" href="<?= BASE_URL ?>/online_training.php"><i class="fas fa-laptop me-1"></i>Online tréninky<?php if ($onlineTrainingCount > 0): ?><span class="badge rounded-pill bg-warning text-dark ms-1 top-badge"><?= $onlineTrainingCount ?></span><?php endif; ?></a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/online_subscriptions.php"><i class="fas fa-calendar-check me-1"></i>Online předplatná</a></li>
+                <?php if (calculatorAppVisibleForUser('coach', (int)($coach['id'] ?? 0))): ?>
+                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/calculators.php" title="Kalkulačky jsou ve vývoji"><i class="fas fa-calculator me-1"></i>Kalkulačky <span class="badge rounded-pill bg-secondary ms-1">Ve vývoji</span></a></li>
+                <?php endif; ?>
                 <?php if (mycoachAppEnabled()): ?>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/mycoach.php"><i class="fas fa-brain me-1"></i>MYCoach</a></li>
                 <?php endif; ?>

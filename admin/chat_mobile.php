@@ -19,7 +19,12 @@ if ($type === 'athlete' && $athleteTableExists && $userId > 0) {
     $stmt->execute([$userId]);
     $row = $stmt->fetch();
     if ($row) {
-        $person = ['id' => (int)$row['id'], 'name' => trim((string)$row['first_name'] . ' ' . (string)$row['last_name']), 'email' => $row['email']];
+        $person = [
+            'id' => (int)$row['id'],
+            'name' => trim((string)$row['first_name'] . ' ' . (string)$row['last_name']),
+            'contact_name' => trim((string)$row['first_name'] . ' ' . (string)$row['last_name']) . ' (ID: ' . (int)$row['id'] . ')',
+            'email' => $row['email'],
+        ];
     }
 } elseif ($type === 'coach' && $coachTableExists && $userId > 0) {
     $stmt = $pdo->prepare('SELECT id, name, username, email FROM coaches WHERE id = ? LIMIT 1');
@@ -101,7 +106,7 @@ if (!$person) {
             $conversations[] = [
                 'type' => 'athlete',
                 'id' => (int)$r['id'],
-                'name' => trim((string)$r['first_name'] . ' ' . (string)$r['last_name']),
+                'name' => trim((string)$r['first_name'] . ' ' . (string)$r['last_name']) . ' (ID: ' . (int)$r['id'] . ')',
                 'last_body' => $r['last_body'],
                 'last_at' => $r['last_at'],
                 'unread_count' => (int)$r['unread_count'],
@@ -224,7 +229,7 @@ if (!$person) {
 <?php elseif ($person): ?>
 <div class="topbar">
     <a href="<?= BASE_URL ?>/admin/chat_mobile.php"><i class="fas fa-arrow-left"></i></a>
-    <span class="title"><i class="<?= $type === 'coach' ? 'fas fa-user-tie' : 'fas fa-person-running' ?> type-icon"></i><?= h($person['name']) ?></span>
+    <span class="title"><i class="<?= $type === 'coach' ? 'fas fa-user-tie' : 'fas fa-person-running' ?> type-icon"></i><?= h($person['contact_name'] ?? $person['name']) ?></span>
 </div>
 <div class="chat-body" id="chatBody">
     <?php if (empty($messages)): ?>

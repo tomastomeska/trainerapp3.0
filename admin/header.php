@@ -156,6 +156,11 @@ function renderAdminHeader(string $title = ''): void {
 				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'mycoach_content.php' ? 'active' : '' ?>" style="padding-left:2.2rem;font-size:.87rem;">
 					<i class="fas fa-layer-group me-2"></i>MyCoach obsah
 				</a>
+				<a href="<?= BASE_URL ?>/admin/calculators.php"
+				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'calculators.php' ? 'active' : '' ?>">
+					<i class="fas fa-calculator me-2"></i>Kalkulačky
+					<span class="badge bg-secondary ms-1" style="font-size:.62rem">Ve vývoji</span>
+				</a>
 				<div class="text-uppercase small fw-semibold mt-3 mb-1" style="padding:.5rem .75rem .25rem;color:rgba(255,255,255,.68);font-size:.72rem;">Aplikace</div>
 				<a href="<?= BASE_URL ?>/admin/apps.php?platform=android"
 				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'apps.php' && ($_GET['platform'] ?? 'android') !== 'ios' ? 'active' : '' ?>" style="padding-left:2.2rem;font-size:.87rem;">

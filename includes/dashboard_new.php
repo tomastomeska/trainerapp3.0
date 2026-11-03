@@ -1,4 +1,19 @@
 <?php
+/**
+ * @var bool $mustChangePassword
+ * @var bool $mycoachAppIsLive
+ * @var bool $coachSurveyPending
+ * @var int $todayPendingCount
+ * @var \Closure(array): string $formatCalendarEventPerson
+ * @var int $tomorrowCount
+ * @var array<string, mixed>|null $firstTomorrowEvent
+ * @var array<string, array{label: string, sql: string}> $sortOptions
+ * @var string|null $supportBankAccountForQr
+ * @var string $supportBankAccount
+ * @var string $supportContributorName
+ * @var string $supportQrNote
+ * @var array<int, int> $calculatorUnseenCounts
+ */
 require_once __DIR__ . '/dashboard_quick_menu.php';
 // Dashboard view; data and POST actions stay in dashboard.php.
 renderHeader('Dashboard', false, true, true);
@@ -271,6 +286,10 @@ renderHeader('Dashboard', false, true, true);
             <a data-shortcut="online" href="<?= BASE_URL ?>/online_training.php" class="quick-tile quick-tile-warning">
                 <span class="quick-tile__label"><i class="fas fa-laptop me-1"></i>Online tréninky</span>
                 <span class="quick-tile__value"><?= (int)$onlineTrainingCount ?></span>
+            </a>
+            <a data-shortcut="calculators" href="<?= BASE_URL ?>/calculators.php" class="quick-tile quick-tile-muted">
+                <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-calculator me-1"></i>Kalkulačky <span class="badge rounded-pill bg-secondary">Ve vývoji</span></span>
+                <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
             </a>
             <?php if (mycoachAppEnabled() && $mycoachAppIsLive): ?>
             <a data-shortcut="mycoach" href="<?= BASE_URL ?>/mycoach_app.php" class="quick-tile quick-tile-warning">
@@ -565,6 +584,11 @@ renderHeader('Dashboard', false, true, true);
                         <i class="fas fa-heart-pulse me-1"></i>
                         <?= ($a['health_status_flag'] ?? '') === '' ? 'Dotazník chybí' : ((string)$healthInfo['variant'] === 'success' ? 'Dotazník OK' : 'Dotazník: omezení') ?>
                     </span>
+                    <?php if (!empty($calculatorUnseenCounts[(int)$a['id']])): ?>
+                    <a href="<?= BASE_URL ?>/athlete_detail.php?id=<?= (int)$a['id'] ?>#calculator-results" class="badge bg-danger text-decoration-none me-1">
+                        <i class="fas fa-calculator me-1"></i>Kalkulačky: <?= (int)$calculatorUnseenCounts[(int)$a['id']] ?> nové
+                    </a>
+                    <?php endif; ?>
                     <?php if ($coachMyCoachEnabled): ?>
                         <?php $myCoachMeta = $athleteMyCoachMetaById[(int)$a['id']] ?? null; ?>
                         <?php if ($myCoachMeta && (int)($myCoachMeta['active_plan_count'] ?? 0) > 0): ?>

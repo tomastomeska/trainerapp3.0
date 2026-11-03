@@ -5,6 +5,7 @@ require_once __DIR__ . '/includes/online_training.php';
 require_once __DIR__ . '/includes/athlete_header.php';
 require_once __DIR__ . '/includes/health_questionnaire.php';
 require_once __DIR__ . '/includes/medals.php';
+require_once __DIR__ . '/includes/calculators.php';
 
 if (!function_exists('getAthleteWeightLogById')) {
     function getAthleteWeightLogById(int $logId, int $athleteId = 0): ?array {
@@ -903,6 +904,15 @@ try {
                     $nearestPlannedTraining = null;
                 }
 
+$calculatorProfile = null;
+if (calculatorAppVisibleForUser('athlete', (int)$athleteId)) {
+    $calculatorProfile = [
+        'settings' => calculatorGetAthleteSettings($pdo, (int)$athleteId),
+        'latest' => calculatorFetchLatestResults($pdo, (int)$athleteId),
+        'height' => calculatorFetchAthleteHeightCm($pdo, (int)$athleteId),
+    ];
+}
+
 require __DIR__ . '/includes/athlete_dashboard_new.php';
 return;
 
@@ -1289,7 +1299,7 @@ renderAthleteHeader('Profil sportovce', false, true);
             <div class="card-header bg-dark text-white"><i class="fas fa-id-card me-2"></i>Informace</div>
             <div class="card-body">
                 <table class="table table-sm table-borderless mb-0">
-                    <tr><td class="text-muted fw-semibold" style="width:45%">Jméno</td><td><?= h(trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name'])) ?></td></tr>
+                    <tr><td class="text-muted fw-semibold" style="width:45%">Jméno</td><td><?= h(trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name'])) ?> <span class="text-muted">(ID: <?= (int)$athleteId ?>)</span></td></tr>
                     <tr><td class="text-muted fw-semibold">E-mail</td><td><?= h((string)$athlete['email']) ?></td></tr>
                     <tr><td class="text-muted fw-semibold">Trenér</td><td><?= h((string)($athlete['coach_name'] ?: $athlete['coach_username'])) ?></td></tr>
                     <tr><td class="text-muted fw-semibold">Datum narození</td><td><?= !empty($athlete['birth_date']) ? formatDate((string)$athlete['birth_date']) : '–' ?></td></tr>

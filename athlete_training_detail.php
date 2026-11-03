@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/calculators.php';
 require_once __DIR__ . '/includes/athlete_header.php';
 
 requireAthleteLogin();
@@ -61,6 +62,9 @@ renderAthleteHeader('Detail tréninku');
     </div>
     <div class="ms-auto">
         <?php if (!empty($session['completed_at'])): ?>
+        <?php if (calculatorAppVisibleForUser('athlete', $athleteId) && calculatorIsEnabled('performance') && calculatorIsEnabled('performance_load')): ?>
+        <a class="btn btn-outline-dark btn-sm" href="<?= BASE_URL ?>/performance.php?module=load&amp;date=<?= h(substr($session['started_at'], 0, 10)) ?>">Zátěž a hodnocení</a>
+        <?php endif; ?>
         <span class="badge bg-success fs-6"><i class="fas fa-check me-1"></i>Dokončeno</span>
         <?php else: ?>
         <span class="badge bg-warning text-dark fs-6">Naplánováno / probíhá</span>

@@ -385,11 +385,10 @@ renderAdminHeader('Sportovci');
                                             </div>
                                         <?php endif; ?>
                                         <div class="admin-athlete-person-main">
-                                            <div class="admin-athlete-person-name" title="<?= h($fullName !== '' ? $fullName : ('Sportovec #' . $athleteId)) ?>">
-                                                <?= h($fullName !== '' ? $fullName : ('Sportovec #' . $athleteId)) ?>
+                                            <div class="admin-athlete-person-name" title="<?= h(($fullName !== '' ? $fullName : 'Sportovec') . ' (ID: ' . $athleteId . ')') ?>">
+                                                <?= h(($fullName !== '' ? $fullName : 'Sportovec') . ' (ID: ' . $athleteId . ')') ?>
                                             </div>
                                             <div class="admin-athlete-person-meta">
-                                                <span class="admin-athlete-person-pill">#<?= $athleteId ?></span>
                                                 <span class="admin-athlete-person-pill">
                                                     <i class="far fa-calendar-alt"></i>
                                                     <?= !empty($athlete['created_at']) ? h(formatDate((string)$athlete['created_at'])) : '–' ?>
