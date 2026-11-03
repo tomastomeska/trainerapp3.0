@@ -18,8 +18,19 @@ if (isLoggedIn()) {
                 onlineTrainingSend($pdo, (int)$_POST['training_id'], $coachId);
                 flash('success', 'Online trénink byl odeslán sportovci.');
             } catch (Throwable $e) { flash('danger', $e->getMessage()); }
+        } elseif ($action === 'copy') {
+            $athleteId = (int)($_POST['athlete_id'] ?? 0);
+            try {
+                $newTrainingId = onlineTrainingCopy($pdo, $coachId, $athleteId, (int)($_POST['training_id'] ?? 0), ($_POST['copy_attachments'] ?? '') === '1');
+                redirect(BASE_URL . '/online_training.php?id=' . $newTrainingId);
+            } catch (Throwable $e) {
+                flash('danger', $e->getMessage());
+            }
         }
-        redirect(BASE_URL . '/online_training.php');
+        $returnUrl = $action === 'copy' && (int)($_POST['athlete_id'] ?? 0) > 0
+            ? BASE_URL . '/online_training.php?athlete_id=' . (int)$_POST['athlete_id']
+            : BASE_URL . '/online_training.php';
+        redirect($returnUrl);
     }
     $selectedAthleteId = (int)($_GET['athlete_id'] ?? 0);
     $sql = 'SELECT ot.*, a.first_name, a.last_name, a.email AS athlete_email, ws.name AS set_name FROM online_trainings ot JOIN athletes a ON a.id = ot.athlete_id JOIN workout_sets ws ON ws.id = ot.training_set_id WHERE ot.trainer_id = ?';
@@ -47,7 +58,7 @@ if (isLoggedIn()) {
     <?php $selectedAthlete = $trainings[0]; ?>
     <div class="d-flex align-items-center gap-2 mb-3"><a class="btn btn-outline-secondary btn-sm" href="<?= BASE_URL ?>/online_training.php"><i class="fas fa-arrow-left me-1"></i>Sportovci</a><strong><?= h($selectedAthlete['first_name'] . ' ' . $selectedAthlete['last_name']) ?></strong></div>
     <div class="table-responsive"><table class="table table-hover align-middle">
-    <thead><tr><th>Číslo</th><th>Sada</th><th>Odesláno</th><th>Stav a průběh</th><th>Účtování</th><th></th></tr></thead>
+    <thead><tr><th>Číslo</th><th>Sada</th><th>Odesláno</th><th>Stav a průběh</th><th>Účtování</th><th>Akce</th></tr></thead>
     <tbody>
     <?php foreach ($trainings as $training): ?>
     <?php
@@ -70,7 +81,17 @@ if (isLoggedIn()) {
     <?php if ($trainingCompleted && !$trainingReviewed): ?><a class="btn btn-sm btn-outline-primary mt-1" href="<?= BASE_URL ?>/online_training.php?id=<?= (int)$training['id'] ?>">Prohlédnout</a><?php endif; ?>
     </td>
     <td><?= $training['billing_type'] === 'subscription' ? 'Předplatné' : ($training['billing_type'] === 'single' ? number_format((float)$training['price'], 2, ',', ' ') . ' Kč' : 'Zdarma') ?></td>
-    <td><a class="btn btn-sm btn-outline-dark" href="<?= BASE_URL ?>/online_training.php?id=<?= (int)$training['id'] ?>">Detail</a></td>
+    <td class="text-nowrap">
+        <a class="btn btn-sm btn-outline-dark" href="<?= BASE_URL ?>/online_training.php?id=<?= (int)$training['id'] ?>">Detail</a>
+        <form method="post" class="d-inline" onsubmit="this.elements.copy_attachments.value = confirm('Zkopírovat také všechny přílohy (obrázky, videa a odkazy)?\n\nOK = Ano, zkopírovat přílohy\nZrušit = Ne, vytvořit kopii bez příloh') ? '1' : '0';">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="copy">
+            <input type="hidden" name="training_id" value="<?= (int)$training['id'] ?>">
+            <input type="hidden" name="athlete_id" value="<?= (int)$training['athlete_id'] ?>">
+            <input type="hidden" name="copy_attachments" value="0">
+            <button type="submit" class="btn btn-sm btn-outline-warning"><i class="fas fa-copy me-1"></i>Kopírovat</button>
+        </form>
+    </td>
     </tr>
     <?php endforeach; ?>
     </tbody></table></div>

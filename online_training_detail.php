@@ -109,7 +109,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!$exercise) throw new RuntimeException('Cvik nebyl nalezen.');
                 $duplicate = $pdo->prepare('SELECT id FROM online_training_exercises WHERE online_training_id = ? AND exercise_id = ? LIMIT 1');
                 $duplicate->execute([$id, $exerciseId]);
-                if ($duplicate->fetch()) throw new RuntimeException('Tento cvik už v online tréninku je.');
+                if ($duplicate->fetch()) {
+                    flash('success', 'Cvik už v online tréninku byl, proto nebyl přidán znovu.');
+                    redirect(BASE_URL . '/online_training.php?id=' . $id);
+                }
                 $orderStmt = $pdo->prepare('SELECT COALESCE(MAX(exercise_order), 0) + 1 FROM online_training_exercises WHERE online_training_id = ?');
                 $orderStmt->execute([$id]);
                 $pdo->prepare('INSERT INTO online_training_exercises (online_training_id, exercise_id, exercise_order, exercise_name, sport_type, is_timed) VALUES (?, ?, ?, ?, ?, ?)')
@@ -292,8 +295,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $exercises = onlineTrainingLoadExercises($pdo, $id);
 $availableExercises = [];
 if ($isCoach && $training['status'] === 'created') {
-    $availableStmt = $pdo->prepare('SELECT id, name FROM exercises WHERE coach_id = ? OR is_global = 1 ORDER BY name');
-    $availableStmt->execute([$coachId]);
+    $availableStmt = $pdo->prepare('SELECT e.id, e.name FROM exercises e WHERE (e.coach_id = ? OR e.is_global = 1) AND NOT EXISTS (SELECT 1 FROM online_training_exercises ote WHERE ote.online_training_id = ? AND ote.exercise_id = e.id) ORDER BY e.name');
+    $availableStmt->execute([$coachId, $id]);
     $availableExercises = $availableStmt->fetchAll();
 }
 $attachmentStmt = $pdo->prepare('SELECT ota.*, ote.exercise_name FROM online_training_attachments ota LEFT JOIN online_training_exercises ote ON ote.id = ota.online_training_exercise_id WHERE ota.online_training_id = ? ORDER BY ota.created_at, ota.id');
@@ -349,6 +352,18 @@ if ($isCoach) { require_once __DIR__ . '/includes/header.php'; renderHeader('Onl
 .online-results-table thead th { white-space: nowrap; }
 .online-results-table .online-results-table__prescribed { background-color: #fff7df; }
 .online-results-table .online-results-table__actual { background-color: #e8f4ff; }
+.online-coach-results-table thead .online-results-table__coach-group { background: #f5e8c5; color: #795900; text-align: center; }
+.online-coach-results-table thead .online-results-table__athlete-group { background: #d7e8f7; color: #084b83; text-align: center; }
+.online-coach-results-table thead .online-results-table__prescribed { background: #fff1c2; }
+.online-coach-results-table thead .online-results-table__actual { background: #deedfb; }
+.online-coach-results-table .online-results-table__athlete-start { border-left: 3px solid #9db8d1; }
+.online-coach-results-table .online-result-difference { color: #b42318 !important; font-weight: 700 !important; }
+.online-coach-results-table > tbody > tr.online-exercise-row--shaded > * { background: #f1f3f5 !important; box-shadow: none !important; }
+.online-coach-results-table > tbody > tr.online-exercise-row--plain > * { background: #fff !important; box-shadow: none !important; }
+.online-coach-results-table > tbody > tr.online-exercise-row--shaded > .online-results-table__prescribed { background: #f3ead4 !important; }
+.online-coach-results-table > tbody > tr.online-exercise-row--plain > .online-results-table__prescribed { background: #fff7df !important; }
+.online-coach-results-table > tbody > tr.online-exercise-row--shaded > .online-results-table__actual { background: #dce8f2 !important; }
+.online-coach-results-table > tbody > tr.online-exercise-row--plain > .online-results-table__actual { background: #e8f4ff !important; }
 .online-results-table thead .online-results-table__prescribed { color: #795900; }
 .online-results-table thead .online-results-table__actual { color: #084b83; }
 .online-exercise-attachments { border-top: 1px solid #dee2e6; background: #fbfcfd; padding: 1rem; }
@@ -446,8 +461,9 @@ $isSubscriptionBilling = $training['billing_type'] === 'subscription' || ($isCoa
 <section class="card border-warning shadow-sm mb-4 online-draft-step">
 <div class="card-body">
 <h5><span class="online-draft-step__number">2</span>Sestavte trénink</h5>
-<p class="text-muted">Přidejte cviky a případně upravte jejich pořadí.</p>
+<p class="text-muted">Cviky ze zvolené sady už jsou v tréninku. Přidejte další cviky a případně upravte jejich pořadí.</p>
 <div class="online-builder-grid">
+<?php if ($availableExercises): ?>
 <form method="post" class="online-builder-panel">
 <?= csrfField() ?><input type="hidden" name="training_id" value="<?= $id ?>"><input type="hidden" name="action" value="add_exercise">
 <div class="online-builder-panel__title">Přidat cvik</div>
@@ -455,6 +471,9 @@ $isSubscriptionBilling = $training['billing_type'] === 'subscription' || ($isCoa
 <select id="online-add-exercise" name="exercise_id" class="form-select mb-3" required><option value="">Vyberte cvik</option><?php foreach ($availableExercises as $availableExercise): ?><option value="<?= (int)$availableExercise['id'] ?>"><?= h($availableExercise['name']) ?></option><?php endforeach; ?></select>
 <button class="btn btn-outline-warning"><i class="fas fa-plus me-1"></i>Přidat do tréninku</button>
 </form>
+<?php else: ?>
+<div class="online-builder-panel"><div class="online-builder-panel__title">Přidat cvik</div><p class="text-muted mb-0">Všechny dostupné cviky už jsou v tomto tréninku.</p></div>
+<?php endif; ?>
 <form method="post" class="online-builder-panel">
 <?= csrfField() ?><input type="hidden" name="training_id" value="<?= $id ?>"><input type="hidden" name="action" value="reorder_exercises">
 <div class="online-builder-panel__title">Pořadí cviků</div>
@@ -471,19 +490,29 @@ $isSubscriptionBilling = $training['billing_type'] === 'subscription' || ($isCoa
 <div class="card-header bg-dark text-white"><?= $isCoach && $training['status'] === 'created' ? '<span class="online-draft-step__number">3</span>Předepsané cviky, série a přílohy' : ($isCoach ? 'Předepsané a skutečně provedené série' : 'Cviky a série') ?></div>
 <?php if ($isCoach && $training['status'] !== 'created'): ?>
 <div class="table-responsive">
-<table class="table table-sm table-striped align-middle mb-0 online-results-table">
-<thead><tr><th>Cvik</th><th>Série</th><th class="online-results-table__prescribed">Předepsaná váha</th><th class="online-results-table__prescribed">Předepsaná opakování</th><th class="online-results-table__actual">Skutečná váha</th><th class="online-results-table__actual">Skutečná opakování</th><th class="online-results-table__actual">Poznámka série</th></tr></thead>
+<table class="table table-sm align-middle mb-0 online-results-table online-coach-results-table">
+<thead>
+<tr><th colspan="2"></th><th colspan="2" class="online-results-table__coach-group">Zadání trenéra</th><th colspan="3" class="online-results-table__athlete-group online-results-table__athlete-start">Výsledek sportovce</th></tr>
+<tr><th>Cvik</th><th>Série</th><th class="online-results-table__prescribed">Předepsaná váha</th><th class="online-results-table__prescribed">Předepsaná opakování</th><th class="online-results-table__actual online-results-table__athlete-start">Skutečná váha</th><th class="online-results-table__actual">Skutečná opakování</th><th class="online-results-table__actual">Poznámka série</th></tr>
+</thead>
 <tbody>
-<?php foreach ($exercises as $exercise): ?>
-<?php if (!$exercise['series']): ?><tr><td><?= (int)$exercise['exercise_order'] ?>. <?= h($exercise['exercise_name']) ?></td><td colspan="6" class="text-muted">Bez sérií</td></tr><?php endif; ?>
+<?php foreach ($exercises as $exerciseIndex => $exercise): ?>
+<?php $exerciseRowClass = $exerciseIndex % 2 === 0 ? 'online-exercise-row--shaded' : 'online-exercise-row--plain'; ?>
+<?php if (!$exercise['series']): ?><tr class="<?= $exerciseRowClass ?>"><td><?= (int)$exercise['exercise_order'] ?>. <?= h($exercise['exercise_name']) ?></td><td colspan="6" class="text-muted">Bez sérií</td></tr><?php endif; ?>
 <?php foreach ($exercise['series'] as $series): ?>
-<tr>
+<?php
+$weightDiffers = $series['prescribed_weight'] !== null && $series['actual_weight'] !== null
+    && abs((float)$series['prescribed_weight'] - (float)$series['actual_weight']) > 0.0001;
+$repsDiffer = $series['prescribed_reps'] !== null && $series['actual_reps'] !== null
+    && (int)$series['prescribed_reps'] !== (int)$series['actual_reps'];
+?>
+<tr class="<?= $exerciseRowClass ?>">
 <td><?= (int)$exercise['exercise_order'] ?>. <?= h($exercise['exercise_name']) ?></td>
 <td><?= (int)$series['series_order'] ?></td>
 <td class="online-results-table__prescribed"><?= $series['prescribed_weight'] !== null ? h((string)$series['prescribed_weight']) . ' kg' : '–' ?></td>
 <td class="online-results-table__prescribed"><?= $series['prescribed_reps'] !== null ? (int)$series['prescribed_reps'] : '–' ?></td>
-<td class="online-results-table__actual fw-bold"><?= $series['actual_weight'] !== null ? h((string)$series['actual_weight']) . ' kg' : '–' ?></td>
-<td class="online-results-table__actual fw-bold"><?= $series['actual_reps'] !== null ? (int)$series['actual_reps'] : '–' ?></td>
+<td class="online-results-table__actual online-results-table__athlete-start"><?= $series['actual_weight'] !== null ? ($weightDiffers ? '<span class="online-result-difference">' . h((string)$series['actual_weight']) . ' kg</span>' : '<strong>' . h((string)$series['actual_weight']) . ' kg</strong>') : '–' ?></td>
+<td class="online-results-table__actual"><?= $series['actual_reps'] !== null ? ($repsDiffer ? '<span class="online-result-difference">' . (int)$series['actual_reps'] . '</span>' : '<strong>' . (int)$series['actual_reps'] . '</strong>') : '–' ?></td>
 <td class="online-results-table__actual fw-bold"><?= !empty($series['result_note']) ? h((string)$series['result_note']) : '–' ?></td>
 </tr>
 <?php endforeach; ?>
@@ -504,12 +533,12 @@ $exerciseAttachments = array_values(array_filter(
 <?php if ($canManageAttachments): ?>
 <details class="online-exercise-attachments__disclosure">
 <summary><i class="fas fa-plus me-1"></i>Přidat přílohu</summary>
-<form data-online-attachment-form method="post" enctype="multipart/form-data" class="border rounded bg-white p-3">
+<form data-online-attachment-form data-exercise-name="<?= h($exercise['exercise_name']) ?>" method="post" enctype="multipart/form-data" class="border rounded bg-white p-3">
 <?= csrfField() ?><input type="hidden" name="training_id" value="<?= $id ?>"><input type="hidden" name="action" value="attachment"><input type="hidden" name="online_training_exercise_id" value="<?= (int)$exercise['id'] ?>">
 <div class="row g-2 align-items-end">
 <div class="col-md-5"><label class="form-label small" for="exercise-file-<?= (int)$exercise['id'] ?>">Fotografie nebo video</label><input id="exercise-file-<?= (int)$exercise['id'] ?>" type="file" name="attachment" class="form-control" accept="image/*,video/*"></div>
 <div class="col-md-5"><label class="form-label small" for="exercise-url-<?= (int)$exercise['id'] ?>">Odkaz (volitelně)</label><input id="exercise-url-<?= (int)$exercise['id'] ?>" name="external_url" type="url" maxlength="1000" class="form-control" placeholder="https://..."></div>
-<div class="col-md-2"><button class="btn btn-outline-primary w-100"><i class="fas fa-paperclip me-1"></i>Přidat</button></div>
+<div class="col-md-2"><button type="submit" class="btn btn-outline-primary w-100 online-attachment-submit"><i class="fas fa-paperclip me-1"></i>Přidat</button></div>
 <?php if ($isCoach): ?><div class="col-12"><label class="form-label small" for="exercise-link-description-<?= (int)$exercise['id'] ?>">Vysvětlení odkazu (volitelné)</label><textarea id="exercise-link-description-<?= (int)$exercise['id'] ?>" name="link_description" class="form-control" rows="2"></textarea></div><?php endif; ?>
 </div>
 <div class="form-text">Příloha se zobrazí sportovci přímo u cviku.</div>
@@ -521,7 +550,7 @@ $exerciseAttachments = array_values(array_filter(
 <?php elseif (!$isCoach): ?>
 <div class="table-responsive">
 <table class="table table-sm table-striped align-middle mb-0 online-results-table">
-<thead><tr><th>Cvik</th><th>Série</th><th class="online-results-table__prescribed">Předepsaná váha</th><th class="online-results-table__prescribed">Předepsaná opakování</th><th class="online-results-table__actual">Moje váha</th><th class="online-results-table__actual">Moje opakování</th></tr></thead>
+<thead><tr><th>Cvik</th><th>Série</th><th class="online-results-table__prescribed">Předepsaná váha</th><th class="online-results-table__prescribed">Předepsaná opakování</th><th class="online-results-table__actual">Moje váha</th><th class="online-results-table__actual">Moje opakování</th><th class="online-results-table__actual">Moje poznámka k sérii</th></tr></thead>
 <tbody>
 <?php foreach ($exercises as $exercise): ?>
 <?php if (!$exercise['series']): ?><tr><td><?= (int)$exercise['exercise_order'] ?>. <?= h($exercise['exercise_name']) ?></td><td colspan="5" class="text-muted">Bez sérií</td></tr><?php endif; ?>
@@ -534,9 +563,11 @@ $exerciseAttachments = array_values(array_filter(
 <?php if ($training['status'] === 'completed'): ?>
 <td class="online-results-table__actual fw-bold"><?= $series['actual_weight'] !== null ? h((string)$series['actual_weight']) . ' kg' : '–' ?></td>
 <td class="online-results-table__actual fw-bold"><?= $series['actual_reps'] !== null ? (int)$series['actual_reps'] : '–' ?></td>
+<td class="online-results-table__actual"><?= !empty($series['result_note']) ? h((string)$series['result_note']) : '–' ?></td>
 <?php else: ?>
 <td class="online-results-table__actual"><input form="result-form" name="series[<?= (int)$series['id'] ?>][weight]" class="form-control form-control-sm" type="number" step="0.01" value="<?= h((string)($series['actual_weight'] ?? '')) ?>" aria-label="Moje váha, série <?= (int)$series['series_order'] ?>"></td>
 <td class="online-results-table__actual"><input form="result-form" name="series[<?= (int)$series['id'] ?>][reps]" class="form-control form-control-sm" type="number" value="<?= h((string)($series['actual_reps'] ?? '')) ?>" aria-label="Moje opakování, série <?= (int)$series['series_order'] ?>"></td>
+<td class="online-results-table__actual"><input form="result-form" name="series[<?= (int)$series['id'] ?>][note]" class="form-control form-control-sm" type="text" maxlength="10000" value="<?= h((string)($series['result_note'] ?? '')) ?>" aria-label="Moje poznámka, série <?= (int)$series['series_order'] ?>"></td>
 <?php endif; ?>
 </tr>
 <?php endforeach; ?>
@@ -561,12 +592,12 @@ $athleteExerciseAttachments = array_values(array_filter($exerciseAttachments, st
 <?php if ($canManageAttachments): ?>
 <details class="online-exercise-attachments__disclosure">
 <summary><i class="fas fa-plus me-1"></i>Přidat přílohu</summary>
-<form data-online-attachment-form method="post" enctype="multipart/form-data" class="border rounded bg-white p-3">
+<form data-online-attachment-form data-exercise-name="<?= h($exercise['exercise_name']) ?>" method="post" enctype="multipart/form-data" class="border rounded bg-white p-3">
 <?= csrfField() ?><input type="hidden" name="training_id" value="<?= $id ?>"><input type="hidden" name="action" value="attachment"><input type="hidden" name="online_training_exercise_id" value="<?= (int)$exercise['id'] ?>">
 <div class="row g-2 align-items-end">
 <div class="col-md-5"><label class="form-label small" for="exercise-file-<?= (int)$exercise['id'] ?>">Fotografie nebo video</label><input id="exercise-file-<?= (int)$exercise['id'] ?>" type="file" name="attachment" class="form-control" accept="image/*,video/*"></div>
 <div class="col-md-5"><label class="form-label small" for="exercise-url-<?= (int)$exercise['id'] ?>">Odkaz (volitelně)</label><input id="exercise-url-<?= (int)$exercise['id'] ?>" name="external_url" type="url" maxlength="1000" class="form-control" placeholder="https://..."></div>
-<div class="col-md-2"><button class="btn btn-outline-primary w-100"><i class="fas fa-paperclip me-1"></i>Přidat</button></div>
+<div class="col-md-2"><button type="submit" class="btn btn-outline-primary w-100 online-attachment-submit"><i class="fas fa-paperclip me-1"></i>Přidat</button></div>
 </div>
 </form>
 </details>
@@ -604,6 +635,7 @@ $athleteExerciseAttachments = array_values(array_filter($exerciseAttachments, st
 <?php if (!$isCoach): ?>
 <th>Moje váha</th>
 <th>Moje opakování</th>
+<th>Moje poznámka k sérii</th>
 <?php elseif ($training['status'] === 'created'): ?>
 <th>
 </th>
@@ -672,12 +704,12 @@ $athleteExerciseAttachments = array_values(array_filter($exerciseAttachments, st
 <?php if ($canManageAttachments): ?>
 <details class="online-exercise-attachments__disclosure">
 <summary><i class="fas fa-plus me-1"></i>Přidat přílohu</summary>
-<form data-online-attachment-form method="post" enctype="multipart/form-data" class="border rounded bg-white p-3">
+<form data-online-attachment-form data-exercise-name="<?= h($exercise['exercise_name']) ?>" method="post" enctype="multipart/form-data" class="border rounded bg-white p-3">
 <?= csrfField() ?><input type="hidden" name="training_id" value="<?= $id ?>"><input type="hidden" name="action" value="attachment"><input type="hidden" name="online_training_exercise_id" value="<?= (int)$exercise['id'] ?>">
 <div class="row g-2 align-items-end">
 <div class="col-md-5"><label class="form-label small" for="exercise-file-<?= (int)$exercise['id'] ?>">Fotografie nebo video</label><input id="exercise-file-<?= (int)$exercise['id'] ?>" type="file" name="attachment" class="form-control" accept="image/*,video/*"></div>
 <div class="col-md-5"><label class="form-label small" for="exercise-url-<?= (int)$exercise['id'] ?>">Odkaz (volitelně)</label><input id="exercise-url-<?= (int)$exercise['id'] ?>" name="external_url" type="url" maxlength="1000" class="form-control" placeholder="https://..."></div>
-<div class="col-md-2"><button class="btn btn-outline-primary w-100"><i class="fas fa-paperclip me-1"></i>Přidat</button></div>
+<div class="col-md-2"><button type="submit" class="btn btn-outline-primary w-100 online-attachment-submit"><i class="fas fa-paperclip me-1"></i>Přidat</button></div>
 <?php if ($isCoach): ?><div class="col-12"><label class="form-label small" for="exercise-link-description-<?= (int)$exercise['id'] ?>">Vysvětlení odkazu (volitelné)</label><textarea id="exercise-link-description-<?= (int)$exercise['id'] ?>" name="link_description" class="form-control" rows="2"></textarea></div><?php endif; ?>
 </div>
 <div class="form-text">Příloha se zobrazí sportovci přímo u cviku.</div>
@@ -710,7 +742,7 @@ foreach ($groups as $role => $heading):
 </div>
 <?php endif; ?>
 <?php if ($role === $ownRole && $canManageAttachments): ?>
-<form data-online-attachment-form method="post" enctype="multipart/form-data" class="border rounded bg-light p-3">
+<form data-online-attachment-form data-exercise-name="celému tréninku" method="post" enctype="multipart/form-data" class="border rounded bg-light p-3">
 <input type="hidden" name="csrf_token" value="<?= h(csrfToken()) ?>">
 <input type="hidden" name="training_id" value="<?= $id ?>">
 <input type="hidden" name="action" value="attachment">
@@ -728,7 +760,7 @@ foreach ($groups as $role => $heading):
 <?php if ($isCoach): ?><div class="col-12"><label for="online-training-link-description" class="form-label">Popis a vysvětlení odkazu (volitelné)</label><textarea id="online-training-link-description" name="link_description" class="form-control" rows="2"></textarea></div><?php endif; ?>
 </div>
 <div class="form-text">Tyto přílohy budou viditelné u celého tréninku. Přílohy ke konkrétním cvikům přidejte přímo v jeho kartě.</div>
-<button class="btn btn-primary mt-3"><i class="fas fa-upload me-2"></i>Nahrát přílohu</button>
+<button type="submit" class="btn btn-primary mt-3 online-attachment-submit"><i class="fas fa-upload me-2"></i>Nahrát přílohu</button>
 </form>
 <?php endif; ?>
 </section>
@@ -860,7 +892,32 @@ foreach ($groups as $role => $heading):
     });
 })();
 </script><?php endif; ?>
-<?php if ($isCoach && $training['status'] === 'created'): ?><script>
+<?php if ($isCoach && $training['status'] === 'created'): ?>
+<div id="onlineAttachmentWarning" class="online-attachment-warning" hidden aria-hidden="true">
+    <section class="online-attachment-warning__dialog" role="dialog" aria-modal="true" aria-labelledby="onlineAttachmentWarningTitle" aria-describedby="onlineAttachmentWarningMessage">
+        <div class="online-attachment-warning__icon"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i></div>
+        <h2 id="onlineAttachmentWarningTitle">Příloha ještě není nahraná</h2>
+        <p id="onlineAttachmentWarningMessage">Před pokračováním nahrajte připravenou přílohu:</p>
+        <ul id="onlineAttachmentWarningList"></ul>
+        <div class="online-attachment-warning__actions">
+            <button type="button" id="onlineAttachmentWarningGo" class="btn btn-primary"><i class="fas fa-upload me-1"></i>Přejít k příloze</button>
+            <button type="button" id="onlineAttachmentWarningContinue" class="btn btn-outline-secondary">Pokračovat bez nahrání</button>
+        </div>
+    </section>
+</div>
+<style>
+.online-attachment-submit.is-pending { animation: online-attachment-pulse .9s ease-in-out infinite; border-color: #b45309; background: #fbbf24; color: #1f2937; font-weight: 700; }
+@keyframes online-attachment-pulse { 50% { transform: scale(1.05); box-shadow: 0 0 0 .45rem rgba(251, 191, 36, .3); } }
+@media (prefers-reduced-motion: reduce) { .online-attachment-submit.is-pending { animation: none; outline: 3px solid rgba(251, 191, 36, .45); } }
+.online-attachment-warning { position: fixed; inset: 0; z-index: 2100; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgba(15, 23, 42, .72); }
+.online-attachment-warning[hidden] { display: none; }
+.online-attachment-warning__dialog { width: min(100%, 34rem); padding: 2rem; border-radius: 1rem; background: #fff; box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, .35); text-align: center; }
+.online-attachment-warning__icon { margin-bottom: .75rem; color: #d97706; font-size: 2.5rem; }
+.online-attachment-warning__dialog h2 { font-size: 1.4rem; }
+.online-attachment-warning__dialog ul { margin: 1rem 0 1.5rem; padding-left: 1.25rem; text-align: left; }
+.online-attachment-warning__actions { display: flex; flex-wrap: wrap; justify-content: center; gap: .75rem; }
+</style>
+<script>
 (function () {
     const restoreKey = 'online-training-scroll-<?= (int)$id ?>';
     const savedScroll = sessionStorage.getItem(restoreKey);
@@ -939,6 +996,160 @@ foreach ($groups as $role => $heading):
         });
     });
 })();
+</script><?php endif; ?>
+<?php if ($isCoach && $training['status'] === 'created'): ?><script>
+(function () {
+    const attachmentForms = Array.from(document.querySelectorAll('[data-online-attachment-form]'));
+    if (!attachmentForms.length) return;
+    const warningModal = document.getElementById('onlineAttachmentWarning');
+    const warningList = document.getElementById('onlineAttachmentWarningList');
+    const goToAttachmentButton = document.getElementById('onlineAttachmentWarningGo');
+    const continueButton = document.getElementById('onlineAttachmentWarningContinue');
+    let focusTarget = null;
+    let allowFocusTarget = null;
+    let pendingAction = null;
+    let skipSubmitForm = null;
+
+    function pendingItems() {
+        return attachmentForms.flatMap(function (form) {
+            const file = form.querySelector('[name="attachment"]');
+            const url = form.querySelector('[name="external_url"]');
+            const description = form.querySelector('[name="link_description"]');
+            const items = [];
+            const exerciseName = form.dataset.exerciseName || 'tréninku';
+            if (file && file.files.length > 0) {
+                const selectedFile = file.files[0];
+                const kind = selectedFile.type.indexOf('video/') === 0 ? 'video' : (selectedFile.type.indexOf('image/') === 0 ? 'obrázek' : 'soubor');
+                items.push({ form: form, label: exerciseName + ': ' + kind + ' „' + selectedFile.name + '“' });
+            }
+            if (url && url.value.trim() !== '') items.push({ form: form, label: exerciseName + ': odkaz' });
+            else if (description && description.value.trim() !== '') items.push({ form: form, label: exerciseName + ': popis odkazu bez URL' });
+            return items;
+        });
+    }
+
+    function updateButton(form) {
+        const button = form.querySelector('.online-attachment-submit');
+        if (!button) return;
+        const pending = pendingItems().some(function (item) { return item.form === form; });
+        button.classList.toggle('is-pending', pending);
+        button.setAttribute('aria-label', pending ? 'Příloha čeká na nahrání. Kliknutím ji přidáte.' : 'Přidat přílohu');
+        button.innerHTML = pending
+            ? '<i class="fas fa-upload me-1"></i>Nahrát přílohu!'
+            : '<i class="fas fa-paperclip me-1"></i>Přidat';
+    }
+
+    function updateButtons() {
+        attachmentForms.forEach(updateButton);
+    }
+
+    function closeWarning() {
+        warningModal.hidden = true;
+        warningModal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+    }
+
+    function showWarning(target, action) {
+        const items = pendingItems();
+        if (!items.length || !warningModal || !warningList || !warningModal.hidden) return;
+        focusTarget = target instanceof HTMLElement ? target : null;
+        pendingAction = action || null;
+        warningList.replaceChildren();
+        items.forEach(function (item) {
+            const listItem = document.createElement('li');
+            listItem.textContent = item.label;
+            warningList.appendChild(listItem);
+        });
+        warningModal.hidden = false;
+        warningModal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+        goToAttachmentButton.focus();
+    }
+
+    attachmentForms.forEach(function (form) {
+        form.addEventListener('input', updateButtons);
+        form.addEventListener('change', updateButtons);
+    });
+    updateButtons();
+
+    goToAttachmentButton.addEventListener('click', function () {
+        const nextItem = pendingItems()[0];
+        closeWarning();
+        if (!nextItem) return;
+        const details = nextItem.form.closest('details');
+        if (details) details.open = true;
+        nextItem.form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const fileInput = nextItem.form.querySelector('[name="attachment"]');
+        const urlInput = nextItem.form.querySelector('[name="external_url"]');
+        const target = fileInput && fileInput.files.length ? fileInput : (urlInput && urlInput.value.trim() ? urlInput : nextItem.form.querySelector('.online-attachment-submit'));
+        if (target) target.focus({ preventScroll: true });
+    });
+
+    continueButton.addEventListener('click', function () {
+        const target = focusTarget;
+        const action = pendingAction;
+        closeWarning();
+        focusTarget = null;
+        pendingAction = null;
+        if (action && action.submitForm && action.submitForm.isConnected) {
+            skipSubmitForm = action.submitForm;
+            if (typeof action.submitForm.requestSubmit === 'function') {
+                if (action.submitter) action.submitForm.requestSubmit(action.submitter);
+                else action.submitForm.requestSubmit();
+                if (skipSubmitForm === action.submitForm) skipSubmitForm = null;
+            } else {
+                skipSubmitForm = null;
+                HTMLFormElement.prototype.submit.call(action.submitForm);
+            }
+        } else if (action && action.href) {
+            window.location.assign(action.href);
+        } else if (target && target.isConnected) {
+            allowFocusTarget = target;
+            target.focus({ preventScroll: true });
+        }
+    });
+
+    document.addEventListener('focusin', function (event) {
+        const target = event.target;
+        if (!(target instanceof HTMLElement) || warningModal.contains(target)) return;
+        if (allowFocusTarget === target) {
+            allowFocusTarget = null;
+            return;
+        }
+        const pendingForm = target.closest('[data-online-attachment-form]');
+        if (pendingItems().some(function (item) { return item.form !== pendingForm; })) showWarning(target);
+    }, true);
+
+    document.addEventListener('click', function (event) {
+        const target = event.target;
+        if (!(target instanceof Element) || target.closest('#onlineAttachmentWarning')) return;
+        const link = target.closest('a[href]');
+        if (!link || !pendingItems().length) return;
+        event.preventDefault();
+        showWarning(target, { href: link.href });
+    }, true);
+
+    document.addEventListener('submit', function (event) {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement)) return;
+        if (skipSubmitForm === form) {
+            skipSubmitForm = null;
+            return;
+        }
+        const remainingItems = pendingItems().filter(function (item) { return item.form !== form; });
+        if (!remainingItems.length) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        showWarning(form, { submitForm: form, submitter: event.submitter || null });
+    }, true);
+
+    window.addEventListener('beforeunload', function (event) {
+        if (!pendingItems().length) return;
+        event.preventDefault();
+        event.returnValue = '';
+    });
+})();
+</script>
 </script><?php endif; ?>
 <?php if (!$isCoach && $training['status'] === 'sent'): ?><script>
 document.querySelectorAll('input[name^="series["]').forEach(function (field) {

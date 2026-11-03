@@ -278,7 +278,7 @@ function onlineTrainingSaveAthleteResults(PDO $pdo, int $trainingId, int $athlet
     if ((int)$data['series_count'] !== count($ids) || count($series) !== count($ids)) {
         throw new RuntimeException('Nepodařilo se odeslat všechny série. Trénink nebyl dokončen.');
     }
-    $save = $pdo->prepare('INSERT INTO online_training_results (online_training_id, online_training_series_id, actual_weight, actual_reps) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE actual_weight = VALUES(actual_weight), actual_reps = VALUES(actual_reps)');
+    $save = $pdo->prepare('INSERT INTO online_training_results (online_training_id, online_training_series_id, actual_weight, actual_reps, note) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE actual_weight = VALUES(actual_weight), actual_reps = VALUES(actual_reps), note = VALUES(note)');
     foreach ($ids as $seriesId) {
         $values = $series[$seriesId] ?? null;
         if (!is_array($values) || !isset($values['weight'], $values['reps']) || !is_string($values['weight']) || !is_string($values['reps'])) {
@@ -287,7 +287,12 @@ function onlineTrainingSaveAthleteResults(PDO $pdo, int $trainingId, int $athlet
         if (($values['weight'] !== '' && !is_numeric($values['weight'])) || ($values['reps'] !== '' && !preg_match('/^\d+$/', $values['reps']))) {
             throw new RuntimeException('Zkontrolujte váhu a počet opakování u všech sérií.');
         }
-        $save->execute([$trainingId, $seriesId, $values['weight'] === '' ? null : $values['weight'], $values['reps'] === '' ? null : (int)$values['reps']]);
+        if (array_key_exists('note', $values) && !is_string($values['note'])) {
+            throw new RuntimeException('Neplatná poznámka k sérii.');
+        }
+        $note = trim((string)($values['note'] ?? ''));
+        if (strlen($note) > 10000) throw new RuntimeException('Poznámka k sérii je příliš dlouhá (nejvýše 10 000 bajtů).');
+        $save->execute([$trainingId, $seriesId, $values['weight'] === '' ? null : $values['weight'], $values['reps'] === '' ? null : (int)$values['reps'], $note === '' ? null : $note]);
     }
     $note = trim($data['athlete_note']);
     $pdo->prepare('UPDATE online_trainings SET athlete_note = ? WHERE id = ? AND athlete_id = ?')->execute([$note === '' ? null : $note, $trainingId, $athleteId]);
@@ -368,6 +373,114 @@ function onlineTrainingCreateFromSet(PDO $pdo, int $coachId, int $athleteId, int
         foreach ($uploadedPaths as $path) {
             $absolutePath = __DIR__ . '/../uploads/' . $path;
             if (is_file($absolutePath) && !unlink($absolutePath)) error_log('Nepodařilo se odstranit nenavázanou přílohu online tréninku: ' . $absolutePath);
+        }
+        throw $e;
+    }
+}
+
+function onlineTrainingCopy(PDO $pdo, int $coachId, int $athleteId, int $sourceTrainingId, bool $copyAttachments): int {
+    $copiedPaths = [];
+    $pdo->beginTransaction();
+    try {
+        $sourceStmt = $pdo->prepare("SELECT id, training_set_id, title, coach_note FROM online_trainings WHERE id = ? AND trainer_id = ? LIMIT 1 FOR UPDATE");
+        $sourceStmt->execute([$sourceTrainingId, $coachId]);
+        $source = $sourceStmt->fetch();
+        if (!$source) throw new RuntimeException('Zdrojový online trénink nebyl nalezen.');
+
+        $athleteStmt = $pdo->prepare('SELECT id FROM athletes WHERE id = ? AND coach_id = ? LIMIT 1 FOR UPDATE');
+        $athleteStmt->execute([$athleteId, $coachId]);
+        if (!$athleteStmt->fetch()) throw new RuntimeException('Sportovec nebyl nalezen.');
+        if (!onlineTrainingActiveSubscription($pdo, $coachId, $athleteId, true)) {
+            throw new RuntimeException('Sportovec nemá platné uhrazené předplatné. Online trénink nelze vytvořit.');
+        }
+
+        $sequence = onlineTrainingNextSequence($pdo, $coachId, $athleteId);
+        $create = $pdo->prepare("INSERT INTO online_trainings (trainer_id, athlete_id, training_set_id, sequence_number, title, coach_note) VALUES (?, ?, ?, ?, ?, ?)");
+        $create->execute([$coachId, $athleteId, (int)$source['training_set_id'], $sequence, (string)$source['title'], $source['coach_note']]);
+        $newTrainingId = (int)$pdo->lastInsertId();
+
+        $sourceExercisesStmt = $pdo->prepare('SELECT id, exercise_id, exercise_order, exercise_name, sport_type, is_timed, instructions FROM online_training_exercises WHERE online_training_id = ? ORDER BY exercise_order, id');
+        $sourceExercisesStmt->execute([$sourceTrainingId]);
+        $insertExercise = $pdo->prepare('INSERT INTO online_training_exercises (online_training_id, exercise_id, exercise_order, exercise_name, sport_type, is_timed, instructions) VALUES (?, ?, ?, ?, ?, ?, ?)');
+        $sourceSeriesStmt = $pdo->prepare('SELECT series_order, prescribed_weight, prescribed_reps, prescribed_duration_seconds, prescribed_equipment_weight FROM online_training_series WHERE online_training_exercise_id = ? ORDER BY series_order, id');
+        $insertSeries = $pdo->prepare('INSERT INTO online_training_series (online_training_exercise_id, series_order, prescribed_weight, prescribed_reps, prescribed_duration_seconds, prescribed_equipment_weight) VALUES (?, ?, ?, ?, ?, ?)');
+        $exerciseIds = [];
+        foreach ($sourceExercisesStmt->fetchAll() as $exercise) {
+            $insertExercise->execute([
+                $newTrainingId,
+                (int)$exercise['exercise_id'],
+                (int)$exercise['exercise_order'],
+                (string)$exercise['exercise_name'],
+                (string)$exercise['sport_type'],
+                (int)$exercise['is_timed'],
+                $exercise['instructions'],
+            ]);
+            $newExerciseId = (int)$pdo->lastInsertId();
+            $exerciseIds[(int)$exercise['id']] = $newExerciseId;
+
+            $sourceSeriesStmt->execute([(int)$exercise['id']]);
+            foreach ($sourceSeriesStmt->fetchAll() as $series) {
+                $insertSeries->execute([
+                    $newExerciseId,
+                    (int)$series['series_order'],
+                    $series['prescribed_weight'],
+                    $series['prescribed_reps'],
+                    $series['prescribed_duration_seconds'],
+                    $series['prescribed_equipment_weight'],
+                ]);
+            }
+        }
+
+        if ($copyAttachments) {
+            $uploadsRoot = realpath(__DIR__ . '/../uploads');
+            if ($uploadsRoot === false) throw new RuntimeException('Úložiště příloh není dostupné.');
+            $targetDirectory = $uploadsRoot . DIRECTORY_SEPARATOR . 'online_trainings';
+            if (!is_dir($targetDirectory) && !mkdir($targetDirectory, 0750, true) && !is_dir($targetDirectory)) {
+                throw new RuntimeException('Úložiště příloh není dostupné.');
+            }
+            $attachmentStmt = $pdo->prepare('SELECT online_training_exercise_id, attachment_type, file_path, original_name, external_url, description FROM online_training_attachments WHERE online_training_id = ? ORDER BY id');
+            $attachmentStmt->execute([$sourceTrainingId]);
+            $insertAttachment = $pdo->prepare("INSERT INTO online_training_attachments (online_training_id, online_training_exercise_id, attachment_type, file_path, original_name, external_url, description, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, 'trainer')");
+            foreach ($attachmentStmt->fetchAll() as $attachment) {
+                $newFilePath = null;
+                if (!empty($attachment['file_path'])) {
+                    $relativePath = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, (string)$attachment['file_path']);
+                    $sourcePath = realpath($uploadsRoot . DIRECTORY_SEPARATOR . $relativePath);
+                    $rootPrefix = rtrim($uploadsRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+                    if ($sourcePath === false || stripos($sourcePath, $rootPrefix) !== 0 || !is_file($sourcePath)) {
+                        throw new RuntimeException('Soubor přílohy „' . (string)($attachment['original_name'] ?? '') . '“ nebyl nalezen.');
+                    }
+                    $extension = pathinfo($sourcePath, PATHINFO_EXTENSION);
+                    if ($extension !== '' && !preg_match('/^[a-zA-Z0-9]{1,10}$/', $extension)) {
+                        throw new RuntimeException('Formát uložené přílohy nelze zkopírovat.');
+                    }
+                    $newName = bin2hex(random_bytes(16)) . ($extension !== '' ? '.' . $extension : '');
+                    $newAbsolutePath = $targetDirectory . DIRECTORY_SEPARATOR . $newName;
+                    if (!copy($sourcePath, $newAbsolutePath)) throw new RuntimeException('Přílohu „' . (string)($attachment['original_name'] ?? '') . '“ se nepodařilo zkopírovat.');
+                    $copiedPaths[] = $newAbsolutePath;
+                    $newFilePath = 'online_trainings/' . $newName;
+                }
+                $oldExerciseId = $attachment['online_training_exercise_id'] === null ? 0 : (int)$attachment['online_training_exercise_id'];
+                $newExerciseId = $oldExerciseId > 0 ? ($exerciseIds[$oldExerciseId] ?? null) : null;
+                if ($oldExerciseId > 0 && $newExerciseId === null) throw new RuntimeException('Příloha odkazuje na cvik, který se nepodařilo zkopírovat.');
+                $insertAttachment->execute([
+                    $newTrainingId,
+                    $newExerciseId,
+                    $attachment['attachment_type'],
+                    $newFilePath,
+                    $attachment['original_name'],
+                    $attachment['external_url'],
+                    $attachment['description'],
+                ]);
+            }
+        }
+
+        $pdo->commit();
+        return $newTrainingId;
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        foreach ($copiedPaths as $path) {
+            if (is_file($path) && !unlink($path)) error_log('Nepodařilo se odstranit nenavázanou zkopírovanou přílohu online tréninku: ' . $path);
         }
         throw $e;
     }
