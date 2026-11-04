@@ -264,6 +264,33 @@ function onlineTrainingLoadExercises(PDO $pdo, int $trainingId): array {
     return $exercises;
 }
 
+function onlineTrainingLastCompletedExercise(PDO $pdo, int $athleteId, int $exerciseId): ?array {
+    $trainingStmt = $pdo->prepare("SELECT ot.id, ot.completed_at, ot.title
+        FROM online_trainings ot
+        JOIN online_training_exercises e ON e.online_training_id = ot.id
+        JOIN online_training_series s ON s.online_training_exercise_id = e.id
+        JOIN online_training_results r ON r.online_training_series_id = s.id AND r.online_training_id = ot.id
+        WHERE ot.athlete_id = ? AND e.exercise_id = ? AND ot.status = 'completed'
+        ORDER BY ot.completed_at DESC, ot.id DESC
+        LIMIT 1");
+    $trainingStmt->execute([$athleteId, $exerciseId]);
+    $training = $trainingStmt->fetch();
+    if (!$training) {
+        return null;
+    }
+
+    $seriesStmt = $pdo->prepare('SELECT s.series_order, r.actual_weight, r.actual_reps,
+            r.actual_duration_seconds, r.actual_equipment_weight
+        FROM online_training_exercises e
+        JOIN online_training_series s ON s.online_training_exercise_id = e.id
+        JOIN online_training_results r ON r.online_training_series_id = s.id AND r.online_training_id = e.online_training_id
+        WHERE e.online_training_id = ? AND e.exercise_id = ?
+        ORDER BY s.series_order, s.id');
+    $seriesStmt->execute([(int)$training['id'], $exerciseId]);
+    $training['series'] = $seriesStmt->fetchAll();
+    return $training;
+}
+
 function onlineTrainingSaveAthleteResults(PDO $pdo, int $trainingId, int $athleteId, array $data): void {
     if (!isset($data['series_count']) || !array_key_exists('athlete_note', $data) || !is_string($data['athlete_note'])) {
         throw new RuntimeException('Výsledky nejsou úplné. Obnovte stránku a zkuste to znovu.');
@@ -382,7 +409,7 @@ function onlineTrainingCopy(PDO $pdo, int $coachId, int $athleteId, int $sourceT
     $copiedPaths = [];
     $pdo->beginTransaction();
     try {
-        $sourceStmt = $pdo->prepare("SELECT id, training_set_id, title, coach_note FROM online_trainings WHERE id = ? AND trainer_id = ? LIMIT 1 FOR UPDATE");
+        $sourceStmt = $pdo->prepare("SELECT id, training_set_id, title, coach_note, status FROM online_trainings WHERE id = ? AND trainer_id = ? LIMIT 1 FOR UPDATE");
         $sourceStmt->execute([$sourceTrainingId, $coachId]);
         $source = $sourceStmt->fetch();
         if (!$source) throw new RuntimeException('Zdrojový online trénink nebyl nalezen.');
@@ -438,7 +465,14 @@ function onlineTrainingCopy(PDO $pdo, int $coachId, int $athleteId, int $sourceT
             if (!is_dir($targetDirectory) && !mkdir($targetDirectory, 0750, true) && !is_dir($targetDirectory)) {
                 throw new RuntimeException('Úložiště příloh není dostupné.');
             }
-            $attachmentStmt = $pdo->prepare('SELECT online_training_exercise_id, attachment_type, file_path, original_name, external_url, description FROM online_training_attachments WHERE online_training_id = ? ORDER BY id');
+            $attachmentStmt = $pdo->prepare("SELECT ota.online_training_exercise_id, ota.attachment_type, ota.file_path, ota.original_name, ota.external_url, ota.description
+                FROM online_training_attachments ota
+                JOIN online_trainings source ON source.id = ota.online_training_id
+                WHERE ota.online_training_id = ?
+                    AND ota.uploaded_by = 'trainer'
+                    AND source.status IN ('sent', 'in_progress', 'completed')
+                    AND (source.status <> 'completed' OR ota.created_at <= source.completed_at)
+                ORDER BY ota.id");
             $attachmentStmt->execute([$sourceTrainingId]);
             $insertAttachment = $pdo->prepare("INSERT INTO online_training_attachments (online_training_id, online_training_exercise_id, attachment_type, file_path, original_name, external_url, description, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, 'trainer')");
             foreach ($attachmentStmt->fetchAll() as $attachment) {
@@ -484,6 +518,55 @@ function onlineTrainingCopy(PDO $pdo, int $coachId, int $athleteId, int $sourceT
         }
         throw $e;
     }
+}
+
+function onlineTrainingDeleteDraft(PDO $pdo, int $coachId, int $trainingId): array {
+    $pdo->beginTransaction();
+    try {
+        $trainingStmt = $pdo->prepare("SELECT id, sequence_number FROM online_trainings WHERE id = ? AND trainer_id = ? AND status = 'created' LIMIT 1 FOR UPDATE");
+        $trainingStmt->execute([$trainingId, $coachId]);
+        $training = $trainingStmt->fetch();
+        if (!$training) {
+            throw new RuntimeException('Smazat lze pouze vlastní neodeslaný online trénink.');
+        }
+
+        $filesStmt = $pdo->prepare('SELECT file_path FROM online_training_attachments WHERE online_training_id = ? AND file_path IS NOT NULL');
+        $filesStmt->execute([$trainingId]);
+        $filePaths = array_column($filesStmt->fetchAll(), 'file_path');
+
+        $pdo->prepare('DELETE FROM online_training_billing WHERE online_training_id = ?')->execute([$trainingId]);
+        $pdo->prepare('DELETE FROM online_trainings WHERE id = ? AND trainer_id = ?')->execute([$trainingId, $coachId]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+
+    $uploadsRoot = realpath(__DIR__ . '/../uploads');
+    $onlineUploadsRoot = $uploadsRoot === false ? false : realpath($uploadsRoot . DIRECTORY_SEPARATOR . 'online_trainings');
+    $cleanupFailed = false;
+    foreach ($filePaths as $filePath) {
+        $relativePath = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, (string)$filePath);
+        $absolutePath = $uploadsRoot === false ? false : realpath($uploadsRoot . DIRECTORY_SEPARATOR . $relativePath);
+        if ($absolutePath === false || $onlineUploadsRoot === false) {
+            continue;
+        }
+        $onlineRootPrefix = rtrim($onlineUploadsRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+        if (stripos($absolutePath, $onlineRootPrefix) !== 0 || !is_file($absolutePath)) {
+            continue;
+        }
+        if (!unlink($absolutePath)) {
+            $cleanupFailed = true;
+            error_log('Nepodařilo se odstranit přílohu smazaného online tréninku: ' . $absolutePath);
+        }
+    }
+
+    return [
+        'sequence_number' => (int)$training['sequence_number'],
+        'cleanup_failed' => $cleanupFailed,
+    ];
 }
 
 function onlineTrainingSaveUpload(array $file, string $uploadedBy): ?array {

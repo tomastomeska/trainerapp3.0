@@ -806,6 +806,10 @@ renderHeader(h($athleteDisplayName), true, true);
                                     } else {
                                         $namesPreview = implode(', ', $namesArr);
                                     }
+                                    // Omezit celkovou délku, aby nativní rozbalovací seznam nepřetekl mimo obrazovku
+                                    if (mb_strlen($namesPreview) > 70) {
+                                        $namesPreview = rtrim(mb_substr($namesPreview, 0, 70)) . '…';
+                                    }
                                 }
                             ?>
                             <option value="<?= $ws['id'] ?>">

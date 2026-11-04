@@ -2,9 +2,11 @@
    TrainerApp – Globální styly
    ============================================================ */
 
-/* Zabránění horizontálního scrollu */
+/* Zabránění horizontálního scrollu
+   (clip místo hidden, aby fungovalo position: sticky) */
 html {
     overflow-x: hidden;
+    overflow-x: clip;
 }
 
 /* Základní layout */
@@ -15,6 +17,7 @@ body {
     display: flex;
     flex-direction: column;
     overflow-x: hidden;
+    overflow-x: clip;
 }
 
 .container-fluid {
@@ -67,6 +70,19 @@ body {
     font: 700 clamp(1.2rem, 5vw, 2rem)/1.2 'Segoe UI', system-ui, sans-serif;
     font-variant-numeric: tabular-nums;
     text-align: center;
+}
+
+/* Časomíra zůstává při scrollování přilepená u horního okraje */
+.training-timer-sticky {
+    position: sticky;
+    top: .5rem;
+    z-index: 1010;
+    pointer-events: none;
+}
+
+.training-timer-sticky .training-elapsed-timer {
+    pointer-events: auto;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
 }
 
 /* Avatar with initials */

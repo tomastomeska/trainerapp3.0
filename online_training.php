@@ -26,8 +26,19 @@ if (isLoggedIn()) {
             } catch (Throwable $e) {
                 flash('danger', $e->getMessage());
             }
+        } elseif ($action === 'delete_draft') {
+            try {
+                $deletedTraining = onlineTrainingDeleteDraft($pdo, $coachId, (int)($_POST['training_id'] ?? 0));
+                $message = 'Neodeslaný online trénink #' . str_pad((string)$deletedTraining['sequence_number'], 3, '0', STR_PAD_LEFT) . ' byl smazán.';
+                if ($deletedTraining['cleanup_failed']) {
+                    $message .= ' Některé soubory příloh se nepodařilo odstranit; chyba byla zaznamenána.';
+                }
+                flash('success', $message);
+            } catch (Throwable $e) {
+                flash('danger', $e->getMessage());
+            }
         }
-        $returnUrl = $action === 'copy' && (int)($_POST['athlete_id'] ?? 0) > 0
+        $returnUrl = in_array($action, ['copy', 'delete_draft'], true) && (int)($_POST['athlete_id'] ?? 0) > 0
             ? BASE_URL . '/online_training.php?athlete_id=' . (int)$_POST['athlete_id']
             : BASE_URL . '/online_training.php';
         redirect($returnUrl);
@@ -83,7 +94,7 @@ if (isLoggedIn()) {
     <td><?= $training['billing_type'] === 'subscription' ? 'Předplatné' : ($training['billing_type'] === 'single' ? number_format((float)$training['price'], 2, ',', ' ') . ' Kč' : 'Zdarma') ?></td>
     <td class="text-nowrap">
         <a class="btn btn-sm btn-outline-dark" href="<?= BASE_URL ?>/online_training.php?id=<?= (int)$training['id'] ?>">Detail</a>
-        <form method="post" class="d-inline" onsubmit="this.elements.copy_attachments.value = confirm('Zkopírovat také všechny přílohy (obrázky, videa a odkazy)?\n\nOK = Ano, zkopírovat přílohy\nZrušit = Ne, vytvořit kopii bez příloh') ? '1' : '0';">
+        <form method="post" class="d-inline" onsubmit="<?= $training['status'] === 'created' ? "this.elements.copy_attachments.value = '0'; return confirm('Jde o neodeslaný trénink. Z důvodu ochrany před převzetím příloh z dřívější kopie bude nový trénink vytvořen bez příloh. Pokračovat?');" : "this.elements.copy_attachments.value = confirm('Zkopírovat také všechny přílohy (obrázky, videa a odkazy)?\\n\\nOK = Ano, zkopírovat přílohy\\nZrušit = Ne, vytvořit kopii bez příloh') ? '1' : '0';" ?>">
             <?= csrfField() ?>
             <input type="hidden" name="action" value="copy">
             <input type="hidden" name="training_id" value="<?= (int)$training['id'] ?>">
@@ -91,6 +102,15 @@ if (isLoggedIn()) {
             <input type="hidden" name="copy_attachments" value="0">
             <button type="submit" class="btn btn-sm btn-outline-warning"><i class="fas fa-copy me-1"></i>Kopírovat</button>
         </form>
+        <?php if ($training['status'] === 'created'): ?>
+        <form method="post" class="d-inline" onsubmit="return confirm('Opravdu smazat tento neodeslaný online trénink včetně jeho příloh? Tuto akci nelze vrátit.');">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="delete_draft">
+            <input type="hidden" name="training_id" value="<?= (int)$training['id'] ?>">
+            <input type="hidden" name="athlete_id" value="<?= (int)$training['athlete_id'] ?>">
+            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash me-1"></i>Smazat</button>
+        </form>
+        <?php endif; ?>
     </td>
     </tr>
     <?php endforeach; ?>

@@ -129,7 +129,7 @@ renderHeader('Aktivní trénink', false, true);
 </div>
 
 <?php if (empty($session['completed_at']) || $session['duration_centiseconds'] !== null): ?>
-<div class="text-center mb-3">
+<div class="text-center mb-3<?= empty($session['completed_at']) ? ' training-timer-sticky' : '' ?>">
     <div class="training-elapsed-timer" id="trainingElapsedTimer"
          data-started-at-ms="<?= (int)(strtotime((string)$session['started_at']) * 1000) ?>"
          data-completed="<?= !empty($session['completed_at']) ? '1' : '0' ?>"

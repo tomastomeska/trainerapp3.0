@@ -117,7 +117,7 @@ renderHeader('Párový trénink', false, true);
     </div>
 </div>
 
-<div class="text-center mb-3">
+<div class="text-center mb-3 training-timer-sticky">
     <div class="training-elapsed-timer" id="trainingElapsedTimer"
          data-started-at-ms="<?= (int)(strtotime((string)$paired['started_at']) * 1000) ?>"
          data-completed="0">

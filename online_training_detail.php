@@ -148,8 +148,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($isCoach && $training['status'] === 'completed') {
                 throw new RuntimeException('K dokončenému tréninku už nelze přidávat přílohy.');
             }
-            if (!$isCoach && $training['status'] !== 'completed') {
-                throw new RuntimeException('Přílohy můžete přidat až po dokončení online tréninku.');
+            if (!$isCoach && !in_array($training['status'], ['in_progress', 'completed'], true)) {
+                throw new RuntimeException('Přílohu můžete přidat po zahájení online tréninku.');
             }
             if ($training['status'] === 'completed' && ($isCoach || !empty($training['trainer_reviewed_at']) || trim((string)($training['coach_reaction'] ?? '')) !== '')) {
                 throw new RuntimeException('K již zkontrolovanému tréninku nelze přidávat přílohy.');
@@ -160,6 +160,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($url !== '') onlineTrainingValidateLink($url, $description);
             elseif ($description !== '') throw new RuntimeException('K popisu odkazu zadejte také internetovou adresu.');
             $targetExerciseId = (int)($_POST['online_training_exercise_id'] ?? 0);
+            if (!$isCoach && $targetExerciseId > 0) {
+                throw new RuntimeException('Přílohu můžete přidat pouze k celému tréninku, ne ke konkrétnímu cviku.');
+            }
             if ($targetExerciseId > 0) {
                 $targetCheck = $pdo->prepare('SELECT id FROM online_training_exercises WHERE id = ? AND online_training_id = ?');
                 $targetCheck->execute([$targetExerciseId, $id]);
@@ -190,8 +193,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($training['status'] === 'completed' && ($isCoach || !empty($training['trainer_reviewed_at']) || trim((string)($training['coach_reaction'] ?? '')) !== '')) {
                 throw new RuntimeException('Přílohy již zkontrolovaného tréninku nelze upravovat.');
             }
-            if (!$isCoach && $training['status'] !== 'completed') {
-                throw new RuntimeException('Přílohy můžete upravovat až po dokončení online tréninku.');
+            if (!$isCoach && !in_array($training['status'], ['in_progress', 'completed'], true)) {
+                throw new RuntimeException('Přílohy můžete upravovat po zahájení online tréninku.');
             }
             $attachmentId = (int)($_POST['attachment_id'] ?? 0);
             $attachmentStmt = $pdo->prepare('SELECT file_path FROM online_training_attachments WHERE id = ? AND online_training_id = ? AND uploaded_by = ?');
@@ -293,6 +296,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 $exercises = onlineTrainingLoadExercises($pdo, $id);
+$lastCompletedByExercise = [];
+if ($isCoach && $training['status'] === 'created') {
+    foreach ($exercises as $exercise) {
+        $lastCompletedByExercise[(int)$exercise['id']] = onlineTrainingLastCompletedExercise(
+            $pdo,
+            (int)$training['athlete_id'],
+            (int)$exercise['exercise_id']
+        );
+    }
+}
 $availableExercises = [];
 if ($isCoach && $training['status'] === 'created') {
     $availableStmt = $pdo->prepare('SELECT e.id, e.name FROM exercises e WHERE (e.coach_id = ? OR e.is_global = 1) AND NOT EXISTS (SELECT 1 FROM online_training_exercises ote WHERE ote.online_training_id = ? AND ote.exercise_id = e.id) ORDER BY e.name');
@@ -302,10 +315,10 @@ if ($isCoach && $training['status'] === 'created') {
 $attachmentStmt = $pdo->prepare('SELECT ota.*, ote.exercise_name FROM online_training_attachments ota LEFT JOIN online_training_exercises ote ON ote.id = ota.online_training_exercise_id WHERE ota.online_training_id = ? ORDER BY ota.created_at, ota.id');
 $attachmentStmt->execute([$id]);
 $attachments = $attachmentStmt->fetchAll();
-$canViewAthleteAttachments = $training['status'] === 'completed';
+$canViewAthleteAttachments = !$isCoach || $training['status'] === 'completed';
 $coachHasReacted = trim((string)($training['coach_reaction'] ?? '')) !== '';
 $canManageAttachments = ($isCoach && $training['status'] !== 'completed')
-    || (!$isCoach && $training['status'] === 'completed' && empty($training['trainer_reviewed_at']) && !$coachHasReacted);
+    || (!$isCoach && in_array($training['status'], ['in_progress', 'completed'], true) && empty($training['trainer_reviewed_at']) && !$coachHasReacted);
 $attachments = array_values(array_filter(
     $attachments,
     static fn(array $attachment): bool => $canViewAthleteAttachments || $attachment['uploaded_by'] !== 'athlete'
@@ -321,7 +334,10 @@ $renderAttachmentCards = static function (array $items) use ($id, $ownRole, $can
 <img src="<?= BASE_URL ?>/uploads/<?= h($attachment['file_path']) ?>" alt="Fotografie k online tréninku">
 </a>
 <?php elseif ($attachment['attachment_type'] === 'video'): ?>
-<video controls preload="metadata"><source src="<?= BASE_URL ?>/uploads/<?= h($attachment['file_path']) ?>"></video>
+<button type="button" class="online-video-open" data-video-src="<?= BASE_URL ?>/uploads/<?= h($attachment['file_path']) ?>" aria-label="Přehrát video<?= !empty($attachment['original_name']) ? ': ' . h((string)$attachment['original_name']) : '' ?>">
+<video muted playsinline preload="metadata"><source src="<?= BASE_URL ?>/uploads/<?= h($attachment['file_path']) ?>"></video>
+<span class="online-video-open__play" aria-hidden="true"><i class="fas fa-play"></i></span>
+</button>
 <?php else: ?>
 <a href="<?= h($attachment['external_url']) ?>" target="_blank" rel="noopener noreferrer">Otevřít internetový odkaz</a>
 <?php if (!empty($attachment['description'])): ?><div class="small mt-2 text-break" style="white-space:pre-wrap"><?= h((string)$attachment['description']) ?></div><?php endif; ?>
@@ -357,6 +373,18 @@ if ($isCoach) { require_once __DIR__ . '/includes/header.php'; renderHeader('Onl
 .online-coach-results-table thead .online-results-table__prescribed { background: #fff1c2; }
 .online-coach-results-table thead .online-results-table__actual { background: #deedfb; }
 .online-coach-results-table .online-results-table__athlete-start { border-left: 3px solid #9db8d1; }
+.online-athlete-results-table thead .online-results-table__coach-group { background: #f5e8c5; color: #795900; text-align: center; }
+.online-athlete-results-table thead .online-results-table__athlete-group { background: #d7e8f7; color: #084b83; text-align: center; }
+.online-athlete-results-table thead .online-results-table__athlete-start,
+.online-athlete-results-table tbody .online-results-table__athlete-start { border-left: 3px solid #9db8d1; }
+.online-athlete-results-table thead .online-results-table__prescribed { background: #fff1c2; }
+.online-athlete-results-table thead .online-results-table__actual { background: #deedfb; }
+.online-athlete-results-table > tbody > tr.online-exercise-row--shaded > * { background: #f1f3f5 !important; box-shadow: none !important; }
+.online-athlete-results-table > tbody > tr.online-exercise-row--plain > * { background: #fff !important; box-shadow: none !important; }
+.online-athlete-results-table > tbody > tr.online-exercise-row--shaded > .online-results-table__prescribed { background: #f3ead4 !important; }
+.online-athlete-results-table > tbody > tr.online-exercise-row--plain > .online-results-table__prescribed { background: #fff7df !important; }
+.online-athlete-results-table > tbody > tr.online-exercise-row--shaded > .online-results-table__actual { background: #dce8f2 !important; }
+.online-athlete-results-table > tbody > tr.online-exercise-row--plain > .online-results-table__actual { background: #e8f4ff !important; }
 .online-coach-results-table .online-result-difference { color: #b42318 !important; font-weight: 700 !important; }
 .online-coach-results-table > tbody > tr.online-exercise-row--shaded > * { background: #f1f3f5 !important; box-shadow: none !important; }
 .online-coach-results-table > tbody > tr.online-exercise-row--plain > * { background: #fff !important; box-shadow: none !important; }
@@ -373,6 +401,8 @@ if ($isCoach) { require_once __DIR__ . '/includes/header.php'; renderHeader('Onl
 .online-exercise-attachments__form { padding: .85rem; }
 .online-training-attachment { width: 200px; max-width: 100%; padding: .5rem; border: 1px solid #dee2e6; border-radius: .5rem; background: #fff; }
 .online-training-attachment img, .online-training-attachment video { width: 100%; max-height: 150px; object-fit: cover; border-radius: .4rem; }
+.online-video-open { position: relative; display: block; width: 100%; padding: 0; overflow: hidden; border: 0; border-radius: .4rem; background: #111827; cursor: pointer; }
+.online-video-open__play { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 2rem; background: rgba(15, 23, 42, .22); pointer-events: none; }
 .online-send-step { border: 2px solid #e6b800; }
 @media (max-width: 767.98px) { .online-builder-grid { grid-template-columns: 1fr; } }
 @media print {
@@ -530,7 +560,7 @@ $exerciseAttachments = array_values(array_filter(
 <section class="online-exercise-attachments mx-3 mb-3 rounded" id="online-exercise-attachments-<?= (int)$exercise['id'] ?>">
 <h6 class="fw-bold mb-3"><i class="fas fa-paperclip me-2 text-warning"></i><?= (int)$exercise['exercise_order'] ?>. <?= h($exercise['exercise_name']) ?> — přílohy k cviku</h6>
 <?php if ($exerciseAttachments): ?><div class="d-flex flex-wrap gap-2 mb-3"><?php $renderAttachmentCards($exerciseAttachments); ?></div><?php else: ?><p class="text-muted small">Zatím žádné přílohy k tomuto cviku.</p><?php endif; ?>
-<?php if ($canManageAttachments): ?>
+<?php if ($isCoach && $canManageAttachments): ?>
 <details class="online-exercise-attachments__disclosure">
 <summary><i class="fas fa-plus me-1"></i>Přidat přílohu</summary>
 <form data-online-attachment-form data-exercise-name="<?= h($exercise['exercise_name']) ?>" method="post" enctype="multipart/form-data" class="border rounded bg-white p-3">
@@ -549,23 +579,27 @@ $exerciseAttachments = array_values(array_filter(
 <?php endforeach; ?>
 <?php elseif (!$isCoach): ?>
 <div class="table-responsive">
-<table class="table table-sm table-striped align-middle mb-0 online-results-table">
-<thead><tr><th>Cvik</th><th>Série</th><th class="online-results-table__prescribed">Předepsaná váha</th><th class="online-results-table__prescribed">Předepsaná opakování</th><th class="online-results-table__actual">Moje váha</th><th class="online-results-table__actual">Moje opakování</th><th class="online-results-table__actual">Moje poznámka k sérii</th></tr></thead>
+<table class="table table-sm align-middle mb-0 online-results-table online-athlete-results-table">
+<thead>
+<tr><th colspan="2"></th><th colspan="2" class="online-results-table__coach-group">Zadání trenéra</th><th colspan="3" class="online-results-table__athlete-group online-results-table__athlete-start">Výsledek sportovce</th></tr>
+<tr><th>Cvik</th><th>Série</th><th class="online-results-table__prescribed">Předepsaná váha</th><th class="online-results-table__prescribed">Předepsaná opakování</th><th class="online-results-table__actual online-results-table__athlete-start">Moje váha</th><th class="online-results-table__actual">Moje opakování</th><th class="online-results-table__actual">Moje poznámka k sérii</th></tr>
+</thead>
 <tbody>
-<?php foreach ($exercises as $exercise): ?>
-<?php if (!$exercise['series']): ?><tr><td><?= (int)$exercise['exercise_order'] ?>. <?= h($exercise['exercise_name']) ?></td><td colspan="5" class="text-muted">Bez sérií</td></tr><?php endif; ?>
+<?php foreach ($exercises as $exerciseIndex => $exercise): ?>
+<?php $exerciseRowClass = $exerciseIndex % 2 === 0 ? 'online-exercise-row--shaded' : 'online-exercise-row--plain'; ?>
+<?php if (!$exercise['series']): ?><tr class="<?= $exerciseRowClass ?>"><td><?= (int)$exercise['exercise_order'] ?>. <?= h($exercise['exercise_name']) ?></td><td colspan="5" class="text-muted">Bez sérií</td></tr><?php endif; ?>
 <?php foreach ($exercise['series'] as $series): ?>
-<tr>
+<tr class="<?= $exerciseRowClass ?>">
 <td><?= (int)$exercise['exercise_order'] ?>. <?= h($exercise['exercise_name']) ?></td>
 <td><?= (int)$series['series_order'] ?></td>
 <td class="online-results-table__prescribed"><?= $series['prescribed_weight'] !== null ? h((string)$series['prescribed_weight']) . ' kg' : '–' ?></td>
 <td class="online-results-table__prescribed"><?= $series['prescribed_reps'] !== null ? (int)$series['prescribed_reps'] : '–' ?></td>
 <?php if ($training['status'] === 'completed'): ?>
-<td class="online-results-table__actual fw-bold"><?= $series['actual_weight'] !== null ? h((string)$series['actual_weight']) . ' kg' : '–' ?></td>
+<td class="online-results-table__actual online-results-table__athlete-start fw-bold"><?= $series['actual_weight'] !== null ? h((string)$series['actual_weight']) . ' kg' : '–' ?></td>
 <td class="online-results-table__actual fw-bold"><?= $series['actual_reps'] !== null ? (int)$series['actual_reps'] : '–' ?></td>
 <td class="online-results-table__actual"><?= !empty($series['result_note']) ? h((string)$series['result_note']) : '–' ?></td>
 <?php else: ?>
-<td class="online-results-table__actual"><input form="result-form" name="series[<?= (int)$series['id'] ?>][weight]" class="form-control form-control-sm" type="number" step="0.01" value="<?= h((string)($series['actual_weight'] ?? '')) ?>" aria-label="Moje váha, série <?= (int)$series['series_order'] ?>"></td>
+<td class="online-results-table__actual online-results-table__athlete-start"><input form="result-form" name="series[<?= (int)$series['id'] ?>][weight]" class="form-control form-control-sm" type="number" step="0.01" value="<?= h((string)($series['actual_weight'] ?? '')) ?>" aria-label="Moje váha, série <?= (int)$series['series_order'] ?>"></td>
 <td class="online-results-table__actual"><input form="result-form" name="series[<?= (int)$series['id'] ?>][reps]" class="form-control form-control-sm" type="number" value="<?= h((string)($series['actual_reps'] ?? '')) ?>" aria-label="Moje opakování, série <?= (int)$series['series_order'] ?>"></td>
 <td class="online-results-table__actual"><input form="result-form" name="series[<?= (int)$series['id'] ?>][note]" class="form-control form-control-sm" type="text" maxlength="10000" value="<?= h((string)($series['result_note'] ?? '')) ?>" aria-label="Moje poznámka, série <?= (int)$series['series_order'] ?>"></td>
 <?php endif; ?>
@@ -589,7 +623,7 @@ $athleteExerciseAttachments = array_values(array_filter($exerciseAttachments, st
 <?php foreach ([['items' => $trainerExerciseAttachments, 'label' => 'Přílohy od trenéra'], ['items' => $athleteExerciseAttachments, 'label' => 'Moje přílohy']] as $attachmentGroup): ?>
 <?php if ($attachmentGroup['items']): ?><div class="mb-3"><div class="small fw-semibold mb-2"><?= h($attachmentGroup['label']) ?></div><div class="d-flex flex-wrap gap-2"><?php $renderAttachmentCards($attachmentGroup['items']); ?></div></div><?php endif; ?>
 <?php endforeach; ?>
-<?php if ($canManageAttachments): ?>
+<?php if ($isCoach && $canManageAttachments): ?>
 <details class="online-exercise-attachments__disclosure">
 <summary><i class="fas fa-plus me-1"></i>Přidat přílohu</summary>
 <form data-online-attachment-form data-exercise-name="<?= h($exercise['exercise_name']) ?>" method="post" enctype="multipart/form-data" class="border rounded bg-white p-3">
@@ -611,6 +645,10 @@ $athleteExerciseAttachments = array_values(array_filter($exerciseAttachments, st
 <div class="d-flex justify-content-between align-items-center">
 <h5 class="mb-2">
 <?= (int)$exercise['exercise_order'] ?>. <?= h($exercise['exercise_name']) ?>
+<?php $lastCompleted = $lastCompletedByExercise[(int)$exercise['id']] ?? null; ?>
+<?php if ($isCoach && $training['status'] === 'created' && $lastCompleted): ?>
+<button type="button" class="btn btn-sm btn-outline-secondary ms-2" data-bs-toggle="modal" data-bs-target="#onlinePreviousExercise<?= (int)$exercise['id'] ?>" title="Zobrazit poslední dokončený trénink tohoto cviku" aria-label="Zobrazit poslední dokončený trénink cviku <?= h($exercise['exercise_name']) ?>"><i class="fas fa-history"></i></button>
+<?php endif; ?>
 </h5>
 <?php if ($isCoach && $training['status'] === 'created'): ?><div class="d-flex gap-2">
 <form method="post" class="d-inline">
@@ -701,7 +739,7 @@ $athleteExerciseAttachments = array_values(array_filter($exerciseAttachments, st
 <?php foreach ([['items' => $trainerExerciseAttachments, 'label' => $isCoach ? 'Vaše přílohy' : 'Přílohy od trenéra'], ['items' => $athleteExerciseAttachments, 'label' => $isCoach ? 'Přílohy sportovce' : 'Vaše přílohy']] as $attachmentGroup): ?>
 <?php if ($attachmentGroup['items']): ?><div class="mb-3"><div class="small fw-semibold mb-2"><?= h($attachmentGroup['label']) ?></div><div class="d-flex flex-wrap gap-2"><?php $renderAttachmentCards($attachmentGroup['items']); ?></div></div><?php endif; ?>
 <?php endforeach; ?>
-<?php if ($canManageAttachments): ?>
+<?php if ($isCoach && $canManageAttachments): ?>
 <details class="online-exercise-attachments__disclosure">
 <summary><i class="fas fa-plus me-1"></i>Přidat přílohu</summary>
 <form data-online-attachment-form data-exercise-name="<?= h($exercise['exercise_name']) ?>" method="post" enctype="multipart/form-data" class="border rounded bg-white p-3">
@@ -719,6 +757,56 @@ $athleteExerciseAttachments = array_values(array_filter($exerciseAttachments, st
 </div>
 </div>
 </div>
+<?php if ($isCoach && $training['status'] === 'created' && $lastCompleted): ?>
+<?php $exerciseMode = (int)($exercise['is_timed'] ?? 0); ?>
+<div class="modal fade" id="onlinePreviousExercise<?= (int)$exercise['id'] ?>" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <div>
+                    <h5 class="modal-title"><i class="fas fa-history me-2"></i>Poslední trénink cviku: <?= h($exercise['exercise_name']) ?></h5>
+                    <div class="small text-white-50"><?= h(formatDateTime($lastCompleted['completed_at'])) ?> · <?= h($lastCompleted['title']) ?></div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered align-middle text-center mb-0">
+                        <thead><tr>
+                            <th>Série</th>
+                            <?php if ($exerciseMode === 1): ?><th>Čas</th><th>Váha (kg)</th>
+                            <?php elseif ($exerciseMode === 2): ?><th>Vzdálenost (m)</th><th>Váha (kg)</th>
+                            <?php elseif ($exerciseMode === 3): ?><th>Vzdálenost (m)</th><th>Čas</th><th>Váha (kg)</th>
+                            <?php else: ?><th>Váha (kg)</th><th>Opakování</th><?php endif; ?>
+                        </tr></thead>
+                        <tbody>
+                            <?php foreach ($lastCompleted['series'] as $previousSeries): ?>
+                            <tr>
+                                <td class="fw-bold text-muted"><?= (int)$previousSeries['series_order'] ?></td>
+                                <?php if ($exerciseMode === 1): ?>
+                                <td><?= !empty($previousSeries['actual_duration_seconds']) ? h(formatSeriesDuration((int)$previousSeries['actual_duration_seconds'])) : '–' ?></td>
+                                <td><?= number_format((float)($previousSeries['actual_weight'] ?? 0) + (float)($previousSeries['actual_equipment_weight'] ?? 0), 1, ',', '') ?></td>
+                                <?php elseif ($exerciseMode === 2): ?>
+                                <td><?= (int)($previousSeries['actual_reps'] ?? 0) > 0 ? number_format((int)$previousSeries['actual_reps'], 0, ',', ' ') : '–' ?></td>
+                                <td><?= number_format((float)($previousSeries['actual_weight'] ?? 0) + (float)($previousSeries['actual_equipment_weight'] ?? 0), 1, ',', '') ?></td>
+                                <?php elseif ($exerciseMode === 3): ?>
+                                <td><?= (int)($previousSeries['actual_reps'] ?? 0) > 0 ? number_format((int)$previousSeries['actual_reps'], 0, ',', ' ') : '–' ?></td>
+                                <td><?= !empty($previousSeries['actual_duration_seconds']) ? h(formatSeriesDuration((int)$previousSeries['actual_duration_seconds'])) : '–' ?></td>
+                                <td><?= number_format((float)($previousSeries['actual_weight'] ?? 0) + (float)($previousSeries['actual_equipment_weight'] ?? 0), 1, ',', '') ?></td>
+                                <?php else: ?>
+                                <td><?= number_format((float)($previousSeries['actual_weight'] ?? 0) + (float)($previousSeries['actual_equipment_weight'] ?? 0), 1, ',', '') ?></td>
+                                <td><?= $previousSeries['actual_reps'] !== null ? (int)$previousSeries['actual_reps'] : '–' ?></td>
+                                <?php endif; ?>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 <?php endforeach; ?>
 <?php endif; ?>
 </div>
@@ -1009,6 +1097,7 @@ foreach ($groups as $role => $heading):
     let allowFocusTarget = null;
     let pendingAction = null;
     let skipSubmitForm = null;
+    let submittingAttachment = false;
 
     function pendingItems() {
         return attachmentForms.flatMap(function (form) {
@@ -1137,13 +1226,20 @@ foreach ($groups as $role => $heading):
             return;
         }
         const remainingItems = pendingItems().filter(function (item) { return item.form !== form; });
-        if (!remainingItems.length) return;
+        if (!remainingItems.length) {
+            const action = form.querySelector('input[name="action"]');
+            if (action && action.value === 'attachment' && pendingItems().some(function (item) { return item.form === form; })) {
+                submittingAttachment = true;
+            }
+            return;
+        }
         event.preventDefault();
         event.stopImmediatePropagation();
         showWarning(form, { submitForm: form, submitter: event.submitter || null });
     }, true);
 
     window.addEventListener('beforeunload', function (event) {
+        if (submittingAttachment) return;
         if (!pendingItems().length) return;
         event.preventDefault();
         event.returnValue = '';
@@ -1160,15 +1256,19 @@ document.querySelectorAll('input[name^="series["]').forEach(function (field) {
 </script><?php endif; ?>
 <div id="onlineAttachmentModal" class="online-attachment-modal" hidden aria-hidden="true">
     <button type="button" class="online-attachment-modal__close" aria-label="Zavřít">&times;</button>
+    <button type="button" class="online-attachment-modal__fullscreen" hidden><i class="fas fa-expand me-1"></i>Celá obrazovka</button>
     <div class="online-attachment-modal__content" role="dialog" aria-modal="true" aria-label="Příloha online tréninku"></div>
 </div>
 <style>
 .online-attachment-modal { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 1.5rem; background: rgba(15, 23, 42, .82); }
 .online-attachment-modal[hidden] { display: none; }
-.online-attachment-modal__content { max-width: min(1100px, 94vw); max-height: 90vh; color: #fff; text-align: center; }
+.online-attachment-modal__content { width: min(1200px, 94vw); max-height: 90vh; color: #fff; text-align: center; }
 .online-attachment-modal__content img, .online-attachment-modal__content video { max-width: 100%; max-height: 82vh; border-radius: 10px; box-shadow: 0 14px 50px rgba(0, 0, 0, .35); }
+.online-attachment-modal__content video { width: min(1200px, 92vw); height: auto; background: #000; }
 .online-attachment-modal__content a { color: #fff; font-weight: 700; }
 .online-attachment-modal__close { position: absolute; top: .65rem; right: 1rem; border: 0; background: transparent; color: #fff; font-size: 2.5rem; line-height: 1; cursor: pointer; }
+.online-attachment-modal__fullscreen { position: absolute; top: 1rem; left: 1rem; border: 1px solid rgba(255,255,255,.7); border-radius: .4rem; padding: .5rem .75rem; background: rgba(15,23,42,.7); color: #fff; cursor: pointer; }
+.online-attachment-modal__fullscreen[hidden] { display: none; }
 </style>
 <script>
 (function () {
@@ -1176,18 +1276,63 @@ document.querySelectorAll('input[name^="series["]').forEach(function (field) {
     if (!modal) return;
     const content = modal.querySelector('.online-attachment-modal__content');
     const closeButton = modal.querySelector('.online-attachment-modal__close');
-    function closeModal() { modal.hidden = true; modal.setAttribute('aria-hidden', 'true'); content.innerHTML = ''; document.body.style.overflow = ''; }
+    const fullscreenButton = modal.querySelector('.online-attachment-modal__fullscreen');
+    let activeVideo = null;
+    function closeModal() {
+        if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen();
+        if (activeVideo) {
+            activeVideo.pause();
+            activeVideo.removeAttribute('src');
+            activeVideo.load();
+            activeVideo = null;
+        }
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+        fullscreenButton.hidden = true;
+        content.replaceChildren();
+        document.body.style.overflow = '';
+    }
     document.querySelectorAll('.online-attachment-open').forEach(function (trigger) {
         trigger.addEventListener('click', function (event) {
             event.preventDefault();
             const image = document.createElement('img');
             image.src = trigger.href;
             image.alt = 'Fotografie k online tréninku';
+            closeModal();
             content.replaceChildren(image);
             modal.hidden = false;
             modal.setAttribute('aria-hidden', 'false');
             document.body.style.overflow = 'hidden';
         });
+    });
+    document.querySelectorAll('.online-video-open').forEach(function (trigger) {
+        trigger.addEventListener('click', function () {
+            closeModal();
+            const video = document.createElement('video');
+            video.controls = true;
+            video.playsInline = true;
+            video.preload = 'metadata';
+            video.src = trigger.dataset.videoSrc;
+            activeVideo = video;
+            content.replaceChildren(video);
+            fullscreenButton.hidden = false;
+            modal.hidden = false;
+            modal.setAttribute('aria-hidden', 'false');
+            document.body.style.overflow = 'hidden';
+            video.play().catch(function () {});
+        });
+    });
+    fullscreenButton.addEventListener('click', function () {
+        if (!activeVideo) return;
+        const requestFullscreen = activeVideo.requestFullscreen || activeVideo.webkitRequestFullscreen;
+        if (!requestFullscreen) {
+            alert('Celá obrazovka není v tomto prohlížeči podporována.');
+            return;
+        }
+        const result = requestFullscreen.call(activeVideo);
+        if (result && typeof result.catch === 'function') {
+            result.catch(function () { alert('Přehrávač se nepodařilo zvětšit na celou obrazovku.'); });
+        }
     });
     closeButton.addEventListener('click', closeModal);
     modal.addEventListener('click', function (event) { if (event.target === modal) closeModal(); });

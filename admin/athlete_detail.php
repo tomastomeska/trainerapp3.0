@@ -70,6 +70,26 @@ $stmtSets = $pdo->prepare(
 $stmtSets->execute([$coachId]);
 $workoutSets = $stmtSets->fetchAll();
 
+// Krátký náhled názvů cviků (max. 4 + zbytek souhrnně, omezená délka),
+// aby nativní rozbalovací seznam nepřetekl mimo obrazovku
+foreach ($workoutSets as &$wsRow) {
+    $namesPreview = '';
+    if (!empty($wsRow['exercise_names'])) {
+        $namesArr = array_filter(array_map('trim', explode(',', (string)$wsRow['exercise_names'])), fn($n) => $n !== '');
+        $previewCount = 4;
+        if (count($namesArr) > $previewCount) {
+            $namesPreview = implode(', ', array_slice($namesArr, 0, $previewCount)) . ' a další ' . (count($namesArr) - $previewCount);
+        } else {
+            $namesPreview = implode(', ', $namesArr);
+        }
+        if (mb_strlen($namesPreview) > 70) {
+            $namesPreview = rtrim(mb_substr($namesPreview, 0, 70)) . '…';
+        }
+    }
+    $wsRow['names_preview'] = $namesPreview;
+}
+unset($wsRow);
+
 $athleteDisplayName = trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']) . ' (ID: ' . $athleteId . ')';
 renderHeader(h($athleteDisplayName));
 ?>
@@ -312,8 +332,8 @@ renderHeader(h($athleteDisplayName));
                         <option value="<?= $ws['id'] ?>">
                             <?= h($ws['name']) ?>
                             (<?= $ws['exercise_count'] ?> <?= $ws['exercise_count'] === 1 ? 'cvik' : ($ws['exercise_count'] < 5 ? 'cviky' : 'cviků') ?>)
-                            <?php if (!empty($ws['exercise_names'])): ?>
-                                – <?= h($ws['exercise_names']) ?>
+                            <?php if ($ws['names_preview'] !== ''): ?>
+                                – <?= h($ws['names_preview']) ?>
                             <?php endif; ?>
                         </option>
                         <?php endforeach; ?>
@@ -551,8 +571,8 @@ renderHeader(h($athleteDisplayName));
                             <option value="<?= $ws['id'] ?>">
                                 <?= h($ws['name']) ?>
                                 (<?= $ws['exercise_count'] ?> <?= $ws['exercise_count'] === 1 ? 'cvik' : ($ws['exercise_count'] < 5 ? 'cviky' : 'cviků') ?>)
-                                <?php if (!empty($ws['exercise_names'])): ?>
-                                    – <?= h($ws['exercise_names']) ?>
+                                <?php if ($ws['names_preview'] !== ''): ?>
+                                    – <?= h($ws['names_preview']) ?>
                                 <?php endif; ?>
                             </option>
                             <?php endforeach; ?>
