@@ -1,8 +1,18 @@
 # Secrets Rotation and Env Setup (Production)
 
 ## 1) Rotate DB credentials immediately
-1. Connect as DBA and run template:
-- `ops/security/db/rotate_credentials.sql.example`
+1. Connect as DBA and run the following template. Standalone SQL files were
+removed during cleanup. Verify the account name and replace all placeholders
+before execution.
+
+```sql
+ALTER USER 'trainerapp_app'@'%' IDENTIFIED BY 'REPLACE_WITH_NEW_STRONG_DB_PASSWORD';
+REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'trainerapp_app'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP
+ON `REPLACE_DB_NAME`.* TO 'trainerapp_app'@'%';
+SHOW GRANTS FOR 'trainerapp_app'@'%';
+```
+
 2. Fill placeholders:
 - `REPLACE_DB_NAME`
 - `REPLACE_WITH_NEW_STRONG_DB_PASSWORD`

@@ -186,6 +186,7 @@ renderAdminHeader('Návod pro SuperAdmin');
             <li>Po vypnutí se sportovci na stránku dotazníku nedostanou.</li>
             <li>Tento zásah používejte jen výjimečně, například při servisním okně nebo redesignu formuláře.</li>
         </ol>
+        <p>Vstupní dotazník má samostatnou migraci <code>scripts/migrate_intake_questionnaire.php</code>, kterou může spustit přihlášený administrátor. Chybějící tabulky otázek a inicializace trenéra, sloupec možností a výběrové typy otázek se doplní také při načtení otázek; existující otázky a uložené odpovědi se nemažou.</p>
     </div>
 </div>
 

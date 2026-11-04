@@ -27,8 +27,17 @@ Example crontab:
 - Trigger alert on non-zero exit code.
 
 ## 2) DB least privilege
-1. Execute SQL from:
-- ops/security/db/least_privilege.sql
+1. As a privileged DBA, execute the following template after replacing the
+database name and password. Standalone SQL files were removed during cleanup.
+Use a new dedicated app account; inspect existing grants before reusing one.
+
+```sql
+CREATE USER IF NOT EXISTS 'trainerapp_app'@'%' IDENTIFIED BY 'CHANGE_ME_STRONG_PASSWORD';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP
+ON `REPLACE_DB_NAME`.* TO 'trainerapp_app'@'%';
+SHOW GRANTS FOR 'trainerapp_app'@'%';
+```
+
 2. Update app env to use dedicated app user (`trainerapp_app`).
 3. Validate app behavior and migrations.
 4. If runtime schema changes are not needed, revoke CREATE/ALTER/DROP later.

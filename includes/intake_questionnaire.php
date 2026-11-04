@@ -31,6 +31,20 @@ function intakeParseOptions(string $raw, string $questionType): array {
     return $options;
 }
 
+function intakeEnsureQuestionColumns(PDO $pdo, string $table): void {
+    if (!in_array($table, ['default_intake_questions', 'coach_intake_questions'], true)) {
+        throw new InvalidArgumentException('Neplatná tabulka vstupního dotazníku.');
+    }
+    $columns = $pdo->query("SHOW COLUMNS FROM `$table`")->fetchAll(PDO::FETCH_UNIQUE | PDO::FETCH_ASSOC);
+    $questionType = "enum('yes_no','text','combined','single_choice','multiple_choice')";
+    if (($columns['question_type']['Type'] ?? '') !== $questionType) {
+        $pdo->exec("ALTER TABLE `$table` MODIFY question_type $questionType NOT NULL DEFAULT 'yes_no'");
+    }
+    if (!isset($columns['options_json'])) {
+        $pdo->exec("ALTER TABLE `$table` ADD COLUMN options_json TEXT NULL AFTER question_type");
+    }
+}
+
 function intakeEnsureDefaultQuestionsTable(PDO $pdo): void {
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS default_intake_questions (
@@ -44,10 +58,40 @@ function intakeEnsureDefaultQuestionsTable(PDO $pdo): void {
             INDEX idx_default_intake_questions_active (is_active, sort_order)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     );
+    intakeEnsureQuestionColumns($pdo, 'default_intake_questions');
+}
+
+function intakeEnsureCoachQuestionsTable(PDO $pdo): void {
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS coach_intake_questions (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            coach_id INT UNSIGNED NOT NULL,
+            question_text TEXT NOT NULL,
+            question_type ENUM('yes_no','text','combined','single_choice','multiple_choice') NOT NULL DEFAULT 'yes_no',
+            options_json TEXT NULL,
+            sort_order INT NOT NULL DEFAULT 0,
+            is_active TINYINT(1) NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_coach_intake_questions_coach (coach_id, is_active, sort_order)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+    intakeEnsureQuestionColumns($pdo, 'coach_intake_questions');
+}
+
+function intakeEnsureCoachSettingsTable(PDO $pdo): void {
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS coach_intake_settings (
+            coach_id INT UNSIGNED PRIMARY KEY,
+            initialized TINYINT(1) NOT NULL DEFAULT 1,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
 }
 
 function intakeEnsureCoachQuestions(PDO $pdo, int $coachId): void {
     intakeEnsureDefaultQuestionsTable($pdo);
+    intakeEnsureCoachQuestionsTable($pdo);
+    intakeEnsureCoachSettingsTable($pdo);
     $pdo->beginTransaction();
     try {
         $coach = $pdo->prepare('SELECT id FROM coaches WHERE id = ? FOR UPDATE');

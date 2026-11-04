@@ -211,25 +211,8 @@ s uloženým plánem hydratace a rozložení HYROX mezičasů s konzultací tech
 
 ## Ověření
 
-```powershell
-php tests\performance_test.php
-php tests\athlete_analysis_test.php
-```
-
-Integrační test vyžaduje **prázdnou izolovanou** databázi na loopback serveru,
-lokální testovací účet root bez hesla; nikdy se nesmí spouštět na produkční kopii
-obsahující skutečné osoby. Název musí začínat `trainerapp_performance_test_`.
-Test vytvoří syntetické fixture tabulky a data, nikoli přesný klon celé aplikace.
-
-```powershell
-php tests\performance_integration_test.php --port=3399 --database=trainerapp_performance_test_prvni
-php tests\performance_deployment_test.php --port=3399 --database=trainerapp_performance_test_nasazeni
-```
-
-Testuje dvojí migraci, zachování dat a přepínačů, zdrojové adaptéry,
-souhlasy a jejich odvolání, přístup cizích účtů, historii, tiskový renderer,
-idempotenci, deduplikaci aktivit, uložení do původních dotazníků,
-mezičasy a mazání bez smazání zdrojového tréninku.
-Test nasazení navíc skutečně obnovuje export před migrací i po migraci,
-ověřuje přesnost dat včetně Unicode a SQL speciálních znaků, časovou platnost
-a vazbu potvrzení na databázi, souběžný zámek a blokování při chybě.
+Projektové testy a syntetická SQL data byly při úklidu odstraněny.
+PHP migrace a provozní nástroje zálohování zůstávají zachované.
+Při nasazení ověřte dostupnost přihlášení a podle oprávnění zobrazení,
+historii a tisk modulu. Kontroly zapisující data provádějte pouze
+v izolovaném neprodukčním prostředí.
