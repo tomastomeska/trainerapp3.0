@@ -186,6 +186,9 @@ function athletePaymentsFetchIssueStats(PDO $pdo, int $coachId, int $athleteId, 
         ? 'e.billing_issue_number'
         : '1';
     $makeupExpr = $hasIsMakeup ? 'COALESCE(e.is_makeup_session, 0)' : '0';
+    $issueFreeExpr = athletePaymentsColumnExists($pdo, 'coach_calendar_events', 'is_free_session')
+        ? 'COALESCE(e.is_free_session, 0)'
+        : '0';
     $paidReplacementExpr = athletePaymentsColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_event_id')
         && athletePaymentsColumnExists($pdo, 'coach_calendar_event_cancellations', 'payment_status_snapshot')
         ? "EXISTS (SELECT 1 FROM coach_calendar_event_cancellations c
@@ -193,15 +196,16 @@ function athletePaymentsFetchIssueStats(PDO $pdo, int $coachId, int $athleteId, 
         : '0';
 
     if ($hasSecondAthlete) {
-        $participants = "SELECT e.is_paid_replacement, e.is_paired, e.is_makeup_session FROM (
+        $participants = "SELECT e.is_paid_replacement, e.is_paired, e.is_makeup_session, e.is_free_session FROM (
                 SELECT e.id, e.coach_id, {$paidReplacementExpr} AS is_paid_replacement,
                        CASE WHEN e.second_athlete_id IS NOT NULL THEN 1 ELSE 0 END AS is_paired,
-                       {$makeupExpr} AS is_makeup_session
+                       {$makeupExpr} AS is_makeup_session,
+                       {$issueFreeExpr} AS is_free_session
                 FROM coach_calendar_events e
                 WHERE e.coach_id = ? AND e.approval_status = 'approved' AND e.athlete_id = ?
                   AND {$monthExpr} = ? AND {$issueExpr} = ?
                 UNION ALL
-                SELECT e.id, e.coach_id, {$paidReplacementExpr}, 1, {$makeupExpr}
+                SELECT e.id, e.coach_id, {$paidReplacementExpr}, 1, {$makeupExpr}, {$issueFreeExpr}
                 FROM coach_calendar_events e
                 WHERE e.coach_id = ? AND e.approval_status = 'approved' AND e.second_athlete_id = ?
                   AND {$monthExpr} = ? AND {$issueExpr} = ?
@@ -209,7 +213,7 @@ function athletePaymentsFetchIssueStats(PDO $pdo, int $coachId, int $athleteId, 
         $params = [$coachId, $athleteId, $billingMonth, $issueNumber, $coachId, $athleteId, $billingMonth, $issueNumber];
     } else {
         $participants = "SELECT {$paidReplacementExpr} AS is_paid_replacement,
-                                0 AS is_paired, {$makeupExpr} AS is_makeup_session
+                                0 AS is_paired, {$makeupExpr} AS is_makeup_session, {$issueFreeExpr} AS is_free_session
                          FROM coach_calendar_events e
                          WHERE e.coach_id = ? AND e.approval_status = 'approved' AND e.athlete_id = ?
                            AND {$monthExpr} = ? AND {$issueExpr} = ?";
@@ -217,9 +221,10 @@ function athletePaymentsFetchIssueStats(PDO $pdo, int $coachId, int $athleteId, 
     }
 
     $stmt = $pdo->prepare(
-        "SELECT COUNT(*) AS billed_sessions,
-                SUM(CASE WHEN is_paired = 1 THEN 1 ELSE 0 END) AS paired_sessions,
-                SUM(CASE WHEN is_paired = 0 THEN 1 ELSE 0 END) AS single_sessions,
+        "SELECT SUM(CASE WHEN is_free_session = 0 THEN 1 ELSE 0 END) AS billed_sessions,
+                SUM(CASE WHEN is_free_session = 1 THEN 1 ELSE 0 END) AS free_sessions,
+                SUM(CASE WHEN is_paired = 1 AND is_free_session = 0 THEN 1 ELSE 0 END) AS paired_sessions,
+                SUM(CASE WHEN is_paired = 0 AND is_free_session = 0 THEN 1 ELSE 0 END) AS single_sessions,
                 SUM(CASE WHEN is_makeup_session = 1 THEN 1 ELSE 0 END) AS makeup_sessions,
                 SUM(CASE WHEN is_paid_replacement = 1 AND is_paired = 0 THEN 1 ELSE 0 END) AS paid_replacement_single_sessions,
                 SUM(CASE WHEN is_paid_replacement = 1 AND is_paired = 1 THEN 1 ELSE 0 END) AS paid_replacement_paired_sessions
@@ -229,6 +234,7 @@ function athletePaymentsFetchIssueStats(PDO $pdo, int $coachId, int $athleteId, 
     $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
     return [
         'billed_sessions' => (int)($row['billed_sessions'] ?? 0),
+        'free_sessions' => (int)($row['free_sessions'] ?? 0),
         'single_sessions' => (int)($row['single_sessions'] ?? 0),
         'paired_sessions' => (int)($row['paired_sessions'] ?? 0),
         'makeup_sessions' => (int)($row['makeup_sessions'] ?? 0),
@@ -390,12 +396,15 @@ $transferredMakeupExpr = $hasPaidReplacementLinks
             ) THEN 1 ELSE 0 END)"
     : '0';
 $makeupExpr = $hasIsMakeup ? 'SUM(CASE WHEN t.is_makeup_session = 1 THEN 1 ELSE 0 END)' : '0';
+$hasFreeSessionColumn = athletePaymentsColumnExists($pdo, 'coach_calendar_events', 'is_free_session');
+$freeSelect = $hasFreeSessionColumn ? 'COALESCE(is_free_session, 0)' : '0';
 
 $statsSql = "
     SELECT {$effectiveBillingMonthExpr} AS billing_month,
-           COUNT(*) AS billed_sessions,
-           SUM(CASE WHEN t.is_paired = 1 THEN 1 ELSE 0 END) AS paired_sessions,
-           SUM(CASE WHEN t.is_paired = 0 THEN 1 ELSE 0 END) AS single_sessions,
+           SUM(CASE WHEN t.is_free_session = 0 THEN 1 ELSE 0 END) AS billed_sessions,
+           SUM(CASE WHEN t.is_free_session = 1 THEN 1 ELSE 0 END) AS free_sessions,
+           SUM(CASE WHEN t.is_paired = 1 AND t.is_free_session = 0 THEN 1 ELSE 0 END) AS paired_sessions,
+           SUM(CASE WHEN t.is_paired = 0 AND t.is_free_session = 0 THEN 1 ELSE 0 END) AS single_sessions,
            {$makeupExpr} AS makeup_sessions,
            {$transferredExpr} AS transferred_sessions,
            {$transferredMakeupExpr} AS transferred_makeup_sessions
@@ -409,6 +418,7 @@ $statsSql = "
              coach_id,
                starts_at,
                " . ($hasIsMakeup ? 'is_makeup_session' : '0') . " AS is_makeup_session,
+               {$freeSelect} AS is_free_session,
                " . ($hasSecondAthlete ? 'CASE WHEN second_athlete_id IS NOT NULL THEN 1 ELSE 0 END' : '0') . " AS is_paired
         FROM coach_calendar_events
         WHERE approval_status = 'approved'
@@ -425,6 +435,7 @@ $statsSql = "
              coach_id,
                starts_at,
                " . ($hasIsMakeup ? 'is_makeup_session' : '0') . " AS is_makeup_session,
+               {$freeSelect} AS is_free_session,
                1 AS is_paired
         FROM coach_calendar_events
         WHERE approval_status = 'approved'
@@ -491,6 +502,7 @@ foreach ($statsRows as $row) {
     $rowsByMonth[$month] = [
         'billing_month' => $month,
         'billed_sessions' => (int)$row['billed_sessions'],
+        'free_sessions' => (int)($row['free_sessions'] ?? 0),
         'paired_sessions' => (int)($row['paired_sessions'] ?? 0),
         'single_sessions' => (int)($row['single_sessions'] ?? 0),
         'makeup_sessions' => (int)$row['makeup_sessions'],
@@ -531,6 +543,7 @@ if ($hasCancellationsTable
             $rowsByMonth[$month] = [
                 'billing_month' => $month,
                 'billed_sessions' => 0,
+                'free_sessions' => 0,
                 'paired_sessions' => 0,
                 'single_sessions' => 0,
                 'makeup_sessions' => 0,
@@ -549,6 +562,7 @@ foreach ($paymentsByMonth as $month => $payment) {
         $rowsByMonth[$month] = [
             'billing_month' => $month,
             'billed_sessions' => (int)($payment['planned_sessions'] ?? 0),
+            'free_sessions' => 0,
             'paired_sessions' => 0,
             'single_sessions' => (int)($payment['planned_sessions'] ?? 0),
             'makeup_sessions' => 0,
@@ -634,12 +648,18 @@ foreach ($rowsByMonth as $month => $stats) {
         ? $receiptSnapshot['event_rows']
         : null;
     if ($snapshotEventRows !== null) {
-        $stats['billed_sessions'] = count($snapshotEventRows);
+        $stats['billed_sessions'] = 0;
+        $stats['free_sessions'] = 0;
         $stats['single_sessions'] = 0;
         $stats['paired_sessions'] = 0;
         $stats['makeup_sessions'] = 0;
         $stats['transferred_sessions'] = 0;
         foreach ($snapshotEventRows as $snapshotEvent) {
+            if (!empty($snapshotEvent['is_free_session'])) {
+                $stats['free_sessions']++;
+                continue;
+            }
+            $stats['billed_sessions']++;
             $isPairedSnapshot = !empty($snapshotEvent['is_paired']);
             $stats[$isPairedSnapshot ? 'paired_sessions' : 'single_sessions']++;
             if (!empty($snapshotEvent['is_makeup_session'])) {
@@ -778,12 +798,18 @@ foreach ($additionalPaymentRows as $payment) {
         ? $receiptSnapshot['event_rows']
         : null;
     if ($snapshotEvents !== null) {
-        $stats['billed_sessions'] = count($snapshotEvents);
+        $stats['billed_sessions'] = 0;
+        $stats['free_sessions'] = 0;
         $stats['single_sessions'] = 0;
         $stats['paired_sessions'] = 0;
         $stats['makeup_sessions'] = 0;
         $stats['transferred_sessions'] = 0;
         foreach ($snapshotEvents as $snapshotEvent) {
+            if (!empty($snapshotEvent['is_free_session'])) {
+                $stats['free_sessions']++;
+                continue;
+            }
+            $stats['billed_sessions']++;
             $isPairedSnapshot = !empty($snapshotEvent['is_paired']);
             $stats[$isPairedSnapshot ? 'paired_sessions' : 'single_sessions']++;
             if (!empty($snapshotEvent['is_makeup_session'])) {
@@ -947,6 +973,9 @@ renderAthleteHeader('Platby');
                                     <div class="fw-semibold"><?= h($row['month_label']) ?></div>
                                     <?php if ((int)$row['stats']['makeup_sessions'] > 0): ?>
                                         <div class="small text-muted">Náhradní termíny: <?= (int)$row['stats']['makeup_sessions'] ?>x</div>
+                                    <?php endif; ?>
+                                    <?php if ((int)($row['stats']['free_sessions'] ?? 0) > 0): ?>
+                                        <div class="small text-success">Tréninky ZDARMA: <?= (int)$row['stats']['free_sessions'] ?>x</div>
                                     <?php endif; ?>
                                     <?php if ((int)$row['stats']['transferred_sessions'] > 0): ?>
                                         <div class="small text-muted">Z jiného kalendářního měsíce: <?= (int)$row['stats']['transferred_sessions'] ?>x</div>

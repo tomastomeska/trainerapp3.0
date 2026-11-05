@@ -234,6 +234,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $action = (string)($_POST['action'] ?? '');
+    if ($action === 'save_profile_photo') {
+        $upload = $_FILES['photo'] ?? null;
+        $uploadError = is_array($upload) ? (int)($upload['error'] ?? UPLOAD_ERR_NO_FILE) : UPLOAD_ERR_NO_FILE;
+
+        if ($uploadError === UPLOAD_ERR_NO_FILE) {
+            flash('danger', 'Vyberte fotografii, kterou chcete nahrát.');
+        } elseif ($uploadError !== UPLOAD_ERR_OK) {
+            flash('danger', 'Fotografii se nepodařilo nahrát. Zkontrolujte její velikost a zkuste to znovu.');
+        } elseif ((int)($upload['size'] ?? 0) > 8 * 1024 * 1024) {
+            flash('danger', 'Fotografie může mít maximálně 8 MB.');
+        } else {
+            $newPhoto = saveUploadedPhoto('photo', 'athletes');
+            if ($newPhoto === null) {
+                flash('danger', 'Fotografii se nepodařilo uložit. Podporujeme formáty JPG, PNG, GIF a WEBP.');
+            } else {
+                $photoStmt = $pdo->prepare('UPDATE athletes SET photo = ? WHERE id = ?');
+                $photoStmt->execute([$newPhoto, $athleteId]);
+                deleteUploadedPhoto($athlete['photo'] ?? null, 'athletes');
+                flash('success', 'Profilová fotografie byla aktualizována.');
+            }
+        }
+
+        redirect(BASE_URL . '/athlete_dashboard.php');
+    }
+
     if ($action === 'save_weight' || $action === 'update_weight') {
         $weightInput = str_replace(',', '.', trim((string)($_POST['weight_kg'] ?? '')));
         $measuredAt = preg_replace('/[^0-9\-]/', '', (string)($_POST['measured_at'] ?? date('Y-m-d')));

@@ -57,6 +57,7 @@ $eventStmt = $pdo->prepare(
             e.series_id,
             e.approval_status,
             e.is_makeup_session,
+            e.is_free_session,
             e.billing_month,
             e.billing_issue_number,
             e.billing_transfer_reason,
@@ -91,8 +92,10 @@ if (!$isPendingRequest) {
 
 $rescheduleSourceEventId = approveExtractRescheduleTargetEventId((string)($event['series_id'] ?? ''));
 
+$isFreeSession = !empty($input['is_free_session']) || (int)($event['is_free_session'] ?? 0) === 1;
+
 $billingAssignment = null;
-if ($rescheduleSourceEventId <= 0 && (int)($event['athlete_id'] ?? 0) > 0 && (int)($event['is_makeup_session'] ?? 0) !== 1) {
+if ($rescheduleSourceEventId <= 0 && (int)($event['athlete_id'] ?? 0) > 0 && (int)($event['is_makeup_session'] ?? 0) !== 1 && !$isFreeSession) {
     $targetMonth = date('Y-m-01', strtotime((string)$event['starts_at']));
     $billingAssignment = paymentResolveTrainingAssignment(
         $pdo,
@@ -174,6 +177,7 @@ if ($rescheduleSourceEventId > 0) {
              approval_status = "approved",
              coach_modified_at = NOW(),
              is_makeup_session = ?,
+             is_free_session = ?,
              billing_month = ?,
              billing_issue_number = ?,
              billing_transfer_reason = ?,
@@ -207,6 +211,7 @@ if ($rescheduleSourceEventId > 0) {
             (int)($event['athlete_id'] ?? 0) > 0 ? (int)$event['athlete_id'] : null,
             (int)($event['second_athlete_id'] ?? 0) > 0 ? (int)$event['second_athlete_id'] : null,
             (int)($event['is_makeup_session'] ?? 0) === 1 ? 1 : 0,
+            $isFreeSession ? 1 : 0,
             (string)($event['billing_month'] ?? null),
             max(1, (int)($sourceEvent['billing_issue_number'] ?? 1)),
             $sourceEvent['billing_transfer_reason'] ?? null,
@@ -283,7 +288,7 @@ try {
     $pdo->beginTransaction();
     $updateStmt = $pdo->prepare(
         'UPDATE coach_calendar_events
-         SET approval_status = "approved", billing_month = ?, billing_issue_number = ?, billing_transfer_reason = ?
+         SET approval_status = "approved", is_free_session = ?, billing_month = ?, billing_issue_number = ?, billing_transfer_reason = ?
          WHERE id = ? AND coach_id = ?'
     );
     $billingMonth = $billingAssignment !== null
@@ -295,7 +300,7 @@ try {
         ? (int)$billingAssignment['issue_number']
         : max(1, (int)($event['billing_issue_number'] ?? 1));
     $transferReason = $billingAssignment['billing_transfer_reason'] ?? $event['billing_transfer_reason'] ?? null;
-    $updateStmt->execute([$billingMonth, $issueNumber, $transferReason, $eventId, $coachId]);
+    $updateStmt->execute([$isFreeSession ? 1 : 0, $billingMonth, $issueNumber, $transferReason, $eventId, $coachId]);
 
     if ($billingAssignment !== null) {
         foreach ($billingAssignment['refresh_athletes'] ?? [] as $refreshAthleteId) {
@@ -303,6 +308,20 @@ try {
         }
         foreach ($billingAssignment['additional_athletes'] ?? [] as $additionalAthleteId) {
             paymentCreateAdditionalIssue($pdo, $coachId, (int)$additionalAthleteId, $billingMonth, $issueNumber, $billingAssignment['session_rates'][(int)$additionalAthleteId] ?? $billingAssignment['session_rate'] ?? null);
+        }
+    }
+
+    if ($isFreeSession) {
+        $freeRefreshAthleteIds = array_values(array_unique(array_filter([
+            (int)($event['athlete_id'] ?? 0),
+            (int)($event['second_athlete_id'] ?? 0),
+        ])));
+        foreach ($freeRefreshAthleteIds as $freeRefreshAthleteId) {
+            try {
+                paymentRefreshPendingIssue($pdo, $coachId, $freeRefreshAthleteId, $billingMonth, $issueNumber);
+            } catch (Throwable $refreshError) {
+                // Přepočet čekající výzvy není pro schválení kritický.
+            }
         }
     }
     $pdo->commit();

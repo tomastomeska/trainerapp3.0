@@ -300,6 +300,7 @@ function calculateAthleteMonthlyBill(PDO $pdo, int $coachId, int $athleteId, str
     $hasSecondAthlete = paymentBillingColumnExists($pdo, 'coach_calendar_events', 'second_athlete_id');
     $hasBillingMonth = paymentBillingColumnExists($pdo, 'coach_calendar_events', 'billing_month');
     $hasMakeup = paymentBillingColumnExists($pdo, 'coach_calendar_events', 'is_makeup_session');
+    $hasFreeSession = paymentBillingColumnExists($pdo, 'coach_calendar_events', 'is_free_session');
     $monthExpr = "DATE_FORMAT(e.starts_at, '%Y-%m-01')";
     $billingMonthExpr = $hasBillingMonth
         ? "DATE_FORMAT(COALESCE(e.billing_month, e.starts_at), '%Y-%m-01')"
@@ -322,6 +323,7 @@ function calculateAthleteMonthlyBill(PDO $pdo, int $coachId, int $athleteId, str
     }
     array_push($params, $billingMonth, $billingMonth, $billingMonth, $billingMonth, $issueNumber);
     $makeupExpr = $hasMakeup ? 'COALESCE(e.is_makeup_session, 0)' : '0';
+    $freeExpr = $hasFreeSession ? 'COALESCE(e.is_free_session, 0)' : '0';
     $pairedExpr = $hasSecondAthlete ? 'CASE WHEN e.second_athlete_id IS NOT NULL THEN 1 ELSE 0 END' : '0';
     $hasPaidReplacementLinks = paymentBillingColumnExists($pdo, 'coach_calendar_event_cancellations', 'replacement_event_id')
         && paymentBillingColumnExists($pdo, 'coach_calendar_event_cancellations', 'payment_status_snapshot');
@@ -337,9 +339,10 @@ function calculateAthleteMonthlyBill(PDO $pdo, int $coachId, int $athleteId, str
         ? "SUM(CASE WHEN {$paidReplacementExpr} THEN 1 ELSE 0 END)"
         : '0';
     $eventsStmt = $pdo->prepare(
-        "SELECT COUNT(*) AS billed_sessions,
-                SUM(CASE WHEN {$pairedExpr} = 1 THEN 1 ELSE 0 END) AS paired_sessions,
-                SUM(CASE WHEN {$pairedExpr} = 0 THEN 1 ELSE 0 END) AS single_sessions,
+        "SELECT SUM(CASE WHEN {$freeExpr} = 0 THEN 1 ELSE 0 END) AS billed_sessions,
+                SUM(CASE WHEN {$freeExpr} = 1 THEN 1 ELSE 0 END) AS free_sessions,
+                SUM(CASE WHEN {$pairedExpr} = 1 AND {$freeExpr} = 0 THEN 1 ELSE 0 END) AS paired_sessions,
+                SUM(CASE WHEN {$pairedExpr} = 0 AND {$freeExpr} = 0 THEN 1 ELSE 0 END) AS single_sessions,
                 SUM(CASE WHEN {$makeupExpr} = 1 THEN 1 ELSE 0 END) AS makeup_sessions,
                 SUM(CASE WHEN DATE_FORMAT(e.starts_at, '%Y-%m-01') <> {$monthExpr} THEN 1 ELSE 0 END) AS transferred_sessions,
                 {$transferredMakeupExpr} AS transferred_makeup_sessions,
@@ -356,6 +359,7 @@ function calculateAthleteMonthlyBill(PDO $pdo, int $coachId, int $athleteId, str
     $row = $eventsStmt->fetch() ?: [];
     $stats = [
         'billed_sessions' => (int)($row['billed_sessions'] ?? 0),
+        'free_sessions' => (int)($row['free_sessions'] ?? 0),
         'single_sessions' => (int)($row['single_sessions'] ?? 0),
         'paired_sessions' => (int)($row['paired_sessions'] ?? 0),
         'makeup_sessions' => (int)($row['makeup_sessions'] ?? 0),
@@ -420,9 +424,11 @@ function paymentBuildReceiptSnapshot(PDO $pdo, int $coachId, int $athleteId, str
     $hasTransferReason = paymentBillingColumnExists($pdo, 'coach_calendar_events', 'billing_transfer_reason');
     $hasBillingIssue = paymentBillingColumnExists($pdo, 'coach_calendar_events', 'billing_issue_number');
     $hasMakeup = paymentBillingColumnExists($pdo, 'coach_calendar_events', 'is_makeup_session');
+    $hasFreeSession = paymentBillingColumnExists($pdo, 'coach_calendar_events', 'is_free_session');
     $monthExpr = paymentBillingEffectiveMonthExpression('e', $hasBillingMonth, $hasTransferReason);
     $issueExpr = $hasBillingIssue ? 'COALESCE(e.billing_issue_number, 1)' : '1';
     $makeupExpr = $hasMakeup ? 'COALESCE(e.is_makeup_session, 0)' : '0';
+    $freeExpr = $hasFreeSession ? 'COALESCE(e.is_free_session, 0)' : '0';
     $reasonExpr = $hasTransferReason ? 'e.billing_transfer_reason' : "''";
     $participantWhere = $hasSecondAthlete
         ? '(e.athlete_id = ? OR e.second_athlete_id = ?)'
@@ -437,6 +443,7 @@ function paymentBuildReceiptSnapshot(PDO $pdo, int $coachId, int $athleteId, str
                 {$issueExpr} AS billing_issue_number,
                 {$reasonExpr} AS billing_transfer_reason,
                 {$makeupExpr} AS is_makeup_session,
+                {$freeExpr} AS is_free_session,
                 {$pairedExpr} AS is_paired
          FROM coach_calendar_events e
          WHERE e.coach_id = ?
@@ -486,6 +493,7 @@ function paymentBuildReceiptSnapshot(PDO $pdo, int $coachId, int $athleteId, str
         'event_rows' => $eventRows,
         'breakdown' => [
             'total_sessions' => $singleSessions + $pairedSessions,
+            'free_sessions' => max(0, (int)($stats['free_sessions'] ?? 0)),
             'carryover_used' => $paidReplacementSingle + $paidReplacementPaired,
             'billable_single_sessions' => $billableSingle,
             'billable_paired_sessions' => $billablePaired,
@@ -599,6 +607,12 @@ function paymentEnsureBillingIssueSchema(PDO $pdo): void
     }
 
     try {
+        if (!paymentBillingColumnExists($pdo, 'coach_calendar_events', 'is_free_session')) {
+            $suffix = paymentBillingColumnExists($pdo, 'coach_calendar_events', 'is_makeup_session')
+                ? ' AFTER is_makeup_session'
+                : '';
+            $pdo->exec('ALTER TABLE coach_calendar_events ADD COLUMN is_free_session TINYINT(1) NOT NULL DEFAULT 0' . $suffix);
+        }
         if (paymentBillingColumnExists($pdo, 'coach_calendar_events', 'billing_month')
             && !paymentBillingColumnExists($pdo, 'coach_calendar_events', 'billing_issue_number')) {
             $pdo->exec('ALTER TABLE coach_calendar_events ADD COLUMN billing_issue_number INT NOT NULL DEFAULT 1 AFTER billing_month');

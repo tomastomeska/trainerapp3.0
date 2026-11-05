@@ -1324,6 +1324,14 @@ renderHeader('Kalendář', false, true);
                         </div>
                         <div class="small text-muted">Náhradu lze použít pouze ke konkrétnímu stornu v platné 14denní lhůtě.</div>
                     </div>
+
+                    <div class="mt-3">
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" role="switch" id="eventIsFree">
+                            <label class="form-check-label fw-semibold" for="eventIsFree">Trénink ZDARMA</label>
+                        </div>
+                        <div class="small text-muted">Trénink se nebude účtovat. V platbách a na účtence se zobrazí s cenou 0 Kč a poznámkou ZDARMA.</div>
+                    </div>
                     </div>
                     </details>
 
@@ -1470,6 +1478,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const eventRepeatUntilInput = document.getElementById('eventRepeatUntil');
     const eventRepeatHint = document.getElementById('eventRepeatHint');
     const eventIsMakeupInput = document.getElementById('eventIsMakeup');
+    const eventIsFreeInput = document.getElementById('eventIsFree');
     const eventMakeupSuggestion = document.getElementById('eventMakeupSuggestion');
     const eventMakeupSuggestionText = document.getElementById('eventMakeupSuggestionText');
     const eventUseMakeupBtn = document.getElementById('eventUseMakeupBtn');
@@ -2961,11 +2970,13 @@ document.addEventListener('DOMContentLoaded', () => {
             eventRepeatModeInput.value = 'none';
             eventRepeatUntilInput.value = '';
             eventIsMakeupInput.checked = Number(event.is_makeup_session || 0) === 1;
+            eventIsFreeInput.checked = Number(event.is_free_session || 0) === 1;
             eventAdvanced.open = Boolean(
                 event.second_athlete_id
                 || normalizeColorKey(event.color_key) !== 'green'
                 || event.series_id
                 || Number(event.is_makeup_session || 0) === 1
+                || Number(event.is_free_session || 0) === 1
             );
             setRepeatControlsEnabled(!event.series_id);
             updateRepeatControls();
@@ -3044,6 +3055,7 @@ document.addEventListener('DOMContentLoaded', () => {
             eventRepeatModeInput.value = 'none';
             eventRepeatUntilInput.value = '';
             eventIsMakeupInput.checked = false;
+            eventIsFreeInput.checked = false;
             eventAdvanced.open = false;
             setRepeatControlsEnabled(true);
             updateRepeatControls();
@@ -3093,9 +3105,18 @@ document.addEventListener('DOMContentLoaded', () => {
     eventRepeatModeInput.addEventListener('change', updateRepeatControls);
     eventIsMakeupInput.addEventListener('change', () => {
         if (eventIsMakeupInput.checked) {
+            eventIsFreeInput.checked = false;
             eventUseMakeupBtn.classList.add('d-none');
         } else if (currentMakeupSuggestion && currentMakeupSuggestion.has_required_replacement) {
             eventUseMakeupBtn.classList.remove('d-none');
+        }
+    });
+    eventIsFreeInput.addEventListener('change', () => {
+        if (eventIsFreeInput.checked && eventIsMakeupInput.checked) {
+            eventIsMakeupInput.checked = false;
+            if (currentMakeupSuggestion && currentMakeupSuggestion.has_required_replacement) {
+                eventUseMakeupBtn.classList.remove('d-none');
+            }
         }
     });
     eventIsLockInput.addEventListener('change', () => {
@@ -3113,6 +3134,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     eventUseMakeupBtn.addEventListener('click', () => {
         eventIsMakeupInput.checked = true;
+        eventIsFreeInput.checked = false;
         eventAdvanced.open = true;
         eventUseMakeupBtn.classList.add('d-none');
     });
@@ -3333,6 +3355,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 color_key: normalizeColorKey(eventColorInput.value),
                 starts_at: startsAt,
                 is_makeup_session: isMakeupSession,
+                is_free_session: eventIsFreeInput.checked,
                 repeat_mode: repeatMode,
                 repeat_until: repeatUntil,
             });
@@ -3374,6 +3397,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 color_key: normalizeColorKey(eventColorInput.value),
                 starts_at: eventStartInput.value,
                 is_makeup_session: eventIsMakeupInput.checked,
+                is_free_session: eventIsFreeInput.checked,
                 repeat_mode: 'none',
                 repeat_until: '',
                 approval_action: 'approve',

@@ -77,151 +77,137 @@ function renderAdminHeader(string $title = ''): void {
 
 <div class="row" id="adminLayout">
 	<!-- Sidebar -->
-	<div class="col-auto p-0 sidebar-wrapper admin-sidebar-wrapper">
-		<div class="sidebar p-3 admin-sidebar">
-			<div class="nav flex-column">
-				<a href="<?= BASE_URL ?>/admin/dashboard.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'dashboard.php' ? 'active' : '' ?>">
-					<i class="fas fa-gauge-high me-2"></i>Přehled
+	<?php
+	// ---- Datově řízené menu: skupiny s rozklikávacími podsekcemi ----
+	$currentPage     = basename($_SERVER['PHP_SELF']);
+	$currentPlatform = (string)($_GET['platform'] ?? '');
+	$adminUrl        = BASE_URL . '/admin/';
+
+	$adminMenu = [
+		[
+			'type' => 'link', 'label' => 'Přehled', 'icon' => 'fa-gauge-high',
+			'href' => 'dashboard.php', 'match' => ['dashboard.php'],
+		],
+		[
+			'type' => 'group', 'id' => 'users', 'label' => 'Uživatelé', 'icon' => 'fa-users',
+			'items' => [
+				['label' => 'Trenéři', 'icon' => 'fa-user-tie', 'href' => 'coaches.php', 'match' => ['coaches.php', 'coach_add.php', 'coach_edit.php', 'coach_delete.php', 'coach_deleted_trainings.php', 'coach_athletes.php', 'coach_export.php']],
+				['label' => 'Sportovci', 'icon' => 'fa-person-running', 'href' => 'athletes.php', 'match' => ['athletes.php', 'athlete_add.php', 'athlete_edit.php', 'athlete_delete.php', 'athlete_detail.php']],
+				['label' => 'Import sportovců', 'icon' => 'fa-file-import', 'href' => 'athlete_import.php', 'match' => ['athlete_import.php']],
+			],
+		],
+		[
+			'type' => 'group', 'id' => 'trainings', 'label' => 'Tréninky', 'icon' => 'fa-dumbbell',
+			'items' => [
+				['label' => 'Přidat trénink', 'icon' => 'fa-calendar-plus', 'href' => 'training_add.php', 'match' => ['training_add.php']],
+				['label' => 'Import tréninků CSV', 'icon' => 'fa-file-csv', 'href' => 'training_bulk.php', 'match' => ['training_bulk.php']],
+				['label' => 'Online tréninky', 'icon' => 'fa-laptop', 'href' => 'online_trainings.php', 'match' => ['online_trainings.php']],
+				['label' => 'Vyúčtování online', 'icon' => 'fa-file-invoice-dollar', 'href' => 'online_training_billing.php', 'match' => ['online_training_billing.php']],
+				['label' => 'Sportoviště', 'icon' => 'fa-map-location-dot', 'href' => 'venues.php', 'match' => ['venues.php']],
+				['label' => 'Events', 'icon' => 'fa-flag-checkered', 'href' => 'events.php', 'match' => ['events.php']],
+			],
+		],
+		[
+			'type' => 'group', 'id' => 'library', 'label' => 'Globální obsah', 'icon' => 'fa-layer-group',
+			'items' => [
+				['label' => 'Cviky', 'icon' => 'fa-globe', 'href' => 'exercises.php', 'match' => ['exercises.php', 'exercise_export.php', 'exercise_import.php']],
+				['label' => 'Sady', 'icon' => 'fa-boxes-stacked', 'href' => 'global_workout_sets.php', 'match' => ['global_workout_sets.php']],
+				['label' => 'Jídla', 'icon' => 'fa-utensils', 'href' => 'meals.php', 'match' => ['meals.php']],
+				['label' => 'Medaile', 'icon' => 'fa-medal', 'href' => 'medals.php', 'match' => ['medals.php']],
+				['label' => 'Galerie', 'icon' => 'fa-images', 'href' => 'gallery.php', 'match' => ['gallery.php']],
+			],
+		],
+		[
+			'type' => 'group', 'id' => 'mycoach', 'label' => 'MyCoach', 'icon' => 'fa-brain',
+			'items' => [
+				['label' => 'Administrace', 'icon' => 'fa-gears', 'href' => 'mycoach.php', 'match' => ['mycoach.php']],
+				['label' => 'Obsah', 'icon' => 'fa-folder-open', 'href' => 'mycoach_content.php', 'match' => ['mycoach_content.php']],
+			],
+		],
+		[
+			'type' => 'group', 'id' => 'forms', 'label' => 'Dotazníky a ankety', 'icon' => 'fa-clipboard-question',
+			'items' => [
+				['label' => 'Zdravotní dotazník', 'icon' => 'fa-heart-pulse', 'href' => 'health_questionnaire.php', 'match' => ['health_questionnaire.php']],
+				['label' => 'Vstupní dotazník', 'icon' => 'fa-clipboard-list', 'href' => 'intake_questionnaire.php', 'match' => ['intake_questionnaire.php']],
+				['label' => 'Ankety a dotazníky', 'icon' => 'fa-square-poll-vertical', 'href' => 'surveys.php', 'match' => ['surveys.php']],
+			],
+		],
+		[
+			'type' => 'group', 'id' => 'comms', 'label' => 'Komunikace', 'icon' => 'fa-comments',
+			'items' => [
+				['label' => 'Zprávy trenérům', 'icon' => 'fa-user-tie', 'href' => 'zpravy.php', 'match' => ['zpravy.php', 'zprava_nova.php', 'zprava_detail.php', 'zprava_trener_chat.php'], 'badge' => $coachChatUnreadTotal],
+				['label' => 'Zprávy sportovcům', 'icon' => 'fa-bullhorn', 'href' => 'zprava_sportovci.php', 'match' => ['zprava_sportovci.php', 'zprava_sportovci_detail.php', 'zprava_sportovec_chat.php'], 'badge' => $athleteChatUnreadTotal],
+				['label' => 'Podpora', 'icon' => 'fa-life-ring', 'href' => 'podpora.php', 'match' => ['podpora.php'], 'badge' => $supportNewCount],
+				['label' => 'Infokanál', 'icon' => 'fa-lightbulb', 'href' => 'infokanal.php', 'match' => ['infokanal.php']],
+				['label' => 'Hláška po přihlášení', 'icon' => 'fa-bell', 'href' => 'login_message.php', 'match' => ['login_message.php']],
+				['label' => 'E-mailové notifikace', 'icon' => 'fa-envelope', 'href' => 'email_notifications.php', 'match' => ['email_notifications.php']],
+			],
+		],
+		[
+			'type' => 'group', 'id' => 'apps', 'label' => 'Aplikace', 'icon' => 'fa-mobile-screen',
+			'items' => [
+				['label' => 'Android', 'icon' => 'fa-android', 'brand' => true, 'href' => 'apps.php?platform=android', 'match' => [], 'active' => $currentPage === 'apps.php' && $currentPlatform !== 'ios'],
+				['label' => 'Apple', 'icon' => 'fa-apple', 'brand' => true, 'href' => 'apps.php?platform=ios', 'match' => [], 'active' => $currentPage === 'apps.php' && $currentPlatform === 'ios'],
+			],
+		],
+		[
+			'type' => 'group', 'id' => 'tools', 'label' => 'Nástroje', 'icon' => 'fa-screwdriver-wrench',
+			'items' => [
+				['label' => 'Kalkulačky', 'icon' => 'fa-calculator', 'href' => 'calculators.php', 'match' => ['calculators.php'], 'tag' => 'Ve vývoji'],
+				['label' => 'Návod', 'icon' => 'fa-book-open', 'href' => 'manual.php', 'match' => ['manual.php']],
+				['label' => 'Errorlog', 'icon' => 'fa-triangle-exclamation', 'href' => 'errorlog.php', 'match' => ['errorlog.php', 'errorlog_user.php']],
+			],
+		],
+		[
+			'type' => 'link', 'label' => 'Nastavení', 'icon' => 'fa-sliders',
+			'href' => 'settings.php', 'match' => ['settings.php'],
+		],
+	];
+	?>
+	<div class="col-auto p-0 sidebar-wrapper admin-sidebar-wrapper" id="adminSidebar">
+		<div class="sidebar admin-sidebar">
+			<nav class="admin-nav">
+				<?php foreach ($adminMenu as $menuEntry): ?>
+					<?php if ($menuEntry['type'] === 'link'): ?>
+						<?php $entryActive = in_array($currentPage, $menuEntry['match'], true); ?>
+				<a href="<?= $adminUrl . $menuEntry['href'] ?>" class="admin-nav-link<?= $entryActive ? ' active' : '' ?>">
+					<i class="fas <?= $menuEntry['icon'] ?>"></i><span class="admin-nav-label"><?= h($menuEntry['label']) ?></span>
 				</a>
-				<a href="<?= BASE_URL ?>/admin/coaches.php"
-				   class="nav-link <?= in_array(basename($_SERVER['PHP_SELF']), ['coaches.php','coach_add.php','coach_edit.php','coach_delete.php','coach_deleted_trainings.php','coach_athletes.php']) ? 'active' : '' ?>">
-					<i class="fas fa-user-tie me-2"></i>Trenéři
-				</a>
-				<a href="<?= BASE_URL ?>/admin/athletes.php"
-				   class="nav-link <?= in_array(basename($_SERVER['PHP_SELF']), ['athletes.php','athlete_add.php','athlete_edit.php','athlete_delete.php']) ? 'active' : '' ?>">
-					<i class="fas fa-users me-2"></i>Sportovci
-				</a>
-				<a href="<?= BASE_URL ?>/admin/athlete_import.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'athlete_import.php' ? 'active' : '' ?>">
-					<i class="fas fa-file-excel me-2"></i>Import sportovců
-				</a>
-				<a href="<?= BASE_URL ?>/admin/exercises.php"
-				   class="nav-link <?= in_array(basename($_SERVER['PHP_SELF']), ['exercises.php','exercise_export.php','exercise_import.php']) ? 'active' : '' ?>">
-					<i class="fas fa-globe me-2"></i>Globální cviky
-				</a>
-				<a href="<?= BASE_URL ?>/admin/global_workout_sets.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'global_workout_sets.php' ? 'active' : '' ?>">
-					<i class="fas fa-layer-group me-2"></i>Globální sady
-				</a>
-				<a href="<?= BASE_URL ?>/admin/meals.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'meals.php' ? 'active' : '' ?>">
-					<i class="fas fa-utensils me-2"></i>Globální jídla
-				</a>
-				<a href="<?= BASE_URL ?>/admin/training_add.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'training_add.php' ? 'active' : '' ?>">
-					<i class="fas fa-calendar-plus me-2"></i>Přidat trénink
-				</a>
-				<a href="<?= BASE_URL ?>/admin/training_bulk.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'training_bulk.php' ? 'active' : '' ?>">
-					<i class="fas fa-file-csv me-2"></i>Import tréninků CSV
-				</a>
-				<a href="<?= BASE_URL ?>/admin/venues.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'venues.php' ? 'active' : '' ?>">
-					<i class="fas fa-map-location-dot me-2"></i>Sportoviště
-				</a>
-				<a href="<?= BASE_URL ?>/admin/events.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'events.php' ? 'active' : '' ?>">
-					<i class="fas fa-flag-checkered me-2"></i>Events
-				</a>
-				<a href="<?= BASE_URL ?>/admin/online_trainings.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'online_trainings.php' ? 'active' : '' ?>">
-					<i class="fas fa-laptop me-2"></i>Online tréninky
-				</a>
-				<a href="<?= BASE_URL ?>/admin/online_training_billing.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'online_training_billing.php' ? 'active' : '' ?>" style="padding-left:2.2rem;font-size:.87rem;">
-					<i class="fas fa-file-invoice-dollar me-2"></i>Vyúčtování online tréninků
-				</a>
-				<a href="<?= BASE_URL ?>/admin/health_questionnaire.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'health_questionnaire.php' ? 'active' : '' ?>">
-					<i class="fas fa-heart-pulse me-2"></i>Zdravotní dotazník
-				</a>
-				<a href="<?= BASE_URL ?>/admin/intake_questionnaire.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'intake_questionnaire.php' ? 'active' : '' ?>">
-					<i class="fas fa-clipboard-question me-2"></i>Výchozí vstupní dotazník
-				</a>
-				<a href="<?= BASE_URL ?>/admin/medals.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'medals.php' ? 'active' : '' ?>">
-					<i class="fas fa-medal me-2"></i>Medaile
-				</a>
-				<a href="<?= BASE_URL ?>/admin/mycoach.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'mycoach.php' ? 'active' : '' ?>">
-					<i class="fas fa-brain me-2"></i>MyCoach administrace
-				</a>
-				<a href="<?= BASE_URL ?>/admin/surveys.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'surveys.php' ? 'active' : '' ?>">
-					<i class="fas fa-square-poll-vertical me-2"></i>Ankety a dotazníky
-				</a>
-				<a href="<?= BASE_URL ?>/admin/mycoach_content.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'mycoach_content.php' ? 'active' : '' ?>" style="padding-left:2.2rem;font-size:.87rem;">
-					<i class="fas fa-layer-group me-2"></i>MyCoach obsah
-				</a>
-				<a href="<?= BASE_URL ?>/admin/calculators.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'calculators.php' ? 'active' : '' ?>">
-					<i class="fas fa-calculator me-2"></i>Kalkulačky
-					<span class="badge bg-secondary ms-1" style="font-size:.62rem">Ve vývoji</span>
-				</a>
-				<div class="text-uppercase small fw-semibold mt-3 mb-1" style="padding:.5rem .75rem .25rem;color:rgba(255,255,255,.68);font-size:.72rem;">Aplikace</div>
-				<a href="<?= BASE_URL ?>/admin/apps.php?platform=android"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'apps.php' && ($_GET['platform'] ?? 'android') !== 'ios' ? 'active' : '' ?>" style="padding-left:2.2rem;font-size:.87rem;">
-					<i class="fab fa-android me-2"></i>Android
-				</a>
-				<a href="<?= BASE_URL ?>/admin/apps.php?platform=ios"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'apps.php' && ($_GET['platform'] ?? '') === 'ios' ? 'active' : '' ?>" style="padding-left:2.2rem;font-size:.87rem;">
-					<i class="fab fa-apple me-2"></i>Apple
-				</a>
-				<a href="<?= BASE_URL ?>/admin/manual.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'manual.php' ? 'active' : '' ?>">
-					<i class="fas fa-book-open me-2"></i>Návod
-				</a>
-				<a href="<?= BASE_URL ?>/admin/login_message.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'login_message.php' ? 'active' : '' ?>">
-					<i class="fas fa-bell me-2"></i>Hláška po přihlášení
-				</a>
-				<a href="<?= BASE_URL ?>/admin/infokanal.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'infokanal.php' ? 'active' : '' ?>">
-					<i class="fas fa-lightbulb me-2"></i>Infokanál
-				</a>
-				<a href="<?= BASE_URL ?>/admin/email_notifications.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'email_notifications.php' ? 'active' : '' ?>">
-					<i class="fas fa-envelope me-2"></i>E-mailové notifikace
-				</a>
-				<a href="<?= BASE_URL ?>/admin/podpora.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'podpora.php' ? 'active' : '' ?>">
-					<i class="fas fa-life-ring me-2"></i>Podpora
-					<?php if ($supportNewCount > 0): ?>
-					<span class="badge bg-danger ms-1"><?= $supportNewCount ?></span>
+					<?php else: ?>
+						<?php
+						$groupActive = false;
+						$groupBadge  = 0;
+						foreach ($menuEntry['items'] as $menuItem) {
+							$itemActive = $menuItem['active'] ?? in_array($currentPage, $menuItem['match'], true);
+							if ($itemActive) { $groupActive = true; }
+							$groupBadge += (int)($menuItem['badge'] ?? 0);
+						}
+						?>
+				<div class="admin-nav-group<?= $groupActive ? ' is-open is-active' : '' ?>" data-group="<?= h($menuEntry['id']) ?>">
+					<button type="button" class="admin-nav-toggle" aria-expanded="<?= $groupActive ? 'true' : 'false' ?>">
+						<i class="fas <?= $menuEntry['icon'] ?>"></i><span class="admin-nav-label"><?= h($menuEntry['label']) ?></span>
+						<?php if ($groupBadge > 0): ?><span class="admin-nav-badge"><?= $groupBadge ?></span><?php endif; ?>
+						<i class="fas fa-chevron-down admin-nav-chevron"></i>
+					</button>
+					<div class="admin-nav-items">
+						<div class="admin-nav-items-inner">
+							<?php foreach ($menuEntry['items'] as $menuItem): ?>
+								<?php $itemActive = $menuItem['active'] ?? in_array($currentPage, $menuItem['match'], true); ?>
+							<a href="<?= $adminUrl . $menuItem['href'] ?>" class="admin-nav-sublink<?= $itemActive ? ' active' : '' ?>">
+								<i class="<?= !empty($menuItem['brand']) ? 'fab' : 'fas' ?> <?= $menuItem['icon'] ?>"></i><span class="admin-nav-label"><?= h($menuItem['label']) ?></span>
+								<?php if (!empty($menuItem['tag'])): ?><span class="admin-nav-tag"><?= h($menuItem['tag']) ?></span><?php endif; ?>
+								<?php if (!empty($menuItem['badge'])): ?><span class="admin-nav-badge"><?= (int)$menuItem['badge'] ?></span><?php endif; ?>
+							</a>
+							<?php endforeach; ?>
+						</div>
+					</div>
+				</div>
 					<?php endif; ?>
-				</a>
-				<a href="<?= BASE_URL ?>/admin/errorlog.php"
-				   class="nav-link <?= in_array(basename($_SERVER['PHP_SELF']), ['errorlog.php','errorlog_user.php']) ? 'active' : '' ?>">
-					<i class="fas fa-triangle-exclamation me-2"></i>Errorlog
-				</a>
-				<a href="<?= BASE_URL ?>/admin/zpravy.php"
-				   class="nav-link <?= in_array(basename($_SERVER['PHP_SELF']), ['zpravy.php','zprava_nova.php','zprava_detail.php','zprava_sportovci.php','zprava_sportovci_detail.php','zprava_trener_chat.php']) ? 'active' : '' ?>">
-					<i class="fas fa-comments me-2"></i>Zprávy trenérům
-					<?php if ($coachChatUnreadTotal > 0): ?>
-					<span class="badge bg-danger ms-1"><?= $coachChatUnreadTotal ?></span>
-					<?php endif; ?>
-				</a>
-				<a href="<?= BASE_URL ?>/admin/zprava_sportovci.php"
-				   class="nav-link <?= in_array(basename($_SERVER['PHP_SELF']), ['zprava_sportovci.php','zprava_sportovci_detail.php','zprava_sportovec_chat.php']) ? 'active' : '' ?>">
-					<i class="fas fa-bullhorn me-2"></i>Zprávy sportovcům
-					<?php if ($athleteChatUnreadTotal > 0): ?>
-					<span class="badge bg-danger ms-1"><?= $athleteChatUnreadTotal ?></span>
-					<?php endif; ?>
-				</a>
-				<a href="<?= BASE_URL ?>/admin/gallery.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'gallery.php' ? 'active' : '' ?>">
-					<i class="fas fa-images me-2"></i>Galerie
-				</a>
-				<a href="<?= BASE_URL ?>/admin/settings.php"
-				   class="nav-link <?= basename($_SERVER['PHP_SELF']) === 'settings.php' ? 'active' : '' ?>">
-					<i class="fas fa-sliders me-2"></i>Nastavení
-				</a>
-			</div>
+				<?php endforeach; ?>
+			</nav>
 		</div>
 	</div>
+	<div class="admin-sidebar-backdrop" id="adminSidebarBackdrop"></div>
 
 	<!-- Hlavní obsah -->
 	<div class="col p-2 p-md-3 flex-grow-1 admin-content">
@@ -270,8 +256,8 @@ function renderAdminHeader(string $title = ''): void {
 <style>
 .admin-chat-fab {
 	position: fixed; right: 18px; bottom: 18px; width: 54px; height: 54px; border: none; border-radius: 50%;
-	background: linear-gradient(135deg, #25d366, #128c7e); color: #fff; font-size: 22px;
-	box-shadow: 0 10px 24px rgba(37, 211, 102, 0.35); z-index: 1080;
+	background: linear-gradient(135deg, #6366f1, #4338ca); color: #fff; font-size: 22px;
+	box-shadow: 0 10px 24px rgba(79, 70, 229, 0.4); z-index: 1080;
 }
 .admin-chat-fab-badge {
 	position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
@@ -282,18 +268,18 @@ function renderAdminHeader(string $title = ''): void {
 	background: #fff; border-radius: 14px; box-shadow: 0 16px 40px rgba(0,0,0,0.25); display: flex; flex-direction: column; overflow: hidden; z-index: 1085;
 }
 .admin-chat-panel-header {
-	background: linear-gradient(135deg, #128c7e, #075e54); color: #fff; padding: 12px 14px; font-weight: 600; display: flex; align-items: center; gap: 4px;
+	background: linear-gradient(135deg, #4f46e5, #312e81); color: #fff; padding: 12px 14px; font-weight: 600; display: flex; align-items: center; gap: 4px;
 }
 .admin-chat-panel-header #adminHubChatTitle { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .admin-chat-back-btn { border: none; background: none; color: #fff; padding: 0 8px 0 0; font-size: 16px; }
-.admin-chat-panel-body { flex: 1; overflow-y: auto; padding: 12px; background: #ece5dd; }
+.admin-chat-panel-body { flex: 1; overflow-y: auto; padding: 12px; background: #eef0fa; }
 #adminHubChatHub { padding: 0; background: #fff; }
 .admin-chat-hub-item {
 	display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px; border-bottom: 1px solid #eee; cursor: pointer; color: #111; background: #fff;
 }
 .admin-chat-hub-item:hover { background: #f7f7f7; }
 .admin-chat-hub-item .name { font-weight: 600; font-size: 14px; }
-.admin-chat-hub-item .name i { margin-right: 6px; color: #128c7e; }
+.admin-chat-hub-item .name i { margin-right: 6px; color: #6366f1; }
 .admin-chat-hub-item .name .fa-person-running { color: #f39c12; }
 .admin-chat-hub-item .preview { font-size: 12px; color: #667781; margin-top: 2px; max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .admin-chat-hub-badge {
@@ -307,10 +293,10 @@ function renderAdminHeader(string $title = ''): void {
 	box-shadow: 0 1px 1px rgba(0,0,0,0.08);
 }
 .admin-chat-bubble-row.from-user .admin-chat-bubble { background: #fff; }
-.admin-chat-bubble-row.from-admin .admin-chat-bubble { background: #dcf8c6; }
+.admin-chat-bubble-row.from-admin .admin-chat-bubble { background: #e0e7ff; }
 .admin-chat-bubble-time { display: block; margin-top: 3px; font-size: 10.5px; color: #667781; text-align: right; }
 .admin-chat-read-status { margin-left: 4px; font-weight: 700; letter-spacing: -1px; }
-.admin-chat-read-status.is-read { color: #128c7e; }
+.admin-chat-read-status.is-read { color: #4f46e5; }
 .admin-chat-panel-footer { display: flex; gap: 8px; padding: 10px; background: #f0f0f0; border-top: 1px solid #ddd; }
 @media (max-width: 768px) {
 	.admin-chat-panel { right: 12px; bottom: 82px; width: calc(100vw - 24px); }
@@ -528,45 +514,70 @@ function renderAdminFooter(): void {
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/app.js"></script>
 <script>
-// Admin Sidebar Mobile Toggle
-document.addEventListener('DOMContentLoaded', function() {
-	const sidebarToggle = document.getElementById('sidebarToggle');
-	const sidebarWrapper = document.querySelector('.sidebar-wrapper');
-	let sidebarOpen = false;
+// Admin menu – rozbalovací skupiny + mobilní off-canvas sidebar
+document.addEventListener('DOMContentLoaded', function () {
+	// --- Rozbalovací skupiny menu (stav se pamatuje v localStorage) ---
+	var STORAGE_KEY = 'adminNavOpenGroups';
+	var openGroups = [];
+	try { openGroups = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch (e) { openGroups = []; }
+	if (!Array.isArray(openGroups)) { openGroups = []; }
 
-	if (sidebarToggle && sidebarWrapper) {
-		sidebarToggle.addEventListener('click', function() {
-			sidebarOpen = !sidebarOpen;
-			if (sidebarOpen) {
-				sidebarWrapper.classList.add('sidebar-open');
-				sidebarToggle.innerHTML = '<i class="fas fa-times"></i>';
-			} else {
-				sidebarWrapper.classList.remove('sidebar-open');
-				sidebarToggle.innerHTML = '<i class="fas fa-bars"></i>';
-			}
+	document.querySelectorAll('.admin-nav-group').forEach(function (group) {
+		var id = group.getAttribute('data-group');
+		if (openGroups.indexOf(id) !== -1) { group.classList.add('is-open'); }
+		var toggle = group.querySelector('.admin-nav-toggle');
+		if (!toggle) { return; }
+		toggle.addEventListener('click', function () {
+			var isOpen = group.classList.toggle('is-open');
+			toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+			var idx = openGroups.indexOf(id);
+			if (isOpen && idx === -1) { openGroups.push(id); }
+			if (!isOpen && idx !== -1) { openGroups.splice(idx, 1); }
+			try { localStorage.setItem(STORAGE_KEY, JSON.stringify(openGroups)); } catch (e) { /* ignore */ }
 		});
+	});
 
-		// Zavřít sidebar při kliknutí na odkaz na mobilu
-		const navLinks = sidebarWrapper.querySelectorAll('.nav-link');
-		navLinks.forEach(link => {
-			link.addEventListener('click', function() {
-				if (window.innerWidth < 768) {
-					sidebarOpen = false;
-					sidebarWrapper.classList.remove('sidebar-open');
-					sidebarToggle.innerHTML = '<i class="fas fa-bars"></i>';
-				}
-			});
-		});
+	// --- Mobilní sidebar: off-canvas + backdrop + zámek scrollu ---
+	var sidebarToggle = document.getElementById('sidebarToggle');
+	var sidebar = document.getElementById('adminSidebar');
+	var backdrop = document.getElementById('adminSidebarBackdrop');
 
-		// Zavřít sidebar při změně velikosti okna (z mobilu na desktop)
-		window.addEventListener('resize', function() {
-			if (window.innerWidth >= 768 && sidebarOpen) {
-				sidebarOpen = false;
-				sidebarWrapper.classList.remove('sidebar-open');
-				sidebarToggle.innerHTML = '<i class="fas fa-bars"></i>';
-			}
+	function setSidebar(open) {
+		if (!sidebar) { return; }
+		sidebar.classList.toggle('sidebar-open', open);
+		if (backdrop) { backdrop.classList.toggle('show', open); }
+		document.body.classList.toggle('admin-nav-open', open);
+		if (sidebarToggle) {
+			sidebarToggle.innerHTML = open ? '<i class="fas fa-times"></i>' : '<i class="fas fa-bars"></i>';
+			sidebarToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+		}
+	}
+
+	if (sidebarToggle && sidebar) {
+		sidebarToggle.addEventListener('click', function () {
+			setSidebar(!sidebar.classList.contains('sidebar-open'));
 		});
 	}
+
+	if (backdrop) {
+		backdrop.addEventListener('click', function () { setSidebar(false); });
+	}
+
+	// Zavřít menu po kliknutí na odkaz (mobil)
+	if (sidebar) {
+		sidebar.querySelectorAll('.admin-nav-link, .admin-nav-sublink').forEach(function (link) {
+			link.addEventListener('click', function () {
+				if (window.innerWidth < 768) { setSidebar(false); }
+			});
+		});
+	}
+
+	// Reset při přechodu na desktop
+	window.addEventListener('resize', function () {
+		if (window.innerWidth >= 768 && sidebar && sidebar.classList.contains('sidebar-open')) {
+			setSidebar(false);
+		}
+	});
 });
 </script>
 </body>

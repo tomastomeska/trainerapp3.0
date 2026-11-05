@@ -70,6 +70,7 @@ if ($eventId <= 0) {
 }
 
 $pdo = getDB();
+$hasFreeSessionColumn = coachDeleteHasColumn($pdo, 'coach_calendar_events', 'is_free_session');
 
 $eventStmt = $pdo->prepare(
     'SELECT e.id,
@@ -81,6 +82,7 @@ $eventStmt = $pdo->prepare(
             e.athlete_id,
             e.second_athlete_id,
         e.is_makeup_session,
+        ' . ($hasFreeSessionColumn ? 'COALESCE(e.is_free_session, 0)' : '0') . ' AS is_free_session,
             e.title_type,
         e.requested_by_athlete_id,
         e.approval_status,
@@ -115,6 +117,7 @@ if ($deleteScope === 'future' && !empty($event['series_id'])) {
                 second_athlete_id,
                 approval_status,
                 is_makeup_session,
+                ' . ($hasFreeSessionColumn ? 'COALESCE(is_free_session, 0)' : '0') . ' AS is_free_session,
                 title_type,
                 billing_month,
                 billing_issue_number,
@@ -138,6 +141,7 @@ if ($deleteScope === 'future' && !empty($event['series_id'])) {
         'second_athlete_id' => $event['second_athlete_id'] ?? null,
         'approval_status' => $event['approval_status'] ?? 'approved',
         'is_makeup_session' => $event['is_makeup_session'] ?? 0,
+        'is_free_session' => $event['is_free_session'] ?? 0,
         'title_type' => $event['title_type'] ?? 'training',
         'billing_month' => $event['billing_month'] ?? null,
         'billing_issue_number' => $event['billing_issue_number'] ?? 1,
@@ -259,12 +263,13 @@ try {
             $replacementRequired = $replacementMode === '14_days'
                 && $isTraining
                 && !$hasReplacementSlot
+                && empty($cancelEvent['is_free_session'])
                 && (string)($cancelEvent['approval_status'] ?? 'approved') === 'approved';
             $replacementDeadline = $replacementRequired
                 ? $startDate->modify('+14 days')->setTime(23, 59, 59)->format('Y-m-d H:i:s')
                 : null;
             $paymentStatus = 'none';
-            if ($hasPayments) {
+            if ($hasPayments && empty($cancelEvent['is_free_session'])) {
                 $paymentStatusStmt = $pdo->prepare(
                     'SELECT status FROM athlete_monthly_payments
                      WHERE coach_id = ? AND athlete_id = ? AND billing_month = ? AND issue_number = ?

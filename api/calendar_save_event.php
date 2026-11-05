@@ -126,6 +126,7 @@ $repeatUntilRaw = trim((string)($input['repeat_until'] ?? ''));
 $colorKey = trim((string)($input['color_key'] ?? 'green'));
 $approvalAction = trim((string)($input['approval_action'] ?? ''));
 $isMakeupSession = !empty($input['is_makeup_session']);
+$isFreeSession = !empty($input['is_free_session']);
 
 $allowedRepeatModes = ['none', 'weekly_until_date', 'weekly_end_of_next_month', 'weekly_end_of_year'];
 if (!in_array($repeatMode, $allowedRepeatModes, true)) {
@@ -210,6 +211,16 @@ if ($titleType === 'group_lesson') {
     $athleteId = null;
     $secondAthleteId = null;
     $isMakeupSession = false;
+    $isFreeSession = false;
+}
+
+if ($athleteId === null) {
+    $isFreeSession = false;
+}
+
+if ($isFreeSession && $isMakeupSession) {
+    echo json_encode(['success' => false, 'error' => 'Trénink zdarma nelze kombinovat s náhradním termínem.'], JSON_UNESCAPED_UNICODE);
+    exit;
 }
 
 if ($customTitle !== '') {
@@ -243,6 +254,7 @@ if ($eventId > 0) {
                 e.approval_status,
                 e.coach_modified_at,
                 e.is_makeup_session,
+                e.is_free_session,
                 e.billing_month,
                 e.billing_issue_number,
                 e.billing_transfer_reason,
@@ -319,7 +331,7 @@ $isNewAthleteApproval = $eventId > 0
     && (int)($existingEvent['requested_by_athlete_id'] ?? 0) > 0
     && extractRescheduleTargetEventId((string)($existingEvent['series_id'] ?? '')) === 0
     && !$isMakeupSession;
-if ($isNewAthleteApproval) {
+if ($isNewAthleteApproval && !$isFreeSession) {
     $decisionMap = is_array($input['billing_decisions'] ?? null) ? $input['billing_decisions'] : [];
     $decision = (string)($decisionMap[$targetMonthSql] ?? $input['billing_decision'] ?? '');
     $billingAssignment = paymentResolveTrainingAssignment(
@@ -410,6 +422,7 @@ if ($eventId > 0) {
              approval_status = ?,
              coach_modified_at = ?,
              is_makeup_session = ?,
+             is_free_session = ?,
              billing_month = ?,
              billing_issue_number = ?,
              billing_transfer_reason = ?,
@@ -430,6 +443,7 @@ if ($eventId > 0) {
     $oldTitleType = (string)($existingEvent['title_type'] ?? 'training');
     $oldTitle = (string)($existingEvent['custom_title'] ?? '');
     $oldIsMakeup = (int)($existingEvent['is_makeup_session'] ?? 0);
+    $oldIsFree = (int)($existingEvent['is_free_session'] ?? 0);
     $oldBillingMonth = (string)($existingEvent['billing_month'] ?? '');
     $oldBillingIssueNumber = max(1, (int)($existingEvent['billing_issue_number'] ?? 1));
     $newSeriesId = $oldSeriesId !== '' ? $oldSeriesId : null;
@@ -444,6 +458,7 @@ if ($eventId > 0) {
         || ($oldTitleType !== $titleType)
         || ($oldTitle !== (string)$customTitle)
         || ($oldIsMakeup !== (int)$isMakeupSession)
+        || ($oldIsFree !== (int)$isFreeSession)
         || ($oldBillingMonth !== $billingMonthSql)
         || ($oldBillingIssueNumber !== $billingIssueNumberSql)
         || (($existingEvent['billing_transfer_reason'] ?? null) !== $billingTransferReasonSql);
@@ -459,6 +474,7 @@ if ($eventId > 0) {
                     e.custom_title,
                     e.location,
                     e.is_makeup_session,
+                    e.is_free_session,
                     e.billing_month,
                     e.billing_issue_number,
                     e.billing_transfer_reason,
@@ -494,6 +510,7 @@ if ($eventId > 0) {
         $sourceOldTitle = (string)($sourceEvent['custom_title'] ?? '');
         $sourceOldLocation = (string)($sourceEvent['location'] ?? '');
         $sourceOldIsMakeup = (int)($sourceEvent['is_makeup_session'] ?? 0);
+        $sourceOldIsFree = (int)($sourceEvent['is_free_session'] ?? 0);
         $sourceOldBillingMonth = (string)($sourceEvent['billing_month'] ?? '');
         $sourceChanged = ($sourceOldStart !== $startSql)
             || ($sourceOldEnd !== $endSql)
@@ -501,6 +518,7 @@ if ($eventId > 0) {
             || ($sourceOldTitle !== (string)$customTitle)
             || ($sourceOldLocation !== (string)$location)
             || ($sourceOldIsMakeup !== (int)$isMakeupSession)
+            || ($sourceOldIsFree !== (int)$isFreeSession)
             || ($sourceOldBillingMonth !== $billingMonthSql)
             || ((int)($sourceEvent['athlete_id'] ?? 0) !== (int)($athleteId ?? 0))
             || ((int)($sourceEvent['second_athlete_id'] ?? 0) !== (int)($secondAthleteId ?? 0));
@@ -513,6 +531,7 @@ if ($eventId > 0) {
                  approval_status = "approved",
                  coach_modified_at = ?,
                  is_makeup_session = ?,
+                 is_free_session = ?,
                  billing_month = ?,
                  billing_issue_number = ?,
                  billing_transfer_reason = ?,
@@ -549,6 +568,7 @@ if ($eventId > 0) {
                 $secondAthleteId,
                 $sourceChanged ? date('Y-m-d H:i:s') : null,
                 (int)$isMakeupSession,
+                (int)$isFreeSession,
                 $billingMonthSql,
                 $billingIssueNumberSql,
                 $billingTransferReasonSql,
@@ -564,6 +584,22 @@ if ($eventId > 0) {
 
             foreach ($pendingRequestIds as $pendingRequestId) {
                 $deleteRequestStmt->execute([$pendingRequestId, $coachId]);
+            }
+
+            if ($isFreeSession || $sourceOldIsFree !== (int)$isFreeSession) {
+                $freeRefreshAthleteIds = array_values(array_unique(array_filter([
+                    (int)($athleteId ?? 0),
+                    (int)($secondAthleteId ?? 0),
+                    (int)($sourceEvent['athlete_id'] ?? 0),
+                    (int)($sourceEvent['second_athlete_id'] ?? 0),
+                ])));
+                foreach ($freeRefreshAthleteIds as $freeRefreshAthleteId) {
+                    try {
+                        paymentRefreshPendingIssue($pdo, $coachId, $freeRefreshAthleteId, $billingMonthSql, $billingIssueNumberSql);
+                    } catch (Throwable $refreshError) {
+                        // Přepočet čekající výzvy není pro uložení kritický.
+                    }
+                }
             }
 
             $pdo->commit();
@@ -647,7 +683,7 @@ if ($eventId > 0) {
     try {
         $pdo->beginTransaction();
 
-        $upd->execute([$athleteId, $secondAthleteId, $newSeriesId, $nextApprovalStatus, $coachModifiedAt, (int)$isMakeupSession, $billingMonthSql, $billingIssueNumberSql, $billingTransferReasonSql, $colorKey, $titleType, $customTitle, $location, $startSql, $endSql, $eventId, $coachId]);
+        $upd->execute([$athleteId, $secondAthleteId, $newSeriesId, $nextApprovalStatus, $coachModifiedAt, (int)$isMakeupSession, (int)$isFreeSession, $billingMonthSql, $billingIssueNumberSql, $billingTransferReasonSql, $colorKey, $titleType, $customTitle, $location, $startSql, $endSql, $eventId, $coachId]);
         if ($replacementCancellationId !== null) {
             $bindReplacementStmt = $pdo->prepare(
                 'UPDATE coach_calendar_event_cancellations
@@ -685,8 +721,8 @@ if ($eventId > 0) {
             );
 
             $insertStmtFuture = $pdo->prepare(
-                'INSERT INTO coach_calendar_events (coach_id, athlete_id, second_athlete_id, requested_by_athlete_id, approval_status, coach_modified_at, is_makeup_session, billing_month, billing_issue_number, billing_transfer_reason, series_id, color_key, title_type, custom_title, location, starts_at, ends_at)
-                 VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, 1, NULL, ?, ?, ?, ?, ?, ?, ?)'
+                'INSERT INTO coach_calendar_events (coach_id, athlete_id, second_athlete_id, requested_by_athlete_id, approval_status, coach_modified_at, is_makeup_session, is_free_session, billing_month, billing_issue_number, billing_transfer_reason, series_id, color_key, title_type, custom_title, location, starts_at, ends_at)
+                 VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, 1, NULL, ?, ?, ?, ?, ?, ?, ?)'
             );
 
             $cursor = clone $start;
@@ -722,6 +758,7 @@ if ($eventId > 0) {
                     $secondAthleteId,
                     $nextApprovalStatus,
                     (int)$isMakeupSession,
+                    (int)$isFreeSession,
                     $occurrenceBillingMonthSql,
                     $newSeriesId,
                     $colorKey,
@@ -741,6 +778,22 @@ if ($eventId > 0) {
             }
             foreach ($billingAssignment['additional_athletes'] ?? [] as $additionalAthleteId) {
                 paymentCreateAdditionalIssue($pdo, $coachId, (int)$additionalAthleteId, $billingMonthSql, $billingIssueNumberSql, $billingAssignment['session_rates'][(int)$additionalAthleteId] ?? $billingAssignment['session_rate'] ?? null);
+            }
+        }
+
+        if ($isFreeSession || $oldIsFree !== (int)$isFreeSession) {
+            $freeRefreshAthleteIds = array_values(array_unique(array_filter([
+                (int)($athleteId ?? 0),
+                (int)($secondAthleteId ?? 0),
+                (int)($existingEvent['athlete_id'] ?? 0),
+                (int)($existingEvent['second_athlete_id'] ?? 0),
+            ])));
+            foreach ($freeRefreshAthleteIds as $freeRefreshAthleteId) {
+                try {
+                    paymentRefreshPendingIssue($pdo, $coachId, $freeRefreshAthleteId, $billingMonthSql, $billingIssueNumberSql);
+                } catch (Throwable $refreshError) {
+                    // Přepočet čekající výzvy není pro uložení kritický.
+                }
             }
         }
 
@@ -825,7 +878,7 @@ while (true) {
 $billingDecisions = is_array($input['billing_decisions'] ?? null) ? $input['billing_decisions'] : [];
 $billingAssignmentsByMonth = [];
 $billingChoices = [];
-if ((int)($athleteId ?? 0) > 0) {
+if ((int)($athleteId ?? 0) > 0 && !$isFreeSession) {
     foreach ($occurrences as $occurrenceStart) {
         $month = $occurrenceStart->format('Y-m-01');
         if (isset($billingAssignmentsByMonth[$month])) {
@@ -877,8 +930,8 @@ $overlapStmt = $pdo->prepare(
 );
 
 $insertStmt = $pdo->prepare(
-    'INSERT INTO coach_calendar_events (coach_id, athlete_id, second_athlete_id, requested_by_athlete_id, approval_status, coach_modified_at, is_makeup_session, billing_month, billing_issue_number, billing_transfer_reason, series_id, color_key, title_type, custom_title, location, starts_at, ends_at)
-     VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO coach_calendar_events (coach_id, athlete_id, second_athlete_id, requested_by_athlete_id, approval_status, coach_modified_at, is_makeup_session, is_free_session, billing_month, billing_issue_number, billing_transfer_reason, series_id, color_key, title_type, custom_title, location, starts_at, ends_at)
+     VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 );
 
 $seriesId = $repeatMode === 'none' ? null : generateUuidV4();
@@ -921,6 +974,7 @@ try {
             $secondAthleteId,
             'approved',
             (int)$isMakeupSession,
+            (int)$isFreeSession,
             $occurrenceBillingMonthSql,
             $occurrenceIssueNumber,
             $occurrenceTransferReason,
@@ -955,6 +1009,26 @@ try {
         }
         foreach ($assignment['additional_athletes'] ?? [] as $additionalAthleteId) {
             paymentCreateAdditionalIssue($pdo, $coachId, (int)$additionalAthleteId, (string)$assignment['billing_month'], (int)$assignment['issue_number'], $assignment['session_rates'][(int)$additionalAthleteId] ?? $assignment['session_rate'] ?? null);
+        }
+    }
+
+    if ($isFreeSession && (int)($athleteId ?? 0) > 0) {
+        $freeRefreshMonths = [];
+        foreach ($occurrences as $occurrenceStart) {
+            $freeRefreshMonths[$occurrenceStart->format('Y-m-01')] = true;
+        }
+        $freeRefreshAthleteIds = array_values(array_unique(array_filter([
+            (int)($athleteId ?? 0),
+            (int)($secondAthleteId ?? 0),
+        ])));
+        foreach (array_keys($freeRefreshMonths) as $freeRefreshMonth) {
+            foreach ($freeRefreshAthleteIds as $freeRefreshAthleteId) {
+                try {
+                    paymentRefreshPendingIssue($pdo, $coachId, $freeRefreshAthleteId, $freeRefreshMonth, 1);
+                } catch (Throwable $refreshError) {
+                    // Přepočet čekající výzvy není pro uložení kritický.
+                }
+            }
         }
     }
 

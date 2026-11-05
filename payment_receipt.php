@@ -37,6 +37,9 @@ function receiptColumnExists(PDO $pdo, string $tableName, string $columnName): b
 function receiptFetchHistoricalActualByMonth(PDO $pdo, int $coachId, int $athleteId, string $beforeMonthSql, bool $hasBillingMonth, bool $hasSecondAthlete): array
 {
     $monthExpr = "DATE_FORMAT(e.starts_at, '%Y-%m-01')";
+    $notFreeFilter = receiptColumnExists($pdo, 'coach_calendar_events', 'is_free_session')
+        ? 'AND COALESCE(e.is_free_session, 0) = 0'
+        : '';
 
     if ($hasSecondAthlete) {
         $participantsSql = "
@@ -45,12 +48,14 @@ function receiptFetchHistoricalActualByMonth(PDO $pdo, int $coachId, int $athlet
             WHERE e.coach_id = ?
               AND e.approval_status = 'approved'
               AND e.athlete_id = ?
+              {$notFreeFilter}
             UNION ALL
             SELECT {$monthExpr} AS billing_month
             FROM coach_calendar_events e
             WHERE e.coach_id = ?
               AND e.approval_status = 'approved'
               AND e.second_athlete_id = ?
+              {$notFreeFilter}
         ";
         $params = [$coachId, $athleteId, $coachId, $athleteId, $beforeMonthSql];
     } else {
@@ -60,6 +65,7 @@ function receiptFetchHistoricalActualByMonth(PDO $pdo, int $coachId, int $athlet
             WHERE e.coach_id = ?
               AND e.approval_status = 'approved'
               AND e.athlete_id = ?
+              {$notFreeFilter}
         ";
         $params = [$coachId, $athleteId, $beforeMonthSql];
     }
@@ -211,6 +217,7 @@ $hasBillingMonth = receiptColumnExists($pdo, 'coach_calendar_events', 'billing_m
 $hasBillingTransferReason = receiptColumnExists($pdo, 'coach_calendar_events', 'billing_transfer_reason');
 $hasSecondAthlete = receiptColumnExists($pdo, 'coach_calendar_events', 'second_athlete_id');
 $hasIsMakeup = receiptColumnExists($pdo, 'coach_calendar_events', 'is_makeup_session');
+$hasIsFree = receiptColumnExists($pdo, 'coach_calendar_events', 'is_free_session');
 $hasPairedTrainingRate = receiptColumnExists($pdo, 'athletes', 'paired_training_rate');
 $hasPaymentsTable = receiptTableExists($pdo, 'athlete_monthly_payments');
 $hasCarryover = $hasPaymentsTable && receiptColumnExists($pdo, 'athlete_monthly_payments', 'carryover_used_sessions');
@@ -277,6 +284,7 @@ $transferReasonSelect = receiptColumnExists($pdo, 'coach_calendar_events', 'bill
     ? 'e.billing_transfer_reason'
     : 'NULL AS billing_transfer_reason';
 $isMakeupSelect = $hasIsMakeup ? 'e.is_makeup_session' : '0';
+$isFreeSelect = $hasIsFree ? 'COALESCE(e.is_free_session, 0)' : '0';
 $billingMonthSelect = $hasBillingMonth
     ? "DATE_FORMAT(COALESCE(e.billing_month, e.starts_at), '%Y-%m-01')"
     : "DATE_FORMAT(e.starts_at, '%Y-%m-01')";
@@ -288,6 +296,7 @@ if ($hasSecondAthlete) {
                e.ends_at,
                e.location,
                {$isMakeupSelect} AS is_makeup_session,
+               {$isFreeSelect} AS is_free_session,
                {$billingMonthSelect} AS billing_month,
                {$transferReasonSelect},
                CASE WHEN e.second_athlete_id IS NOT NULL THEN 1 ELSE 0 END AS is_paired
@@ -303,6 +312,7 @@ if ($hasSecondAthlete) {
                e.ends_at,
                e.location,
                {$isMakeupSelect} AS is_makeup_session,
+               {$isFreeSelect} AS is_free_session,
                {$billingMonthSelect} AS billing_month,
                {$transferReasonSelect},
                1 AS is_paired
@@ -325,6 +335,7 @@ if ($hasSecondAthlete) {
                e.ends_at,
                e.location,
                {$isMakeupSelect} AS is_makeup_session,
+               {$isFreeSelect} AS is_free_session,
                {$billingMonthSelect} AS billing_month,
                {$transferReasonSelect},
                0 AS is_paired
@@ -348,12 +359,17 @@ $replacementOriginsByEventId = $replacementOrigins;
 $singleSessions = 0;
 $pairedSessions = 0;
 $makeupSessions = 0;
+$freeSessions = 0;
 $transferredSessions = 0;
 $transferredMakeupSessions = 0;
 $paidReplacementSingle = 0;
 $paidReplacementPaired = 0;
 
 foreach ($eventRows as $eventRow) {
+    if ((int)($eventRow['is_free_session'] ?? 0) === 1) {
+        $freeSessions++;
+        continue;
+    }
     $isPaired = ((int)$eventRow['is_paired'] === 1);
     if ($isPaired) {
         $pairedSessions++;
@@ -459,14 +475,20 @@ if ($paymentRow && in_array((string)($paymentRow['status'] ?? ''), ['pending', '
                     'billing_issue_number' => $snapshotIssue,
                     'billing_transfer_reason' => (string)($snapshotEvent['billing_transfer_reason'] ?? ''),
                     'is_makeup_session' => (int)($snapshotEvent['is_makeup_session'] ?? 0),
+                    'is_free_session' => (int)($snapshotEvent['is_free_session'] ?? 0),
                     'is_paired' => (int)($snapshotEvent['is_paired'] ?? 0),
                 ];
             }
             $singleSessions = 0;
             $pairedSessions = 0;
             $makeupSessions = 0;
+            $freeSessions = 0;
             $transferredSessions = 0;
             foreach ($eventRows as $snapshotEvent) {
+                if ((int)($snapshotEvent['is_free_session'] ?? 0) === 1) {
+                    $freeSessions++;
+                    continue;
+                }
                 if ((int)$snapshotEvent['is_paired'] === 1) {
                     $pairedSessions++;
                 } else {
@@ -509,10 +531,14 @@ if ($paymentRow && in_array((string)($paymentRow['status'] ?? ''), ['pending', '
 
 $rowCharges = [];
 foreach ($eventRows as $eventRow) {
+    $isFreeRow = (int)($eventRow['is_free_session'] ?? 0) === 1;
     $rowRate = ((int)($eventRow['is_paired'] ?? 0) === 1)
         ? ($pairedRate ?? $singleRate)
         : $singleRate;
     $rowNotes = [];
+    if ($isFreeRow) {
+        $rowNotes[] = 'ZDARMA';
+    }
     $replacementOrigin = $replacementOriginsByEventId[(int)($eventRow['id'] ?? 0)] ?? null;
     $isPaidReplacement = is_array($replacementOrigin)
         && in_array((string)($replacementOrigin['payment_status_snapshot'] ?? ''), ['pending', 'paid'], true);
@@ -544,7 +570,7 @@ foreach ($eventRows as $eventRow) {
     }
 
     $rowCharges[] = [
-        'amount' => $isPaidReplacement ? 0.0 : ($rowRate !== null ? (float)$rowRate : 0.0),
+        'amount' => ($isFreeRow || $isPaidReplacement) ? 0.0 : ($rowRate !== null ? (float)$rowRate : 0.0),
         'note' => implode('; ', $rowNotes),
     ];
 }
@@ -986,6 +1012,12 @@ if ($coachMode) {
                 <div class="small text-muted">Náhradní termíny v období</div>
                 <div class="fw-semibold"><?= $makeupSessions ?>x</div>
             </div>
+            <?php if ($freeSessions > 0): ?>
+            <div class="col-md-6">
+                <div class="small text-muted">Tréninky ZDARMA</div>
+                <div class="fw-semibold text-success"><?= $freeSessions ?>x</div>
+            </div>
+            <?php endif; ?>
             <div class="col-md-6">
                 <div class="small text-muted">Zaúčtováno mimo kalendářní měsíc</div>
                 <div class="fw-semibold"><?= $transferredSessions ?>x</div>
