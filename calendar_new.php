@@ -645,12 +645,6 @@ $venuesJson = json_encode($venues, JSON_UNESCAPED_UNICODE);
         document.getElementById('deleteBtn').addEventListener('click', async () => {
             if (!confirm('Smazat trénink?')) return;
 
-            const hasAthlete = Number(currentEvent?.athlete_id || 0) > 0 || Number(currentEvent?.second_athlete_id || 0) > 0;
-            const replacementMode = hasAthlete && (currentEvent?.title_type || 'training') === 'training'
-                ? await askCalendarReplacementChoice()
-                : 'none';
-            if (replacementMode === null) return;
-
             try {
                 const r = await fetch('/api/calendar_delete_event.php', {
                     method: 'POST',
@@ -658,7 +652,7 @@ $venuesJson = json_encode($venues, JSON_UNESCAPED_UNICODE);
                     body: JSON.stringify({
                         event_id: currentEventId,
                         delete_scope: 'single',
-                        replacement_mode: replacementMode,
+                        remove_only: true,
                         csrf_token: document.querySelector('[name="csrf_token"]').value,
                     })
                 });

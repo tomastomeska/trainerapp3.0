@@ -27,6 +27,7 @@ if (!verifyCsrf((string)($input['csrf_token'] ?? ''))) {
 
 $eventId = (int)($input['event_id'] ?? 0);
 $deleteScope = trim((string)($input['delete_scope'] ?? 'single'));
+$removeOnly = !empty($input['remove_only']);
 $replacementMode = trim((string)($input['replacement_mode'] ?? 'none'));
 if (!in_array($replacementMode, ['none', '14_days'], true)) {
     $replacementMode = 'none';
@@ -168,7 +169,7 @@ try {
 }
 
 $paidAffectedCount = 0;
-if ($hasPayments && !$isPendingRequest) {
+if ($hasPayments && !$isPendingRequest && !$removeOnly) {
     if ($deleteScope === 'future' && !empty($event['series_id'])) {
         $billingExpr = $hasBillingMonth
             ? "DATE_FORMAT(COALESCE(e.billing_month, e.starts_at), '%Y-%m-01')"
@@ -240,7 +241,7 @@ try {
         throw new RuntimeException('Událost nenalezena.');
     }
 
-    foreach ($eventsToCancel as $cancelEvent) {
+    foreach (($removeOnly ? [] : $eventsToCancel) as $cancelEvent) {
         if ((string)($cancelEvent['approval_status'] ?? 'approved') === 'pending'
             && !empty($cancelEvent['requested_by_athlete_id'])
         ) {
@@ -382,7 +383,7 @@ if (!empty($event['second_athlete_id'])) {
     ];
 }
 
-if (!empty($participants)) {
+if (!empty($participants) && !$removeOnly) {
     $isPendingRequest = (($event['approval_status'] ?? 'approved') === 'pending') && !empty($event['requested_by_athlete_id']);
     $startLabel = date('d.m.Y H:i', strtotime((string)$event['starts_at']));
 
@@ -437,11 +438,13 @@ echo json_encode([
     'deleted_count' => $del->rowCount(),
     'scope' => $deleteScope,
     'paid_affected_count' => $paidAffectedCount,
-    'message' => $paidAffectedCount > 0
+    'message' => $removeOnly
+        ? 'Událost byla odstraněna. Platby ani nároky na náhradu nebyly změněny.'
+        : ($paidAffectedCount > 0
         ? ($replacementMode === '14_days'
             ? 'Uhrazený termín byl zrušen. Náhradu rezervujte do 14 kalendářních dní; nebude účtována znovu.'
             : 'Uhrazený termín byl zrušen bez náhrady. Nárok na náhradní slot nevznikl. Původní uhrazená výzva zůstává beze změny; nevzniká zápočet do další fakturace.')
         : ($replacementMode === '14_days'
             ? 'Událost byla zrušena s možností náhrady do 14 kalendářních dní od původního termínu.'
-            : 'Událost byla zrušena bez náhrady. Nárok na náhradní slot nevznikl.'),
+            : 'Událost byla zrušena bez náhrady. Nárok na náhradní slot nevznikl.')),
 ]);

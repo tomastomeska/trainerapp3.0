@@ -20,10 +20,30 @@ if (!$athlete) {
     exit;
 }
 
-$weekStartRaw = trim((string)($_GET['week_start'] ?? ''));
-$weekBase = DateTimeImmutable::createFromFormat('Y-m-d', $weekStartRaw) ?: new DateTimeImmutable('today');
-$weekStart = $weekBase->modify('-' . ((int)$weekBase->format('N') - 1) . ' days')->setTime(0, 0, 0);
-$weekEnd = $weekStart->modify('+7 days');
+$rangeStartRaw = trim((string)($_GET['start_date'] ?? ''));
+$rangeEndRaw = trim((string)($_GET['end_date'] ?? ''));
+if ($rangeStartRaw !== '' || $rangeEndRaw !== '') {
+    $rangeStartDate = DateTimeImmutable::createFromFormat('!Y-m-d', $rangeStartRaw);
+    $rangeEndDate = DateTimeImmutable::createFromFormat('!Y-m-d', $rangeEndRaw);
+    if (
+        !$rangeStartDate
+        || !$rangeEndDate
+        || $rangeStartDate->format('Y-m-d') !== $rangeStartRaw
+        || $rangeEndDate->format('Y-m-d') !== $rangeEndRaw
+        || $rangeEndDate < $rangeStartDate
+    ) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Neplatný časový rozsah.']);
+        exit;
+    }
+    $weekStart = $rangeStartDate;
+    $weekEnd = $rangeEndDate->modify('+1 day');
+} else {
+    $weekStartRaw = trim((string)($_GET['week_start'] ?? ''));
+    $weekBase = DateTimeImmutable::createFromFormat('Y-m-d', $weekStartRaw) ?: new DateTimeImmutable('today');
+    $weekStart = $weekBase->modify('-' . ((int)$weekBase->format('N') - 1) . ' days')->setTime(0, 0, 0);
+    $weekEnd = $weekStart->modify('+7 days');
+}
 
 $eventsStmt = $pdo->prepare(
         "SELECT e.id,

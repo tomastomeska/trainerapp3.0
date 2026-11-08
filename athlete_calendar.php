@@ -597,6 +597,74 @@ renderAthleteHeader('Můj kalendář', false, true);
         min-width: 860px;
     }
 }
+
+#daypilotCalendar .trainerapp-today-cell {
+    box-shadow: inset 2px 0 #fed7aa, inset -2px 0 #fed7aa;
+}
+
+#daypilotCalendar .trainerapp-today-header {
+    color: #7c2d12 !important;
+    font-weight: 700;
+}
+
+#daypilotCalendar .trainerapp-today-header .calendar_default_colheader_inner {
+    background: #fed7aa !important;
+}
+
+#daypilotCalendar .trainerapp-current-time-cell {
+    position: relative;
+}
+
+#daypilotCalendar .trainerapp-current-time-cell::after {
+    content: "";
+    position: absolute;
+    top: var(--trainer-current-time-offset, 0px);
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: #dc2626;
+    box-shadow: 0 0 0 1px #fff;
+    z-index: 100;
+    pointer-events: none;
+}
+
+.calendar-print-sheet {
+    display: none;
+}
+
+@media print {
+    body.calendar-printing * {
+        visibility: hidden !important;
+    }
+
+    body.calendar-printing #athleteCalendarPrintSheet,
+    body.calendar-printing #athleteCalendarPrintSheet * {
+        visibility: visible !important;
+    }
+
+    body.calendar-printing #athleteCalendarPrintSheet {
+        display: block !important;
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        padding: 0;
+        background: #fff;
+        color: #111;
+    }
+
+    body.calendar-printing #athleteCalendarPrintSheet table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    body.calendar-printing #athleteCalendarPrintSheet th,
+    body.calendar-printing #athleteCalendarPrintSheet td {
+        border: 1px solid #999;
+        padding: 6px;
+        text-align: left;
+        vertical-align: top;
+    }
+}
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -663,6 +731,33 @@ renderAthleteHeader('Můj kalendář', false, true);
         </div>
     </div>
 </div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-2">
+        <div class="d-flex flex-wrap align-items-end gap-2">
+            <label class="small fw-semibold" for="athletePrintRangeMode">Tisk událostí</label>
+            <select class="form-select form-select-sm" id="athletePrintRangeMode" style="max-width: 190px;">
+                <option value="week">Aktuální týden</option>
+                <option value="month">Aktuální měsíc</option>
+                <option value="custom">Vlastní rozsah</option>
+            </select>
+            <div class="d-none flex-wrap gap-2" id="athletePrintCustomDates">
+                <div>
+                    <label class="form-label small mb-1" for="athletePrintStartDate">Od</label>
+                    <input type="date" class="form-control form-control-sm" id="athletePrintStartDate">
+                </div>
+                <div>
+                    <label class="form-label small mb-1" for="athletePrintEndDate">Do</label>
+                    <input type="date" class="form-control form-control-sm" id="athletePrintEndDate">
+                </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="athletePrintEventsBtn">
+                <i class="fas fa-print me-1"></i>Načíst a vytisknout
+            </button>
+        </div>
+    </div>
+</div>
+<section class="calendar-print-sheet" id="athleteCalendarPrintSheet" aria-hidden="true"></section>
 
 <div class="card border-0 shadow-sm" id="daypilotCard">
     <div class="card-body p-2 p-md-3">
@@ -1252,11 +1347,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let events = [];
     let locks = [];
     let dayPilotCalendar = null;
+    let hasInitialCalendarPositioned = false;
+    let currentTimeSlotKey = '';
     let selectedEventForDetail = null;
     const reserveMakeupSuggestionCache = new Map();
     const hourStart = 5;
     const hourEnd = 22;
     const isCompactMobile = window.matchMedia('(max-width: 991.98px)').matches;
+    const calendarCellHeight = isCompactMobile ? 56 : 68;
     const eventColorSchemes = {
         blue: { backColor: '#0ea5e9', barColor: '#0284c7', fontColor: '#ffffff' },
         green: { backColor: '#22c55e', barColor: '#16a34a', fontColor: '#ffffff' },
@@ -1883,7 +1981,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 weekStarts: 1,
                 startDate: toDateKey(currentWeekStart),
                 cellDuration: 60,
-                cellHeight: isCompactMobile ? 56 : 68,
+                cellHeight: calendarCellHeight,
                 eventArrangement: 'SideBySide',
                 useEventBoxes: 'Never',
                 showNonBusiness: false,
@@ -1891,6 +1989,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 heightSpec: 'BusinessHoursNoScroll',
                 businessBeginsHour: hourStart,
                 businessEndsHour: hourEnd,
+                onBeforeHeaderRender: (args) => {
+                    const today = new DayPilot.Date().getDatePart().toString();
+                    if (args.header.start.getDatePart().toString() === today) {
+                        args.header.cssClass = 'trainerapp-today-header';
+                    }
+                },
+                onBeforeCellRender: (args) => {
+                    const now = DayPilot.Date.now();
+                    const today = now.getDatePart().toString();
+                    const isToday = args.cell.start.getDatePart().toString() === today;
+                    const classes = [];
+                    if (isToday) {
+                        args.cell.properties.backColor = '#fff1d6';
+                        classes.push('trainerapp-today-cell');
+                    }
+                    const cellStart = dayPilotDateToJs(args.cell.start);
+                    if (cellStart && cellStart.getHours() === new Date().getHours()) {
+                        classes.push('trainerapp-current-time-cell');
+                    }
+                    if (classes.length) {
+                        args.cell.properties.cssClass = classes.join(' ');
+                    }
+                },
                 durationBarVisible: true,
                 bubble: null,
                 eventMoveHandling: 'Disabled',
@@ -1930,6 +2051,17 @@ document.addEventListener('DOMContentLoaded', () => {
             startDate: toDateKey(currentWeekStart),
             events: [...locks.map(toDayPilotLockEvent), ...events.map(toDayPilotEvent)],
         });
+        const now = new Date();
+        currentTimeSlotKey = `${toDateKey(now)}-${now.getHours()}`;
+        daypilotCalendarEl.style.setProperty('--trainer-current-time-offset', `${calendarCellHeight * now.getMinutes() / 60}px`);
+        if (
+            !hasInitialCalendarPositioned
+            && toDateKey(now) >= toDateKey(currentWeekStart)
+            && toDateKey(now) <= toDateKey(addDays(currentWeekStart, 6))
+        ) {
+            dayPilotCalendar.scrollToHour(Math.max(hourStart, now.getHours() - 1));
+            hasInitialCalendarPositioned = true;
+        }
 
         return true;
     }
@@ -2407,6 +2539,137 @@ document.addEventListener('DOMContentLoaded', () => {
     bindImmediateMonthPicker(athleteMonthInput, () => {
         loadAthleteMonthList();
     });
+
+    const printRangeMode = document.getElementById('athletePrintRangeMode');
+    const printCustomDates = document.getElementById('athletePrintCustomDates');
+    const printStartDate = document.getElementById('athletePrintStartDate');
+    const printEndDate = document.getElementById('athletePrintEndDate');
+    const printEventsBtn = document.getElementById('athletePrintEventsBtn');
+    const printSheet = document.getElementById('athleteCalendarPrintSheet');
+
+    printRangeMode.addEventListener('change', () => {
+        const useCustomRange = printRangeMode.value === 'custom';
+        printCustomDates.classList.toggle('d-none', !useCustomRange);
+        printCustomDates.classList.toggle('d-flex', useCustomRange);
+        if (useCustomRange) {
+            const today = toDateKey(new Date());
+            printStartDate.value = printStartDate.value || today;
+            printEndDate.value = printEndDate.value || today;
+        }
+    });
+
+    printEventsBtn.addEventListener('click', async () => {
+        const today = new Date();
+        let rangeStart;
+        let rangeEnd;
+        if (printRangeMode.value === 'week') {
+            rangeStart = getMonday(today);
+            rangeEnd = addDays(rangeStart, 6);
+        } else if (printRangeMode.value === 'month') {
+            rangeStart = new Date(today.getFullYear(), today.getMonth(), 1);
+            rangeEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        } else {
+            rangeStart = new Date(`${printStartDate.value}T00:00:00`);
+            rangeEnd = new Date(`${printEndDate.value}T00:00:00`);
+            if (!printStartDate.value || !printEndDate.value || Number.isNaN(rangeStart.getTime()) || Number.isNaN(rangeEnd.getTime()) || rangeEnd < rangeStart) {
+                alert('Zadejte platné datum začátku a konce rozsahu.');
+                return;
+            }
+        }
+
+        printEventsBtn.disabled = true;
+        try {
+            const params = new URLSearchParams({
+                start_date: toDateKey(rangeStart),
+                end_date: toDateKey(rangeEnd),
+            });
+            const response = await fetch(`<?= BASE_URL ?>/api/athlete_calendar_data.php?${params.toString()}`, { credentials: 'same-origin' });
+            const payload = await response.json();
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || 'Události se nepodařilo načíst.');
+            }
+
+            printSheet.replaceChildren();
+            const title = document.createElement('h1');
+            title.textContent = `Moje události: ${formatDateCs(rangeStart)} – ${formatDateCs(rangeEnd)}`;
+            printSheet.appendChild(title);
+
+            const table = document.createElement('table');
+            const head = document.createElement('thead');
+            const headRow = document.createElement('tr');
+            ['Datum', 'Čas', 'Událost', 'Místo', 'Stav'].forEach((label) => {
+                const cell = document.createElement('th');
+                cell.textContent = label;
+                headRow.appendChild(cell);
+            });
+            head.appendChild(headRow);
+            table.appendChild(head);
+
+            const body = document.createElement('tbody');
+            (payload.events || []).forEach((event) => {
+                const start = fromSqlDateTime(event.starts_at);
+                const end = fromSqlDateTime(event.ends_at);
+                const row = document.createElement('tr');
+                const status = event.is_foreign
+                    ? 'Obsazeno'
+                    : event.approval_status === 'pending'
+                        ? 'Ke schválení'
+                        : event.coach_modified_at
+                            ? 'Upraveno trenérem'
+                            : '';
+                [
+                    formatDateCs(start),
+                    `${start.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })}–${end.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })}`,
+                    getEventTitle(event),
+                    event.location || '',
+                    status,
+                ].forEach((value) => {
+                    const cell = document.createElement('td');
+                    cell.textContent = value;
+                    row.appendChild(cell);
+                });
+                body.appendChild(row);
+            });
+            table.appendChild(body);
+            printSheet.appendChild(table);
+            if (!payload.events || payload.events.length === 0) {
+                const emptyMessage = document.createElement('p');
+                emptyMessage.textContent = 'V tomto období nemáte žádné události.';
+                printSheet.appendChild(emptyMessage);
+            }
+
+            printSheet.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('calendar-printing');
+            window.print();
+        } catch (error) {
+            alert(error.message || 'Tisk událostí se nepodařil.');
+        } finally {
+            printEventsBtn.disabled = false;
+        }
+    });
+
+    window.addEventListener('afterprint', () => {
+        document.body.classList.remove('calendar-printing');
+        printSheet.setAttribute('aria-hidden', 'true');
+    });
+
+    function refreshCurrentTimeLine() {
+        if (!dayPilotCalendar) {
+            return;
+        }
+        const now = new Date();
+        daypilotCalendarEl.style.setProperty('--trainer-current-time-offset', `${calendarCellHeight * now.getMinutes() / 60}px`);
+        const slotKey = `${toDateKey(now)}-${now.getHours()}`;
+        if (slotKey !== currentTimeSlotKey) {
+            currentTimeSlotKey = slotKey;
+            dayPilotCalendar.update({
+                startDate: toDateKey(currentWeekStart),
+                events: [...locks.map(toDayPilotLockEvent), ...events.map(toDayPilotEvent)],
+            });
+        }
+    }
+
+    window.setInterval(refreshCurrentTimeLine, 30000);
 
     function setupCalendarUrlCopy(buttonId, inputId, statusId) {
         const copyButton = document.getElementById(buttonId);
