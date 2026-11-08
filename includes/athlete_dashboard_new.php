@@ -306,6 +306,7 @@ renderAthleteHeader('Profil sportovce', false, true, true);
     <div class="athlete-mobile-summary-card mb-3 athlete-mobile-profile-photo">
         <div class="athlete-mobile-summary-card__head">
             <div class="athlete-mobile-summary-card__title"><i class="fas fa-camera me-2 text-warning"></i>Profilová fotografie</div>
+            <a href="<?= BASE_URL ?>/athlete_profile_edit.php" class="btn btn-outline-dark btn-sm"><i class="fas fa-user-edit me-1"></i>Upravit profil</a>
         </div>
         <div class="athlete-mobile-summary-card__body">
             <?php $athleteMobileProfilePhoto = photoUrl($athlete['photo'] ?? null, 'athletes'); ?>
@@ -573,7 +574,10 @@ renderAthleteHeader('Profil sportovce', false, true, true);
 <div class="athlete-profile-grid mb-4 athlete-desktop-only">
     <div class="athlete-profile-information">
         <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-dark text-white"><i class="fas fa-id-card me-2"></i>Informace</div>
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center gap-2">
+                <span><i class="fas fa-id-card me-2"></i>Informace</span>
+                <a href="<?= BASE_URL ?>/athlete_profile_edit.php" class="btn btn-warning btn-sm fw-semibold"><i class="fas fa-pen me-1"></i>Upravit</a>
+            </div>
             <div class="card-body">
                 <?php $athleteProfilePhoto = photoUrl($athlete['photo'] ?? null, 'athletes'); ?>
                 <div class="athlete-profile-photo d-flex align-items-center gap-3 mb-3 pb-3 border-bottom">
@@ -596,8 +600,9 @@ renderAthleteHeader('Profil sportovce', false, true, true);
                     </form>
                 </div>
                 <table class="table table-sm table-borderless mb-0">
-                    <tr><td class="text-muted fw-semibold" style="width:45%">Jméno</td><td><?= h(trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name'])) ?> <span class="text-muted">(ID: <?= (int)$athleteId ?>)</span></td></tr>
+                    <tr><td class="text-muted fw-semibold" style="width:45%">Jméno</td><td><a href="<?= BASE_URL ?>/athlete_profile_edit.php" class="text-decoration-none fw-semibold"><?= h(trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name'])) ?></a> <span class="text-muted">(ID: <?= (int)$athleteId ?>)</span></td></tr>
                     <tr><td class="text-muted fw-semibold">E-mail</td><td><?= h((string)$athlete['email']) ?></td></tr>
+                    <tr><td class="text-muted fw-semibold">Telefon</td><td><?= h((string)($athlete['phone_contact'] ?? '')) ?: '–' ?></td></tr>
                     <tr><td class="text-muted fw-semibold">Trenér</td><td><?= h((string)($athlete['coach_name'] ?: $athlete['coach_username'])) ?></td></tr>
                     <tr><td class="text-muted fw-semibold">Datum narození</td><td><?= !empty($athlete['birth_date']) ? formatDate((string)$athlete['birth_date']) : '–' ?></td></tr>
                     <tr><td class="text-muted fw-semibold">Aktuální váha</td><td><?= $weightStats['current_weight'] !== null ? number_format((float)$weightStats['current_weight'], 1, ',', '') . ' kg' : '–' ?></td></tr>

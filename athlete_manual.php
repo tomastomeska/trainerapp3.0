@@ -148,10 +148,10 @@ renderAthleteHeader('Návod pro sportovce', false, true);
     <div class="card-body">
         <h6 class="fw-bold">Jak zkontrolovat a upravit profil</h6>
         <ol>
-            <li>V menu otevřete Profil.</li>
-            <li>Zkontrolujte osobní údaje, e-mail a další zobrazené informace.</li>
-            <li>Pokud je potřeba, klikněte na Upravit, změny zapište a uložte.</li>
-            <li>Po uložení ověřte, že se nové údaje zobrazují správně.</li>
+            <li>V levém menu klikněte na své jméno; otevře se dashboard s kartou <strong>Informace</strong>. Na telefonu otevřete tlačítko <strong>Upravit profil</strong>.</li>
+            <li>V kartě Informace klikněte na své jméno nebo na tlačítko <strong>Upravit</strong>.</li>
+            <li>Doplňte datum narození a telefonní kontakt, případně změňte e-mail. Jméno a příjmení upravuje trenér.</li>
+            <li>Klikněte na <strong>Uložit změny</strong> a ověřte nové údaje v kartě Informace.</li>
         </ol>
 
         <h6 class="fw-bold mt-3">Jak změnit heslo</h6>

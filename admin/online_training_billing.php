@@ -20,8 +20,9 @@ foreach ($requiredTables as $table) {
 }
 if ($billingSchemaReady) {
     $requiredColumns = [
-        'admin_online_training_invoices' => ['bank_account_at_issue', 'payment_note_at_issue', 'cancelled_at', 'viewed_at'],
-        'admin_online_training_settings' => ['bank_account'],
+        'admin_online_training_rates' => ['rate_1_50', 'rate_51_150', 'rate_151_500', 'rate_501_plus', 'is_customized'],
+        'admin_online_training_invoices' => ['rate_tier', 'bank_account_at_issue', 'payment_note_at_issue', 'cancelled_at', 'viewed_at'],
+        'admin_online_training_settings' => ['bank_account', 'default_rate_1_50', 'default_rate_51_150', 'default_rate_151_500', 'default_rate_501_plus'],
     ];
     $columnStmt = $pdo->prepare(
         'SELECT COUNT(*) FROM information_schema.columns
@@ -55,10 +56,32 @@ if (!$parsedMonth || $parsedMonth->format('Y-m') !== $month) {
 $monthStart = $parsedMonth->format('Y-m-01');
 $monthEnd = $parsedMonth->modify('+1 month')->format('Y-m-01');
 $returnUrl = BASE_URL . '/admin/online_training_billing.php?month=' . rawurlencode($month);
+$rateTiers = [
+    'rate_1_50' => ['field' => 'rate_1_50', 'label' => '1–50 tréninků', 'rate_label' => '1–50'],
+    'rate_51_150' => ['field' => 'rate_51_150', 'label' => '51–150 tréninků', 'rate_label' => '51–150'],
+    'rate_151_500' => ['field' => 'rate_151_500', 'label' => '151–500 tréninků', 'rate_label' => '151–500'],
+    'rate_501_plus' => ['field' => 'rate_501_plus', 'label' => '501 a více tréninků', 'rate_label' => '501+'],
+];
+$getRateTier = static function (int $count) use ($rateTiers): ?array {
+    if ($count <= 0) {
+        return null;
+    }
+    if ($count <= 50) {
+        return $rateTiers['rate_1_50'];
+    }
+    if ($count <= 150) {
+        return $rateTiers['rate_51_150'];
+    }
+    if ($count <= 500) {
+        return $rateTiers['rate_151_500'];
+    }
+    return $rateTiers['rate_501_plus'];
+};
 $settingsStmt = $billingSchemaReady
-    ? $pdo->query('SELECT bank_account FROM admin_online_training_settings WHERE id = 1')
+    ? $pdo->query('SELECT * FROM admin_online_training_settings WHERE id = 1')
     : false;
-$configuredBankAccount = $settingsStmt ? (string)($settingsStmt->fetchColumn() ?: '') : '';
+$billingSettings = $settingsStmt ? ($settingsStmt->fetch(PDO::FETCH_ASSOC) ?: []) : [];
+$configuredBankAccount = (string)($billingSettings['bank_account'] ?? '');
 $paymentAccountReady = accountForSpd(strtoupper((string)preg_replace('/\s+/', '', $configuredBankAccount))) !== null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$billingSchemaReady) {
@@ -86,21 +109,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  ON DUPLICATE KEY UPDATE bank_account = VALUES(bank_account)'
             )->execute([$rawAccount !== '' ? $rawAccount : null]);
             flash('success', $rawAccount === '' ? 'Číslo účtu bylo odebráno.' : 'Číslo účtu pro QR platby bylo uloženo.');
-        } elseif ($action === 'save_rate') {
-            $rawRate = trim((string)($_POST['rate'] ?? ''));
-            if ($coachId <= 0 || !preg_match('/^\d{1,8}(?:[.,]\d{1,2})?$/', $rawRate)) {
-                throw new RuntimeException('Zadejte platnou sazbu v Kč, nejvýše na dvě desetinná místa.');
+        } elseif ($action === 'save_default_rates') {
+            $rawRates = is_array($_POST['rates'] ?? null) ? $_POST['rates'] : [];
+            $rates = [];
+            foreach ($rateTiers as $field => $tier) {
+                $rawRate = trim((string)($rawRates[$field] ?? ''));
+                if (!preg_match('/^\d{1,8}(?:[.,]\d{1,2})?$/', $rawRate)) {
+                    throw new RuntimeException('Zadejte platnou výchozí sazbu pro pásmo ' . $tier['label'] . ', nejvýše na dvě desetinná místa.');
+                }
+                $rates[$field] = number_format((float)str_replace(',', '.', $rawRate), 2, '.', '');
             }
+            $pdo->prepare(
+                'UPDATE admin_online_training_settings
+                 SET default_rate_1_50 = ?, default_rate_51_150 = ?, default_rate_151_500 = ?, default_rate_501_plus = ?
+                 WHERE id = 1'
+            )->execute(array_values($rates));
+            flash('success', 'Výchozí sazby pro trenéry bez individuálního nastavení byly uloženy.');
+        } elseif ($action === 'save_rates') {
+            $rawRates = is_array($_POST['rates'] ?? null) ? $_POST['rates'] : [];
+            $rates = [];
+            foreach ($rateTiers as $field => $tier) {
+                $rawRate = trim((string)($rawRates[$field] ?? ''));
+                if (!preg_match('/^\d{1,8}(?:[.,]\d{1,2})?$/', $rawRate)) {
+                    throw new RuntimeException('Zadejte platnou sazbu pro pásmo ' . $tier['label'] . ', nejvýše na dvě desetinná místa.');
+                }
+                $rates[$field] = number_format((float)str_replace(',', '.', $rawRate), 2, '.', '');
+            }
+            if ($coachId <= 0) throw new RuntimeException('Vyberte trenéra.');
             $coachStmt = $pdo->prepare('SELECT id FROM coaches WHERE id = ? LIMIT 1');
             $coachStmt->execute([$coachId]);
             if (!$coachStmt->fetchColumn()) throw new RuntimeException('Trenér nebyl nalezen.');
-            $rate = number_format((float)str_replace(',', '.', $rawRate), 2, '.', '');
             $pdo->prepare(
-                'INSERT INTO admin_online_training_rates (coach_id, rate_per_training)
-                 VALUES (?, ?)
-                 ON DUPLICATE KEY UPDATE rate_per_training = VALUES(rate_per_training)'
-            )->execute([$coachId, $rate]);
-            flash('success', 'Sazba za odeslaný online trénink byla uložena.');
+                'INSERT INTO admin_online_training_rates
+                    (coach_id, rate_per_training, rate_1_50, rate_51_150, rate_151_500, rate_501_plus, is_customized)
+                 VALUES (?, ?, ?, ?, ?, ?, 1)
+                 ON DUPLICATE KEY UPDATE
+                    rate_per_training = VALUES(rate_per_training),
+                    rate_1_50 = VALUES(rate_1_50),
+                    rate_51_150 = VALUES(rate_51_150),
+                    rate_151_500 = VALUES(rate_151_500),
+                    rate_501_plus = VALUES(rate_501_plus),
+                    is_customized = 1'
+            )->execute([
+                $coachId,
+                $rates['rate_1_50'],
+                $rates['rate_1_50'],
+                $rates['rate_51_150'],
+                $rates['rate_151_500'],
+                $rates['rate_501_plus'],
+            ]);
+            flash('success', 'Sazby za všechna pásma online tréninků byly uloženy.');
+        } elseif ($action === 'use_default_rates') {
+            if ($coachId <= 0) throw new RuntimeException('Vyberte trenéra.');
+            $pdo->prepare('UPDATE admin_online_training_rates SET is_customized = 0 WHERE coach_id = ?')
+                ->execute([$coachId]);
+            flash('success', 'Trenér nyní používá výchozí sazby.');
         } elseif ($action === 'issue_invoice') {
             if ($coachId <= 0) throw new RuntimeException('Vyberte trenéra.');
             $pdo->beginTransaction();
@@ -119,10 +182,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('Za tento měsíc již existuje aktivní nebo uhrazená výzva.');
             }
 
-            $rateStmt = $pdo->prepare('SELECT rate_per_training FROM admin_online_training_rates WHERE coach_id = ? FOR UPDATE');
+            $rateStmt = $pdo->prepare(
+                'SELECT
+                    CASE WHEN COALESCE(r.is_customized, 0) = 1 THEN r.rate_1_50 ELSE s.default_rate_1_50 END AS rate_1_50,
+                    CASE WHEN COALESCE(r.is_customized, 0) = 1 THEN r.rate_51_150 ELSE s.default_rate_51_150 END AS rate_51_150,
+                    CASE WHEN COALESCE(r.is_customized, 0) = 1 THEN r.rate_151_500 ELSE s.default_rate_151_500 END AS rate_151_500,
+                    CASE WHEN COALESCE(r.is_customized, 0) = 1 THEN r.rate_501_plus ELSE s.default_rate_501_plus END AS rate_501_plus
+                 FROM admin_online_training_settings s
+                 LEFT JOIN admin_online_training_rates r ON r.coach_id = ?
+                 WHERE s.id = 1
+                 FOR UPDATE'
+            );
             $rateStmt->execute([$coachId]);
-            $rate = $rateStmt->fetchColumn();
-            if ($rate === false || (float)$rate <= 0) throw new RuntimeException('Nejprve nastavte trenérovi sazbu vyšší než 0 Kč.');
+            $rates = $rateStmt->fetch(PDO::FETCH_ASSOC);
 
             $countStmt = $pdo->prepare(
                 'SELECT COUNT(*) FROM online_trainings
@@ -132,7 +204,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $trainingCount = (int)$countStmt->fetchColumn();
             if ($trainingCount === 0) throw new RuntimeException('Trenér v tomto měsíci neodeslal žádný online trénink.');
 
-            $unitRate = (float)$rate;
+            $rateTier = $getRateTier($trainingCount);
+            $unitRate = (float)($rates[$rateTier['field']] ?? 0);
+            if ($unitRate <= 0) {
+                throw new RuntimeException('Nastavte trenérovi sazbu vyšší než 0 Kč pro pásmo ' . $rateTier['label'] . '.');
+            }
             $amount = round($trainingCount * $unitRate, 2);
             $monthLabel = $parsedMonth->format('m/Y');
             $invoiceSubject = 'Nová výzva k úhradě online tréninků – ' . $monthLabel;
@@ -141,12 +217,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($existingInvoice) {
                 $pdo->prepare(
                     "UPDATE admin_online_training_invoices
-                     SET sent_trainings_count = ?, rate_per_training = ?, amount = ?, bank_account_at_issue = ?,
+                     SET sent_trainings_count = ?, rate_per_training = ?, rate_tier = ?, amount = ?, bank_account_at_issue = ?,
                          payment_note_at_issue = ?, status = 'pending', issued_at = NOW(), paid_at = NULL, cancelled_at = NULL
                      WHERE id = ? AND coach_id = ? AND status = 'cancelled'"
                 )->execute([
                     $trainingCount,
                     number_format($unitRate, 2, '.', ''),
+                    $rateTier['rate_label'],
                     number_format($amount, 2, '.', ''),
                     $accountRaw,
                     $paymentNote,
@@ -156,13 +233,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $pdo->prepare(
                     "INSERT INTO admin_online_training_invoices
-                        (coach_id, billing_month, sent_trainings_count, rate_per_training, amount, bank_account_at_issue, payment_note_at_issue, status, issued_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NOW())"
-                )->execute([$coachId, $monthStart, $trainingCount, number_format($unitRate, 2, '.', ''), number_format($amount, 2, '.', ''), $accountRaw, $paymentNote]);
+                        (coach_id, billing_month, sent_trainings_count, rate_per_training, rate_tier, amount, bank_account_at_issue, payment_note_at_issue, status, issued_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())"
+                )->execute([$coachId, $monthStart, $trainingCount, number_format($unitRate, 2, '.', ''), $rateTier['rate_label'], number_format($amount, 2, '.', ''), $accountRaw, $paymentNote]);
             }
             $qrUrl = buildPaymentQrUrl($accountForPayment, $amount, $paymentNote);
             $invoiceBody = "Byla vám vystavena výzva k úhradě za online tréninky za období {$monthLabel}.\n\n"
                 . "Počet odeslaných tréninků: {$trainingCount}\n"
+                . 'Použité pásmo: ' . $rateTier['label'] . "\n"
                 . 'Sazba za trénink: ' . number_format($unitRate, 2, ',', ' ') . " Kč\n"
                 . 'Celkem k úhradě: ' . number_format($amount, 2, ',', ' ') . " Kč\n\n"
                 . 'Číslo účtu: ' . $accountRaw . "\n"
@@ -227,13 +305,18 @@ $rows = [];
 if ($billingSchemaReady) {
     $coachesStmt = $pdo->prepare(
         "SELECT c.id, c.name, c.username, c.is_active,
-            COALESCE(r.rate_per_training, 0) AS current_rate,
+            CASE WHEN COALESCE(r.is_customized, 0) = 1 THEN r.rate_1_50 ELSE s.default_rate_1_50 END AS rate_1_50,
+            CASE WHEN COALESCE(r.is_customized, 0) = 1 THEN r.rate_51_150 ELSE s.default_rate_51_150 END AS rate_51_150,
+            CASE WHEN COALESCE(r.is_customized, 0) = 1 THEN r.rate_151_500 ELSE s.default_rate_151_500 END AS rate_151_500,
+            CASE WHEN COALESCE(r.is_customized, 0) = 1 THEN r.rate_501_plus ELSE s.default_rate_501_plus END AS rate_501_plus,
             COALESCE(t.sent_count, 0) AS sent_count,
+            COALESCE(r.is_customized, 0) AS has_custom_rates,
             i.id AS invoice_id, i.sent_trainings_count AS invoice_training_count,
-            i.rate_per_training AS invoice_rate, i.amount AS invoice_amount,
+            i.rate_per_training AS invoice_rate, i.rate_tier AS invoice_tier, i.amount AS invoice_amount,
             i.status AS invoice_status, i.issued_at, i.paid_at, i.cancelled_at
      FROM coaches c
      LEFT JOIN admin_online_training_rates r ON r.coach_id = c.id
+     LEFT JOIN admin_online_training_settings s ON s.id = 1
      LEFT JOIN (
          SELECT trainer_id, COUNT(*) AS sent_count
          FROM online_trainings
@@ -283,7 +366,7 @@ renderAdminHeader('Vyúčtování online tréninků');
 
 <?php if (!$billingSchemaReady): ?>
 <div class="alert alert-warning">
-    Databáze vyúčtování online tréninků není připravená na QR platby a rušení výzev. Spusťte přípravu databáze:
+Databáze vyúčtování online tréninků není připravená na QR platby, rušení výzev a sazby podle pásem. Spusťte přípravu databáze:
     <?php if ($billingSchemaProblems): ?><ul class="mb-2 mt-2"><?php foreach ($billingSchemaProblems as $problem): ?><li><?= h($problem) ?></li><?php endforeach; ?></ul><?php endif; ?>
     <a class="btn btn-sm btn-warning ms-2" href="<?= BASE_URL ?>/scripts/migrate_admin_online_training_billing.php">Připravit databázi</a>
 </div>
@@ -300,6 +383,28 @@ renderAdminHeader('Vyúčtování online tréninků');
         </form>
     </div>
 </div>
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <h2 class="h5"><i class="fas fa-users me-2 text-primary"></i>Výchozí sazby pro trenéry</h2>
+        <p class="small text-muted">Použijí se pro trenéry bez individuálně uložených sazeb. Individuální sazby trenéra mají přednost.</p>
+        <form method="post" class="d-flex flex-wrap align-items-end gap-3">
+            <?= csrfField() ?><input type="hidden" name="action" value="save_default_rates">
+            <div class="row row-cols-2 row-cols-lg-4 g-2 flex-grow-1">
+                <?php foreach ($rateTiers as $field => $tier): ?>
+                <?php $defaultField = 'default_' . $field; ?>
+                <div class="col">
+                    <label class="form-label small mb-1" for="default-<?= h($field) ?>"><?= h($tier['label']) ?></label>
+                    <div class="input-group input-group-sm">
+                        <input id="default-<?= h($field) ?>" name="rates[<?= h($field) ?>]" type="number" min="0" max="99999999.99" step="0.01" class="form-control" value="<?= h(number_format((float)($billingSettings[$defaultField] ?? 0), 2, '.', '')) ?>" required>
+                        <span class="input-group-text">Kč</span>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <button class="btn btn-sm btn-outline-primary"><i class="fas fa-save me-1"></i>Uložit výchozí sazby</button>
+        </form>
+    </div>
+</div>
 <div class="row g-3 mb-4">
     <div class="col-sm-6"><div class="card border-0 shadow-sm h-100"><div class="card-body"><div class="text-muted">Odeslané online tréninky v měsíci</div><div class="display-6 fw-bold"><?= number_format($sentTotal, 0, ',', ' ') ?></div></div></div></div>
     <div class="col-sm-6"><div class="card border-0 shadow-sm h-100"><div class="card-body"><div class="text-muted">Vystavené výzvy za měsíc</div><div class="display-6 fw-bold"><?= number_format($invoiceTotal, 2, ',', ' ') ?> Kč</div></div></div></div>
@@ -311,26 +416,50 @@ renderAdminHeader('Vyúčtování online tréninků');
     <div class="card-body text-muted">V systému nejsou žádní trenéři.</div>
     <?php else: ?>
     <div class="table-responsive"><table class="table table-hover align-middle mb-0">
-        <thead class="table-light"><tr><th>Trenér</th><th class="text-end">Odeslané tréninky</th><th>Sazba za trénink</th><th>Výzva za měsíc</th><th>Stav / akce</th></tr></thead>
+        <thead class="table-light"><tr><th>Trenér</th><th class="text-end">Odeslané tréninky</th><th>Sazby za trénink podle pásma</th><th>Výzva za měsíc</th><th>Stav / akce</th></tr></thead>
         <tbody>
         <?php foreach ($rows as $row): ?>
+        <?php
+        $sentCount = (int)$row['sent_count'];
+        $currentRateTier = $getRateTier($sentCount);
+        $currentRate = $currentRateTier !== null ? (float)$row[$currentRateTier['field']] : 0.0;
+        $estimatedAmount = round($sentCount * $currentRate, 2);
+        ?>
         <tr>
             <td><?= h((string)($row['name'] ?: $row['username'])) ?><?= !(int)$row['is_active'] ? ' <span class="badge bg-secondary">Neaktivní</span>' : '' ?></td>
-            <td class="text-end fw-semibold"><?= number_format((int)$row['sent_count'], 0, ',', ' ') ?></td>
+            <td class="text-end fw-semibold"><?= number_format($sentCount, 0, ',', ' ') ?></td>
             <td>
-                <?php if ($row['invoice_id']): ?><div class="small text-muted mb-1">Ve výzvě: <?= number_format((float)$row['invoice_rate'], 2, ',', ' ') ?> Kč za trénink</div><?php endif; ?>
-                <form method="post" class="d-flex gap-2 align-items-center">
-                    <?= csrfField() ?><input type="hidden" name="action" value="save_rate"><input type="hidden" name="coach_id" value="<?= (int)$row['id'] ?>">
-                    <div class="input-group input-group-sm" style="max-width:180px"><input aria-label="Sazba za odeslaný online trénink v Kč" name="rate" type="number" min="0" max="99999999.99" step="0.01" class="form-control" value="<?= h(number_format((float)$row['current_rate'], 2, '.', '')) ?>" required><span class="input-group-text">Kč</span></div>
-                    <button class="btn btn-sm btn-outline-primary">Uložit</button>
+                <?php if ($row['invoice_id']): ?>
+                <div class="small text-muted mb-1">Ve výzvě: <?= number_format((float)$row['invoice_rate'], 2, ',', ' ') ?> Kč za trénink (<?= $row['invoice_tier'] === 'legacy' ? 'původní sazba' : 'pásmo ' . h((string)$row['invoice_tier']) ?>)</div>
+                <?php endif; ?>
+                <form method="post" class="d-grid gap-2" style="width:340px;max-width:100%">
+                    <?= csrfField() ?><input type="hidden" name="action" value="save_rates"><input type="hidden" name="coach_id" value="<?= (int)$row['id'] ?>">
+                    <div class="row row-cols-2 g-2">
+                        <?php foreach ($rateTiers as $field => $tier): ?>
+                        <div class="col">
+                            <label class="form-label small mb-1" for="rate-<?= (int)$row['id'] ?>-<?= h($field) ?>"><?= h($tier['rate_label']) ?></label>
+                            <div class="input-group input-group-sm">
+                                <input id="rate-<?= (int)$row['id'] ?>-<?= h($field) ?>" aria-label="Sazba za trénink, pásmo <?= h($tier['label']) ?>" name="rates[<?= h($field) ?>]" type="number" min="0" max="99999999.99" step="0.01" class="form-control" value="<?= h(number_format((float)$row[$field], 2, '.', '')) ?>" required>
+                                <span class="input-group-text">Kč</span>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <button class="btn btn-sm btn-outline-primary justify-self-start">Uložit sazby</button>
                 </form>
+                <?php if ((int)$row['has_custom_rates'] === 1): ?>
+                <form method="post" class="mt-1">
+                    <?= csrfField() ?><input type="hidden" name="action" value="use_default_rates"><input type="hidden" name="coach_id" value="<?= (int)$row['id'] ?>">
+                    <button class="btn btn-sm btn-link p-0 text-muted">Použít výchozí sazby</button>
+                </form>
+                <?php endif; ?>
             </td>
             <td>
                 <?php if ($row['invoice_id']): ?>
                 <strong><?= number_format((float)$row['invoice_amount'], 2, ',', ' ') ?> Kč</strong>
-                <div class="small text-muted"><?= (int)$row['invoice_training_count'] ?> × <?= number_format((float)$row['invoice_rate'], 2, ',', ' ') ?> Kč                </div>
+                <div class="small text-muted"><?= (int)$row['invoice_training_count'] ?> × <?= number_format((float)$row['invoice_rate'], 2, ',', ' ') ?> Kč</div>
                 <?php else: ?>
-                <?= number_format((int)$row['sent_count'] * (float)$row['current_rate'], 2, ',', ' ') ?> Kč <span class="small text-muted">(zatím nevystaveno)</span>
+                <?= number_format($estimatedAmount, 2, ',', ' ') ?> Kč <span class="small text-muted">(zatím nevystaveno<?= $currentRateTier !== null ? ', pásmo ' . h($currentRateTier['rate_label']) : '' ?>)</span>
                 <?php endif; ?>
             </td>
             <td>
@@ -338,7 +467,7 @@ renderAdminHeader('Vyúčtování online tréninků');
                 <span class="badge bg-success">Uhrazeno</span><div class="small text-muted"><?= h(formatDateTime((string)$row['paid_at'])) ?></div>
                 <?php elseif ($row['invoice_id'] && $row['invoice_status'] === 'cancelled'): ?>
                 <span class="badge bg-secondary">Zrušeno</span>
-                <?php if ((int)$row['sent_count'] > 0 && (float)$row['current_rate'] > 0 && $paymentAccountReady): ?>
+                <?php if ($sentCount > 0 && $currentRate > 0 && $paymentAccountReady): ?>
                 <form method="post" class="mt-2" onsubmit="return confirm('Vystavit novou výzvu za toto období?');">
                     <?= csrfField() ?><input type="hidden" name="action" value="issue_invoice"><input type="hidden" name="coach_id" value="<?= (int)$row['id'] ?>">
                     <button class="btn btn-sm btn-warning fw-bold">Vystavit znovu</button>
@@ -354,15 +483,15 @@ renderAdminHeader('Vyúčtování online tréninků');
                     <?= csrfField() ?><input type="hidden" name="action" value="cancel_invoice"><input type="hidden" name="coach_id" value="<?= (int)$row['id'] ?>"><input type="hidden" name="invoice_id" value="<?= (int)$row['invoice_id'] ?>">
                     <button class="btn btn-sm btn-outline-danger">Zrušit výzvu</button>
                 </form>
-                <?php elseif ((int)$row['sent_count'] > 0 && (float)$row['current_rate'] > 0): ?>
-                <form method="post" onsubmit="return confirm('Vystavit interní výzvu k úhradě <?= h(number_format((int)$row['sent_count'] * (float)$row['current_rate'], 2, ',', ' ')) ?> Kč za <?= (int)$row['sent_count'] ?> online tréninků?');">
+                <?php elseif ($sentCount > 0 && $currentRate > 0): ?>
+                <form method="post" onsubmit="return confirm('Vystavit interní výzvu k úhradě <?= h(number_format($estimatedAmount, 2, ',', ' ')) ?> Kč za <?= $sentCount ?> online tréninků<?= $currentRateTier !== null ? ' (pásmo ' . h($currentRateTier['rate_label']) . ')' : '' ?>?');">
                     <?= csrfField() ?><input type="hidden" name="action" value="issue_invoice"><input type="hidden" name="coach_id" value="<?= (int)$row['id'] ?>">
                     <button class="btn btn-sm btn-warning fw-bold" <?= !$paymentAccountReady ? 'disabled title="Nejprve nastavte číslo účtu pro QR platby."' : '' ?>>Vystavit výzvu</button>
                 </form>
-                <?php elseif ((int)$row['sent_count'] === 0): ?>
+                <?php elseif ($sentCount === 0): ?>
                 <span class="text-muted small">Bez odeslaných tréninků</span>
                 <?php else: ?>
-                <span class="text-muted small">Nastavte sazbu pro trenéra</span>
+                <span class="text-muted small">Nastavte sazbu pro pásmo <?= $currentRateTier !== null ? h($currentRateTier['rate_label']) : '' ?></span>
                 <?php endif; ?>
             </td>
         </tr>
@@ -373,7 +502,7 @@ renderAdminHeader('Vyúčtování online tréninků');
 </div>
 
 <div class="alert alert-info mt-4 mb-0">
-    <i class="fas fa-circle-info me-1"></i>Počítají se tréninky podle data odeslání, včetně těch, které byly následně dokončeny. Při vystavení se sazba, počet tréninků a částka uloží jako neměnný měsíční záznam. Trenér dostane interní zprávu s odkazem na výzvu v sekci Platby.
+    <i class="fas fa-circle-info me-1"></i>Počítají se tréninky podle data odeslání, včetně těch, které byly následně dokončeny. Pro celý měsíční počet se použije sazba dosaženého pásma. Při vystavení se sazba, počet tréninků a částka uloží jako neměnný měsíční záznam. Trenér dostane interní zprávu s odkazem na výzvu v sekci Platby.
 </div>
 <?php endif; ?>
 

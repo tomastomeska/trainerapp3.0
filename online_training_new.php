@@ -55,6 +55,7 @@ $sets = $pdo->prepare($setsSql); $sets->execute([$coachId]); $sets = $sets->fetc
 require_once __DIR__ . '/includes/header.php'; renderHeader('Nový online trénink', false, true);
 ?><div class="d-flex align-items-center gap-3 mb-4"><a href="<?= BASE_URL ?>/online_training.php" class="btn btn-outline-secondary btn-sm">Zpět</a><h2 class="mb-0"><i class="fas fa-laptop me-2 text-warning"></i>Nový online trénink</h2></div>
 <?php if ($error): ?><div class="alert alert-danger"><?= h($error) ?></div><?php endif; ?>
+<p class="small"><i class="fas fa-circle-question me-1"></i>Potřebujete poradit? <a href="<?= BASE_URL ?>/online_training_manual.php">Otevřete podrobný návod pro online tréninky</a>.</p>
 <form method="post" enctype="multipart/form-data" class="card border-0 shadow-sm">
     <div class="card-body">
         <?= csrfField() ?>

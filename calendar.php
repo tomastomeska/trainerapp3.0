@@ -27,7 +27,9 @@ function getCoachAppleCaldavBackfillStats(PDO $pdo, int $coachId): array
     $stats = [
         'missing_events' => 0,
         'queue_pending' => 0,
+        'queue_failed' => 0,
         'queue_processing' => 0,
+        'last_queue_error' => null,
         'available' => false,
     ];
 
@@ -49,7 +51,8 @@ function getCoachAppleCaldavBackfillStats(PDO $pdo, int $coachId): array
 
     $queueStmt = $pdo->prepare(
         'SELECT
-            SUM(CASE WHEN status IN ("pending", "failed") THEN 1 ELSE 0 END) AS queue_pending,
+            SUM(CASE WHEN status = "pending" THEN 1 ELSE 0 END) AS queue_pending,
+            SUM(CASE WHEN status = "failed" THEN 1 ELSE 0 END) AS queue_failed,
             SUM(CASE WHEN status = "processing" THEN 1 ELSE 0 END) AS queue_processing
          FROM coach_apple_caldav_sync_jobs
          WHERE coach_id = ?'
@@ -58,12 +61,29 @@ function getCoachAppleCaldavBackfillStats(PDO $pdo, int $coachId): array
     $queue = $queueStmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
     $stats['queue_pending'] = (int)($queue['queue_pending'] ?? 0);
+    $stats['queue_failed'] = (int)($queue['queue_failed'] ?? 0);
     $stats['queue_processing'] = (int)($queue['queue_processing'] ?? 0);
+    $lastErrorStmt = $pdo->prepare(
+        'SELECT last_error
+         FROM coach_apple_caldav_sync_jobs
+         WHERE coach_id = ?
+           AND status = "failed"
+           AND last_error IS NOT NULL
+           AND last_error <> ""
+           AND updated_at > COALESCE(
+               (SELECT apple_caldav_last_success_at FROM coaches WHERE id = ?),
+               "1000-01-01 00:00:00"
+           )
+         ORDER BY updated_at DESC, id DESC
+         LIMIT 1'
+    );
+    $lastErrorStmt->execute([$coachId, $coachId]);
+    $stats['last_queue_error'] = $lastErrorStmt->fetchColumn() ?: null;
 
     return $stats;
 }
 
-$coachStmt = $pdo->prepare('SELECT id, name, apple_calendar_sync_enabled, apple_calendar_token, apple_caldav_sync_enabled, apple_caldav_calendar_url, apple_caldav_username, apple_caldav_app_password, google_calendar_sync_enabled, google_calendar_id, google_oauth_refresh_token FROM coaches WHERE id = ? LIMIT 1');
+$coachStmt = $pdo->prepare('SELECT id, name, apple_calendar_sync_enabled, apple_calendar_token, apple_caldav_sync_enabled, apple_caldav_calendar_url, apple_caldav_username, apple_caldav_app_password, apple_caldav_last_error, apple_caldav_last_success_at, google_calendar_sync_enabled, google_calendar_id, google_oauth_refresh_token FROM coaches WHERE id = ? LIMIT 1');
 $coachStmt->execute([$coachId]);
 $coach = $coachStmt->fetch();
 
@@ -868,21 +888,21 @@ renderHeader('Kalendář', false, true);
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                 <div>
                     <h5 class="mb-1"><i class="fas fa-dumbbell me-2 text-warning"></i>Tréninky</h5>
-                    <div class="small text-muted">Od dneška vzestupně. Oranžové položky čekají na vyřízení.</div>
+                    <div class="small text-muted">Výchozí přehled zobrazuje všechny žádosti čekající na vyřízení napříč kalendářem.</div>
                 </div>
                 <div class="d-flex gap-2 flex-wrap align-items-center">
-                <select class="form-select form-select-sm training-filter-select" id="trainingYearFilter">
+                <select class="form-select form-select-sm training-filter-select" id="trainingYearFilter" hidden>
                     <?php for ($trainingYear = (int)date('Y') - 2; $trainingYear <= (int)date('Y') + 1; $trainingYear++): ?><option value="<?= $trainingYear ?>" <?= $trainingYear === (int)date('Y') ? 'selected' : '' ?>><?= $trainingYear ?></option><?php endfor; ?>
                 </select>
                 <select class="form-select form-select-sm training-filter-select" id="trainingStatusFilter">
-                    <option value="all" selected>Všechny stavy</option>
+                    <option value="actionable" selected>Čeká na schválení / Potvrzení změny</option>
+                    <option value="all">Všechny stavy</option>
                     <option value="pending">Čeká na schválení</option>
                     <option value="change">Potvrzení změny</option>
                     <option value="approved">Schválené</option>
                     <option value="planned">Naplánované</option>
                     <option value="completed">Proběhlé</option>
                     <option value="cancelled">Zrušené</option>
-                    <option value="all">Vše</option>
                 </select>
                 <select class="form-select form-select-sm" id="trainingAthleteFilter" style="max-width: 240px">
                     <option value="0">Všichni sportovci</option>
@@ -905,7 +925,7 @@ renderHeader('Kalendář', false, true);
         <div class="card-body">
             <div class="border rounded-3 p-3 mb-3 bg-light">
                 <div class="fw-semibold mb-2">Apple rychly sync (CalDAV)</div>
-                <div class="small text-muted mb-3">Doporuceny rezim pro iPhone/iPad/Mac. Zmeny se posilaji okamzite z TrainerApp (bez cekani na ICS refresh).</div>
+                <div class="small text-muted mb-3">Změny se zařadí do synchronizační fronty. Bez zapnutého inline zpracování je pravidelně odesílá naplánovaný běh cron_apple_caldav_sync.php.</div>
 
                 <form method="post" class="mb-2 js-single-submit" id="appleCaldavForm">
                     <?= csrfField() ?>
@@ -946,7 +966,8 @@ renderHeader('Kalendář', false, true);
                     <div class="alert alert-info py-2 px-3 mt-3 mb-0 small">
                         <strong>Stav přenosu historie:</strong>
                         Zbývá nepřenesených: <strong><?= (int)$appleBackfillStats['missing_events'] ?></strong>,
-                        čeká ve frontě: <strong><?= (int)$appleBackfillStats['queue_pending'] ?></strong>
+                        čeká ve frontě: <strong><?= (int)$appleBackfillStats['queue_pending'] ?></strong>,
+                        chybových úloh: <strong><?= (int)$appleBackfillStats['queue_failed'] ?></strong>
                         <?php if ((int)$appleBackfillStats['queue_processing'] > 0): ?>
                             , právě se zpracovává: <strong><?= (int)$appleBackfillStats['queue_processing'] ?></strong>
                         <?php endif; ?>.
@@ -965,6 +986,19 @@ renderHeader('Kalendář', false, true);
 
                 <?php if ($appleCaldavConnected): ?>
                 <div class="small text-success mt-2"><i class="fas fa-circle-check me-1"></i>Apple CalDAV je nastaveny.</div>
+                <div class="small text-muted mt-1">
+                    Poslední úspěšný přenos: <?= !empty($coach['apple_caldav_last_success_at']) ? h((string)$coach['apple_caldav_last_success_at']) : 'zatím žádný zaznamenaný' ?>.
+                </div>
+                <?php $appleCaldavError = trim((string)($appleBackfillStats['last_queue_error'] ?? $coach['apple_caldav_last_error'] ?? '')); ?>
+                <?php if ($appleCaldavError !== ''): ?>
+                <div class="alert alert-danger py-2 px-3 mt-2 mb-0 small">
+                    <strong>Poslední chyba synchronizace:</strong> <?= h($appleCaldavError) ?>
+                </div>
+                <?php elseif (!empty($coach['apple_caldav_sync_enabled']) && (int)($appleBackfillStats['queue_pending'] ?? 0) > 0): ?>
+                <div class="alert alert-warning py-2 px-3 mt-2 mb-0 small">
+                    Úlohy čekají ve frontě. Ověřte, že je na serveru pravidelně naplánován cron_apple_caldav_sync.php.
+                </div>
+                <?php endif; ?>
                 <div class="alert alert-danger py-2 px-3 mt-2 mb-0 small">
                     <div class="fw-semibold"><i class="fas fa-triangle-exclamation me-1"></i>Pozor na zdvojeni po instalaci profilu</div>
                     <div>iOS po instalaci .mobileconfig prida vsechny kalendare Apple uctu. V aplikaci Kalendar nechte v sekci TrainerApp zapnuty pouze cilovy kalendar pro TrainerApp, ostatni odskrtnete.</div>
@@ -2886,23 +2920,28 @@ document.addEventListener('DOMContentLoaded', () => {
             const isChange = item.status === 'change';
             const isCancelled = item.status === 'cancelled';
             const isCompleted = isApproved && new Date(item.starts_at.replace(' ', 'T')) < new Date();
-            const statusLabel = isCancelled ? 'Zrušený' : (isCompleted ? 'Proběhlý' : (isApproved ? 'Naplánovaný' : (isChange ? 'Čeká na změnu' : 'Čeká na schválení')));
+            const statusLabel = isCancelled ? 'Zrušený' : (isCompleted ? 'Proběhlý' : (isApproved ? 'Naplánovaný' : (isChange ? 'Potvrzení změny' : 'Čeká na schválení')));
             const statusClass = isCancelled || isCompleted ? 'border-secondary' : (isApproved ? 'border-success' : 'border-warning');
+            const focusDate = encodeURIComponent(String(item.starts_at || '').slice(0, 10));
+            const calendarLink = `<?= BASE_URL ?>/calendar.php?tab=week&focus_date=${focusDate}`;
             const actionHtml = item.can_approve
-                ? `<button type="button" class="btn btn-sm btn-success js-training-approve" data-event-id="${Number(item.id || 0)}"><i class="fas fa-check me-1"></i>Schválit</button><button type="button" class="btn btn-sm btn-outline-danger js-training-cancel" data-event-id="${Number(item.id || 0)}"><i class="fas fa-ban me-1"></i>Zrušit</button>`
-                : `<button type="button" class="btn btn-sm btn-outline-danger js-training-cancel" data-event-id="${Number(item.id || 0)}"><i class="fas fa-ban me-1"></i>Zrušit</button>`;
+                ? `<button type="button" class="btn btn-sm btn-success js-training-approve" data-event-id="${Number(item.id || 0)}"><i class="fas fa-check me-1"></i>Schválit</button><button type="button" class="btn btn-sm btn-outline-danger js-training-cancel" data-event-id="${Number(item.id || 0)}" data-pending-request="${item.is_pending_request ? '1' : '0'}" data-has-athlete="${item.has_athlete ? '1' : '0'}" data-title-type="${escapeHtml(item.title_type || 'training')}"><i class="fas fa-ban me-1"></i>${item.is_pending_request ? 'Zamítnout' : 'Zrušit'}</button>`
+                : `<button type="button" class="btn btn-sm btn-outline-danger js-training-cancel" data-event-id="${Number(item.id || 0)}" data-pending-request="${item.is_pending_request ? '1' : '0'}" data-has-athlete="${item.has_athlete ? '1' : '0'}" data-title-type="${escapeHtml(item.title_type || 'training')}"><i class="fas fa-ban me-1"></i>Zrušit</button>`;
             const sourceHtml = item.source
                 ? `<div class="small mt-2 p-2 bg-light rounded"><span class="badge text-bg-secondary me-1">Původní</span>${escapeHtml(item.source.date_label)} ${escapeHtml(item.source.time_label)}${item.source.location ? ` · ${escapeHtml(item.source.location)}` : ''}</div>`
                 : '';
             const col = document.createElement('div');
             col.className = 'col-12 col-lg-6';
-            col.innerHTML = `<article class="card h-100 border-2 ${statusClass} shadow-sm"><div class="card-body"><div class="d-flex justify-content-between gap-2"><div><div class="fw-bold">${escapeHtml(item.date_label)} · ${escapeHtml(item.time_label)}</div><div class="mt-1">${escapeHtml(item.title)}</div></div><span class="badge ${isCancelled || isCompleted ? 'text-bg-secondary' : (isApproved ? 'text-bg-success' : 'text-bg-warning')}">${statusLabel}</span></div><div class="small text-muted mt-2"><i class="fas fa-user me-1"></i>${escapeHtml(item.athlete_label || 'Bez sportovce')}${item.location ? ` · <i class="fas fa-location-dot ms-2 me-1"></i>${escapeHtml(item.location)}` : ''}</div>${sourceHtml}${isCancelled ? '' : `<div class="d-flex gap-2 mt-3">${actionHtml}</div>`}</div></article>`;
+            col.innerHTML = `<article class="card h-100 border-2 ${statusClass} shadow-sm"><div class="card-body"><div class="d-flex justify-content-between gap-2"><div><div class="fw-bold">${escapeHtml(item.date_label)} · ${escapeHtml(item.time_label)}</div><div class="mt-1">${escapeHtml(item.title)}</div></div><span class="badge ${isCancelled || isCompleted ? 'text-bg-secondary' : (isApproved ? 'text-bg-success' : 'text-bg-warning')}">${statusLabel}</span></div><div class="small text-muted mt-2"><i class="fas fa-user me-1"></i>${escapeHtml(item.athlete_label || 'Bez sportovce')}${item.location ? ` · <i class="fas fa-location-dot ms-2 me-1"></i>${escapeHtml(item.location)}` : ''}</div>${sourceHtml}${isCancelled ? '' : `<div class="d-flex gap-2 mt-3 flex-wrap"><a class="btn btn-sm btn-outline-primary" href="${calendarLink}"><i class="fas fa-calendar-day me-1"></i>Přejít do kalendáře</a>${actionHtml}</div>`}</div></article>`;
             trainingTiles.appendChild(col);
         });
     }
 
     async function loadTrainingTiles() {
         if (!trainingTiles) return;
+        const showDateFilters = !trainingStatusFilter || trainingStatusFilter.value !== 'actionable';
+        if (trainingYearFilter) trainingYearFilter.hidden = !showDateFilters;
+        if (trainingMonthFilter) trainingMonthFilter.hidden = !showDateFilters;
         trainingTiles.innerHTML = '<div class="col-12 text-muted">Načítám tréninky...</div>';
         const query = new URLSearchParams({
             athlete_id: trainingAthleteFilter ? trainingAthleteFilter.value : '0',
@@ -3452,12 +3491,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!eventId) return;
 
         const canceledEvent = events.find((event) => Number(event.id) === eventId);
-        if (cancelBtn && !confirm('Opravdu chcete tento trénink zrušit?')) return;
+        const isPendingRequest = cancelBtn && cancelBtn.dataset.pendingRequest === '1';
+        if (cancelBtn && !confirm(isPendingRequest ? 'Opravdu chcete žádost zamítnout a smazat?' : 'Opravdu chcete tento trénink zrušit?')) return;
         const body = { csrf_token: csrfToken, event_id: eventId };
         if (cancelBtn) {
             body.delete_scope = 'single';
-            const hasAthlete = Number(canceledEvent?.athlete_id || 0) > 0 || Number(canceledEvent?.second_athlete_id || 0) > 0;
-            body.replacement_mode = hasAthlete && (canceledEvent?.title_type || 'training') === 'training'
+            const hasAthlete = cancelBtn.dataset.hasAthlete === '1'
+                || Number(canceledEvent?.athlete_id || 0) > 0
+                || Number(canceledEvent?.second_athlete_id || 0) > 0;
+            const titleType = cancelBtn.dataset.titleType || canceledEvent?.title_type || 'training';
+            body.replacement_mode = !isPendingRequest && hasAthlete && titleType === 'training'
                 ? await askCalendarReplacementChoice()
                 : 'none';
             if (body.replacement_mode === null) return;
@@ -3561,9 +3604,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        const isPendingRequest = activeEvent
+            && (activeEvent.approval_status || 'approved') === 'pending'
+            && Number(activeEvent.requested_by_athlete_id || 0) > 0;
         const selectedTitleType = getSelectedEventTitleType();
         const hasAthlete = Number(eventAthleteInput.value || 0) > 0 || Number(eventSecondAthleteInput.value || 0) > 0;
-        const replacementMode = hasAthlete && selectedTitleType === 'training'
+        const replacementMode = !isPendingRequest && hasAthlete && selectedTitleType === 'training'
             ? await askCalendarReplacementChoice()
             : 'none';
         if (replacementMode === null) return;

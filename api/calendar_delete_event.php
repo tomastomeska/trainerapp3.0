@@ -108,6 +108,9 @@ if (!$event) {
     exit;
 }
 
+$isPendingRequest = (string)($event['approval_status'] ?? 'approved') === 'pending'
+    && !empty($event['requested_by_athlete_id']);
+
 $eventsToCancel = [];
 if ($deleteScope === 'future' && !empty($event['series_id'])) {
     $cancelStmt = $pdo->prepare(
@@ -119,6 +122,7 @@ if ($deleteScope === 'future' && !empty($event['series_id'])) {
                 is_makeup_session,
                 ' . ($hasFreeSessionColumn ? 'COALESCE(is_free_session, 0)' : '0') . ' AS is_free_session,
                 title_type,
+                requested_by_athlete_id,
                 billing_month,
                 billing_issue_number,
                 custom_title,
@@ -143,6 +147,7 @@ if ($deleteScope === 'future' && !empty($event['series_id'])) {
         'is_makeup_session' => $event['is_makeup_session'] ?? 0,
         'is_free_session' => $event['is_free_session'] ?? 0,
         'title_type' => $event['title_type'] ?? 'training',
+        'requested_by_athlete_id' => $event['requested_by_athlete_id'] ?? null,
         'billing_month' => $event['billing_month'] ?? null,
         'billing_issue_number' => $event['billing_issue_number'] ?? 1,
         'custom_title' => $event['custom_title'] ?? null,
@@ -163,7 +168,7 @@ try {
 }
 
 $paidAffectedCount = 0;
-if ($hasPayments) {
+if ($hasPayments && !$isPendingRequest) {
     if ($deleteScope === 'future' && !empty($event['series_id'])) {
         $billingExpr = $hasBillingMonth
             ? "DATE_FORMAT(COALESCE(e.billing_month, e.starts_at), '%Y-%m-01')"
@@ -236,6 +241,12 @@ try {
     }
 
     foreach ($eventsToCancel as $cancelEvent) {
+        if ((string)($cancelEvent['approval_status'] ?? 'approved') === 'pending'
+            && !empty($cancelEvent['requested_by_athlete_id'])
+        ) {
+            continue;
+        }
+
         $participantIds = array_values(array_unique(array_filter([
             (int)($cancelEvent['athlete_id'] ?? 0),
             (int)($cancelEvent['second_athlete_id'] ?? 0),

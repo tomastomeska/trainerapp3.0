@@ -305,22 +305,8 @@ renderHeader('Návod pro trenéry', false, true);
     <div class="card-header fw-semibold"><i class="fas fa-laptop me-2 text-warning"></i>Online tréninky</div>
     <div class="card-body">
         <p>Online trénink je samostatně odcvičený trénink sportovce. Je oddělený od klasického tréninku s trenérem a jeho výsledky se nepoužijí jako poslední výkon pro klasickou session.</p>
-        <p>Každý sportovec má u každého trenéra vlastní číselnou řadu online tréninků od 1. Číslo online tréninku není databázové ID.</p>
-        <h6 class="fw-bold">Příprava a odeslání</h6>
-        <ol>
-            <li>V detailu sportovce vytvořte předplatné s cenou a začátkem a koncem platnosti. Výzva k platbě se otevře ihned.</li>
-            <li>V nabídce <strong>Online předplatná</strong> uvidíte platná, budoucí uhrazená i neuhrazená předplatná. Platná předplatná končící do 15 dní jsou zvýrazněná; z přehledu otevřete detail sportovce nebo platby. Budoucí předplatné opravňuje k odesílání až od začátku platnosti.</li>
-            <li>V sekci <strong>Platby → Online předplatná – výzvy k úhradě</strong> uvidíte neuhrazené výzvy ze všech měsíců. Tlačítko označí jako uhrazenou celou výzvu včetně ostatních případných položek.</li>
-            <li>Otevřete Online tréninky a klikněte na Nový online trénink.</li>
-            <li>Vyberte sportovce a sadu. K vytvoření i odeslání je nutné platné a uhrazené předplatné.</li>
-            <li>Vyplňte instrukce, vyberte fotografie a videa a přidejte internetové odkazy. Ke každému odkazu můžete doplnit vysvětlení; přílohy a odkazy lze přidat také v detailu tréninku.</li>
-            <li>V draftu nastavte počet sérií a předepsané váhy a opakování. Hodnoty se průběžně ukládají.</li>
-            <li>Přidejte fotografie, videa nebo odkazy k celému tréninku či konkrétnímu cviku.</li>
-            <li>Po odeslání sportovec dostane interní zprávu a e-mail se seznamem cviků.</li>
-            <li>Ve výpisu a detailu tréninku sledujte stav: po odeslání <strong>Odesláno</strong>, po zahájení sportovcem <strong>Trénink zahájen – probíhá</strong> a po ukončení <strong>Dokončený</strong>. Pro zobrazení změny již otevřenou stránku obnovte. Skutečné výsledky jsou pod předepsanými cviky; fotografie, videa a odkazy od sportovce najdete v sekci <strong>Přílohy sportovce</strong>.</li>
-        </ol>
-        <h6 class="fw-bold mt-3">Účtování</h6>
-        <ul class="mb-0"><li>Počet tréninků v platném předplatném není omezen. Cena 0 Kč znamená bezplatné předplatné.</li><li>Předplatné se přidá do neuhrazené měsíční výzvy; pokud už byla uhrazena, vznikne dodatečná výzva. Sportovec dostane upozornění a podle dostupných údajů také e-mail.</li><li>Již odeslaný trénink lze dokončit i po skončení předplatného. Historické balíky zůstávají v přehledu, ale neopravňují k novému odeslání.</li></ul>
+        <p>Každý sportovec má u každého trenéra vlastní číselnou řadu online tréninků od 1. Pro vytvoření a odeslání je potřeba platné předplatné. Připravte koncept, nastavte cviky a série, přidejte instrukce a přílohy a odešlete jej sportovci. Po odcvičení zkontrolujte výsledky a pošlete sportovci zpětnou vazbu.</p>
+        <p class="mb-0"><a class="btn btn-warning btn-sm fw-bold" href="<?= BASE_URL ?>/online_training_manual.php"><i class="fas fa-book-open me-1"></i>Otevřít podrobný návod včetně obrázků a řešení potíží</a></p>
     </div>
 </div>
 
@@ -343,7 +329,14 @@ renderHeader('Návod pro trenéry', false, true);
             <li>Zvolte Upravit nebo Zrušit.</li>
             <li>Při úpravě změňte potřebná pole a uložte.</li>
             <li>Po zrušení ověřte, že událost zmizela nebo je označená jako zrušená.</li>
-            <li>V měsíčním přehledu si průběžně hlídejte také požadavky na schválení, abyste je nemuseli dohledávat v detailu každého dne.</li>
+        </ol>
+
+        <h6 class="fw-bold mt-3">Jak vyřídit žádosti sportovců</h6>
+        <ol>
+            <li>V Kalendáři otevřete záložku <strong>Tréninky</strong>. Ve výchozím stavu uvidíte žádosti <strong>Čeká na schválení</strong> a <strong>Potvrzení změny</strong>.</li>
+            <li>U každé karty klikněte na <strong>Přejít do kalendáře</strong>; otevře se týden s daným termínem.</li>
+            <li>Nový požadavek schvalte, nebo jej zamítněte. U neschváleného požadavku se nevybírá náhradní termín — žádost se jednoduše smaže.</li>
+            <li>Filtr Tréninky můžete kdykoliv změnit, pokud potřebujete zobrazit schválené, naplánované nebo proběhlé termíny.</li>
         </ol>
 
         <h6 class="fw-bold mt-3">Jak propojit kalendář s Apple Kalendářem</h6>
@@ -357,6 +350,8 @@ renderHeader('Návod pro trenéry', false, true);
             <li>Pokud migrujete historii, použijte Natáhnout dřívější události.</li>
             <li>Pamatujte, že se synchronizují události; uzamčené časy se neposílají.</li>
             <li>Při duplicitách po instalaci profilu nechte stejný kalendář zapnutý jen v jedné sekci (TrainerApp nebo iCloud).</li>
+            <li>Stav přenosu a poslední chybu najdete přímo v záložce Apple Kalendář. Pokud úlohy čekají ve frontě, ověřte u správce, že na serveru pravidelně běží <strong>cron_apple_caldav_sync.php</strong>.</li>
+            <li>Pokud se zobrazuje chyba přihlášení nebo přístupu, zkontrolujte Apple ID, app-specific heslo a URL cílového kalendáře; běžné heslo k Apple ID nefunguje.</li>
         </ol>
 
         <h6 class="fw-bold mt-3">Jak propojit kalendář s Google Kalendářem</h6>

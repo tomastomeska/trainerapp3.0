@@ -1137,7 +1137,7 @@ try {
             $markInvoiceViewedStmt->execute([$openOnlineInvoiceId, $coachId]);
         }
         $adminOnlineTrainingInvoiceStmt = $pdo->prepare(
-            'SELECT id, billing_month, sent_trainings_count, rate_per_training, amount, bank_account_at_issue, payment_note_at_issue, status, issued_at, paid_at, cancelled_at, viewed_at
+            'SELECT id, billing_month, sent_trainings_count, rate_per_training, rate_tier, amount, bank_account_at_issue, payment_note_at_issue, status, issued_at, paid_at, cancelled_at, viewed_at
              FROM admin_online_training_invoices
              WHERE coach_id = ?
              ORDER BY billing_month DESC, issued_at DESC'
@@ -1320,6 +1320,11 @@ renderHeader('Platby', false, true);
             <?php foreach ($adminOnlineTrainingInvoices as $invoice): ?>
             <?php
             $invoiceMonthLabel = date('m/Y', strtotime((string)$invoice['billing_month']));
+            $invoiceTrainingCount = (int)$invoice['sent_trainings_count'];
+            $invoiceTierLabel = match ((string)$invoice['rate_tier']) {
+                '1–50', '51–150', '151–500', '501+' => (string)$invoice['rate_tier'],
+                default => 'Původní sazba',
+            };
             $invoiceBankAccount = accountForSpd((string)($invoice['bank_account_at_issue'] ?: $currentOnlinePaymentAccount));
             $invoicePaymentNote = !empty($invoice['payment_note_at_issue'])
                 ? (string)$invoice['payment_note_at_issue']
@@ -1330,7 +1335,7 @@ renderHeader('Platby', false, true);
             ?>
             <tr>
                 <td><?= h($invoiceMonthLabel) ?></td>
-                <td><?= number_format((int)$invoice['sent_trainings_count'], 0, ',', ' ') ?></td>
+                <td><?= number_format($invoiceTrainingCount, 0, ',', ' ') ?><?php if ($invoiceTierLabel !== ''): ?><div class="small text-muted">Pásmo <?= h($invoiceTierLabel) ?></div><?php endif; ?></td>
                 <td><?= number_format((float)$invoice['rate_per_training'], 2, ',', ' ') ?> Kč</td>
                 <td class="fw-semibold"><?= number_format((float)$invoice['amount'], 2, ',', ' ') ?> Kč</td>
                 <td><?= h(formatDateTime((string)$invoice['issued_at'])) ?></td>
@@ -1354,7 +1359,8 @@ renderHeader('Platby', false, true);
                             <div class="row g-3 align-items-center">
                                 <div class="col">
                                     <h3 class="h6 mb-3">Účtenka · online tréninky · <?= h($invoiceMonthLabel) ?></h3>
-                                    <div class="small">Počet účtovaných tréninků: <strong><?= number_format((int)$invoice['sent_trainings_count'], 0, ',', ' ') ?></strong></div>
+                                    <div class="small">Počet účtovaných tréninků: <strong><?= number_format($invoiceTrainingCount, 0, ',', ' ') ?></strong></div>
+                                    <?php if ($invoiceTierLabel !== ''): ?><div class="small">Použité pásmo: <strong><?= h($invoiceTierLabel) ?></strong></div><?php endif; ?>
                                     <div class="small">Cena za jeden trénink: <strong><?= number_format((float)$invoice['rate_per_training'], 2, ',', ' ') ?> Kč</strong></div>
                                     <hr class="my-2">
                                     <div>Celkem k úhradě: <strong><?= number_format((float)$invoice['amount'], 2, ',', ' ') ?> Kč</strong></div>

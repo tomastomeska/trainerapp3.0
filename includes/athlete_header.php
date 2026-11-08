@@ -171,7 +171,7 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
                     <?php endif; ?>
                 </a>
                 <?php if ($athlete): ?>
-                <span class="nav-link text-secondary"><i class="fas fa-user me-1"></i><?= h(trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name'])) ?></span>
+                <a class="nav-link text-secondary" href="<?= BASE_URL ?>/athlete_dashboard.php#athlete-dashboard-details" title="Otevřít profil"><i class="fas fa-user me-1"></i><?= h(trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name'])) ?></a>
                 <a class="nav-link" href="<?= BASE_URL ?>/athlete_dashboard.php"><i class="fas fa-house me-1"></i>Domů</a>
                 <?php endif; ?>
                 <a class="nav-link text-danger" href="<?= BASE_URL ?>/logout.php"><i class="fas fa-sign-out-alt me-1"></i>Odhlásit</a>

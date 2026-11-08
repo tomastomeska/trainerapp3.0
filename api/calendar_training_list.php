@@ -24,12 +24,10 @@ $monthEnd = $monthStart->modify('+1 month');
 $pdo = getDB();
 
 $actionCountSql = 'SELECT COUNT(*)
-                                     FROM coach_calendar_events
-                                     WHERE coach_id = ?
-                                         AND starts_at >= ?
-                                         AND starts_at < ?
-                                         AND approval_status = "pending"';
-$actionCountParams = [$coachId, $monthStart->format('Y-m-d H:i:s'), $monthEnd->format('Y-m-d H:i:s')];
+                   FROM coach_calendar_events
+                   WHERE coach_id = ?
+                     AND approval_status = "pending"';
+$actionCountParams = [$coachId];
 $actionCountStmt = $pdo->prepare($actionCountSql);
 $actionCountStmt->execute($actionCountParams);
 $actionCount = (int)$actionCountStmt->fetchColumn();
@@ -42,6 +40,7 @@ $sql = 'SELECT e.id,
                e.approval_status,
                e.athlete_id,
                e.second_athlete_id,
+               e.title_type,
                e.requested_by_athlete_id,
                e.series_id,
                a.first_name,
@@ -58,10 +57,14 @@ $sql = 'SELECT e.id,
         LEFT JOIN coach_calendar_events source
           ON source.coach_id = e.coach_id
          AND source.id = CAST(SUBSTRING(e.series_id, 12) AS UNSIGNED)
-        WHERE e.coach_id = ?
-          AND e.starts_at >= ?
-          AND e.starts_at < ?';
-$params = [$coachId, $monthStart->format('Y-m-d H:i:s'), $monthEnd->format('Y-m-d H:i:s')];
+        WHERE e.coach_id = ?';
+$params = [$coachId];
+
+if ($statusFilter !== 'actionable') {
+    $sql .= ' AND e.starts_at >= ? AND e.starts_at < ?';
+    $params[] = $monthStart->format('Y-m-d H:i:s');
+    $params[] = $monthEnd->format('Y-m-d H:i:s');
+}
 
 if ($athleteId > 0) {
     $sql .= ' AND (e.athlete_id = ? OR e.second_athlete_id = ?)';
@@ -109,6 +112,9 @@ foreach ($rows as $row) {
     $items[] = [
         'id' => (int)$row['id'],
         'status' => $status,
+        'is_pending_request' => $status !== 'approved' && (int)($row['requested_by_athlete_id'] ?? 0) > 0,
+        'has_athlete' => (int)($row['athlete_id'] ?? 0) > 0 || (int)($row['second_athlete_id'] ?? 0) > 0,
+        'title_type' => (string)($row['title_type'] ?? 'training'),
         'can_approve' => $status !== 'approved',
         'athlete_label' => implode(' + ', $names),
         'title' => trim((string)($row['custom_title'] ?? '')) ?: ((count($names) > 1) ? 'Párový trénink' : 'Trénink'),

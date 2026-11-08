@@ -7869,6 +7869,7 @@ function processCoachGoogleCalendarSyncQueue(int $limit = 8): array {
          WHERE id = ?'
       );
       $markFailed->execute([mb_substr($e->getMessage(), 0, 2000, 'UTF-8'), $delayMinutes, $jobId]);
+      markCoachAppleCaldavSyncError($coachId, $e->getMessage());
 
       $results[] = ['job_id' => $jobId, 'status' => 'failed', 'error' => $e->getMessage()];
     }
