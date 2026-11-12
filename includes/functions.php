@@ -4787,7 +4787,12 @@ function sendPaymentRequestEmail(string $toEmail, array $data): bool {
     $amountText = (string)($data['amount_text'] ?? '');
     $account = (string)($data['account'] ?? '');
     $note = (string)($data['note'] ?? '');
+    $senderNote = (string)($data['sender_note'] ?? '');
     $qrUrl = (string)($data['qr_url'] ?? '');
+    $senderNoteHtml = $senderNote !== ''
+        ? '<div style="margin-top:6px;font-size:13px;color:#374151;"><strong>Popis pro odesílatele (vyplňte ručně):</strong> ' . $h($senderNote) . '</div>'
+        : '';
+    $senderNoteText = $senderNote !== '' ? "Popis pro odesílatele (vyplňte ručně): {$senderNote}\n" : '';
 
     $htmlBody = <<<HTML
 <!DOCTYPE html>
@@ -4821,7 +4826,8 @@ function sendPaymentRequestEmail(string $toEmail, array $data): bool {
                   <div style="font-size:13px;color:#6b7280;margin-bottom:6px;">Částka</div>
                   <div style="font-size:24px;font-weight:800;color:#111827;">{$h($amountText)}</div>
                   <div style="margin-top:10px;font-size:13px;color:#374151;"><strong>Účet:</strong> {$h($account)}</div>
-                  <div style="margin-top:6px;font-size:13px;color:#374151;"><strong>Poznámka:</strong> {$h($note)}</div>
+                  <div style="margin-top:6px;font-size:13px;color:#374151;"><strong>Popis pro příjemce:</strong> {$h($note)}</div>
+                  {$senderNoteHtml}
                 </td>
               </tr>
             </table>
@@ -4848,7 +4854,8 @@ HTML;
         . "Sportovec: {$athleteName}\n"
         . "Částka: {$amountText}\n"
         . "Účet: {$account}\n"
-        . "Poznámka: {$note}\n"
+        . "Popis pro příjemce: {$note}\n"
+        . $senderNoteText
         . "QR: {$qrUrl}\n\n"
         . "S pozdravem\n{$coachName}\n";
 

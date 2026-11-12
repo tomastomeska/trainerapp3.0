@@ -3,12 +3,14 @@ require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/online_training.php';
 require_once __DIR__ . '/includes/payment_billing.php';
+require_once __DIR__ . '/includes/payment_access.php';
 require_once __DIR__ . '/includes/header.php';
 
 requireLogin();
 
 $coachId = (int)getCurrentCoachId();
 $pdo = getDB();
+paymentAccessEnsureSchema($pdo);
 function parseBillingMonthValue(?string $raw): DateTimeImmutable
 {
     $raw = trim((string)$raw);
@@ -733,10 +735,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $issueNumber = max(1, (int)($_POST['issue_number'] ?? 1));
 
     $athleteStmt = $pdo->prepare(
-        'SELECT id, first_name, last_name, email, training_rate'
-        . ($hasPairedTrainingRate ? ', paired_training_rate' : '') . '
-         FROM athletes
-         WHERE id = ? AND coach_id = ?
+        'SELECT a.id, a.first_name, a.last_name, a.email, a.training_rate,
+                COALESCE(a.payment_access_override, c.payment_access_default) AS payment_service_enabled'
+        . ($hasPairedTrainingRate ? ', a.paired_training_rate' : '') . '
+         FROM athletes a
+         JOIN coaches c ON c.id = a.coach_id
+         WHERE a.id = ? AND a.coach_id = ?
          LIMIT 1'
     );
     $athleteStmt->execute([$athleteId, $coachId]);
@@ -748,9 +752,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $athleteName = trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']);
+    $paymentServiceEnabled = (int)$athlete['payment_service_enabled'] === 1;
     $isAthleteReleased = isAthleteMonthReleased($athleteId, $isMonthReleased, $releasedAthleteIds);
 
     if ($action === 'release_month_athlete') {
+        if (!$paymentServiceEnabled) {
+            flash('danger', 'Platby jsou pro tohoto sportovce vypnuté. Nejprve je zapněte v profilu sportovce.');
+            redirect(BASE_URL . '/payments.php?month=' . urlencode($selectedMonthParam));
+        }
+
         try {
             $releaseAthleteUpsert = $pdo->prepare(
                 "INSERT INTO coach_billing_month_athletes (coach_id, athlete_id, billing_month, status, released_at)
@@ -841,6 +851,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'send_payment_email') {
+        if (!$paymentServiceEnabled) {
+            flash('danger', 'Platby jsou pro tohoto sportovce vypnuté. Výzvu nelze odeslat.');
+            redirect(BASE_URL . '/payments.php?month=' . urlencode($selectedMonthParam));
+        }
+
         if (!$isAthleteReleased) {
             flash('danger', 'Nejdříve otevřete výzvu k platbě pro konkrétního sportovce.');
             redirect(BASE_URL . '/payments.php?month=' . urlencode($selectedMonthParam));
@@ -862,7 +877,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $carryoverUsedNow = 0;
         $rate = $hasTrainingRate && $athlete['training_rate'] !== null ? (float)$athlete['training_rate'] : null;
 
-        if ($rate === null && onlineTrainingBillingAmount($pdo, $coachId, $athleteId, $selectedMonthSql, $issueNumber) <= 0) {
+        if ($paymentServiceEnabled && $rate === null && onlineTrainingBillingAmount($pdo, $coachId, $athleteId, $selectedMonthSql, $issueNumber) <= 0) {
             flash('danger', 'Sportovec nemá nastavenou sazbu za trénink.');
             redirect(BASE_URL . '/payments.php?month=' . urlencode($selectedMonthParam));
         }
@@ -1001,7 +1016,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('danger', 'Evidenční tabulka plateb není dostupná.');
             redirect(BASE_URL . '/payments.php?month=' . urlencode($selectedMonthParam));
         }
-        if (!$isAthleteReleased) {
+        if ($paymentServiceEnabled && !$isAthleteReleased) {
             flash('danger', 'Nejdříve otevřete výzvu k platbě pro konkrétního sportovce.');
             redirect(BASE_URL . '/payments.php?month=' . urlencode($selectedMonthParam));
         }
@@ -1055,13 +1070,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $issueNumber
         );
 
-        createAthleteNotification(
-            $athleteId,
-            'Platba byla označena jako uhrazená',
-            'Trenér označil platbu za období ' . $selectedMonth->format('m/Y')
-            . ' jako uhrazenou. Evidovaná částka je ' . number_format($billedAmount, 0, ',', ' ') . ' Kč.'
-            . ($carryoverUsedNow > 0 ? (' Zároveň bylo započteno ' . $carryoverUsedNow . ' náhradních tréninků.') : '')
-        );
+        if ($paymentServiceEnabled) {
+            createAthleteNotification(
+                $athleteId,
+                'Platba byla označena jako uhrazená',
+                'Trenér označil platbu za období ' . $selectedMonth->format('m/Y')
+                . ' jako uhrazenou. Evidovaná částka je ' . number_format($billedAmount, 0, ',', ' ') . ' Kč.'
+                . ($carryoverUsedNow > 0 ? (' Zároveň bylo započteno ' . $carryoverUsedNow . ' náhradních tréninků.') : '')
+            );
+        }
 
         flash('success', 'Úhrada pro ' . $athleteName . ' byla označena jako uhrazená.');
         redirect(BASE_URL . '/payments.php?month=' . urlencode($selectedMonthParam));
@@ -1080,11 +1097,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         );
            $markPending->execute([$coachId, $athleteId, $selectedMonthSql, $issueNumber]);
 
-        createAthleteNotification(
-            $athleteId,
-            'Evidence úhrady byla zrušena',
-            'Trenér zrušil evidenci úhrady za období ' . $selectedMonth->format('m/Y') . '. V sekci Platby znovu vidíte aktivní výzvu k platbě.'
-        );
+        if ($paymentServiceEnabled) {
+            createAthleteNotification(
+                $athleteId,
+                'Evidence úhrady byla zrušena',
+                'Trenér zrušil evidenci úhrady za období ' . $selectedMonth->format('m/Y') . '. V sekci Platby znovu vidíte aktivní výzvu k platbě.'
+            );
+        }
 
         flash('success', 'Evidence úhrady pro ' . $athleteName . ' byla zrušena.');
         redirect(BASE_URL . '/payments.php?month=' . urlencode($selectedMonthParam));
@@ -1159,12 +1178,14 @@ try {
 }
 
 $athletesStmt = $pdo->prepare(
-    'SELECT id, first_name, last_name, email, phone_contact'
-    . ($hasTrainingRate ? ', training_rate' : '')
-    . ($hasPairedTrainingRate ? ', paired_training_rate' : '') . '
-     FROM athletes
-     WHERE coach_id = ?
-    ORDER BY first_name ASC, last_name ASC'
+    'SELECT a.id, a.first_name, a.last_name, a.email, a.phone_contact,
+            COALESCE(a.payment_access_override, c.payment_access_default) AS payment_service_enabled'
+    . ($hasTrainingRate ? ', a.training_rate' : '')
+    . ($hasPairedTrainingRate ? ', a.paired_training_rate' : '') . '
+     FROM athletes a
+     JOIN coaches c ON c.id = a.coach_id
+     WHERE a.coach_id = ?
+     ORDER BY a.first_name ASC, a.last_name ASC'
 );
 $athletesStmt->execute([$coachId]);
 $athletes = $athletesStmt->fetchAll();
@@ -1542,6 +1563,7 @@ renderHeader('Platby', false, true);
                     <?php foreach ($athletes as $athlete): ?>
                         <?php
                         $athleteId = (int)$athlete['id'];
+                        $paymentServiceEnabled = (int)$athlete['payment_service_enabled'] === 1;
                         $stats = $statsByAthlete[$athleteId] ?? [
                             'billed_sessions' => 0,
                             'free_sessions' => 0,
@@ -1629,7 +1651,7 @@ renderHeader('Platby', false, true);
                             . '. Účet: ' . ($coachBankAccount ?? '')
                             . '. Poznámka: ' . $paymentNote
                             . '. QR: ';
-                        $paymentQrUrl = ($isAthleteReleased && $coachBankAccount !== null && $displayAmount !== null && $displayAmount > 0)
+                        $paymentQrUrl = ($paymentServiceEnabled && $isAthleteReleased && $coachBankAccount !== null && $displayAmount !== null && $displayAmount > 0)
                             ? buildPaymentQrUrl($coachBankAccount, $displayAmount, $paymentNote)
                             : null;
                         $hasDiff = $payment && (((int)$payment['planned_sessions'] !== $currentSessions) || ((float)$payment['billed_amount'] !== (float)($currentAmount ?? 0)));
@@ -1637,6 +1659,9 @@ renderHeader('Platby', false, true);
                         <tr>
                             <td>
                                 <div class="fw-semibold"><?= h(trim((string)$athlete['last_name'] . ' ' . (string)$athlete['first_name'])) ?></div>
+                                <?php if (!$paymentServiceEnabled): ?>
+                                    <span class="badge bg-secondary">Platby vypnuté</span>
+                                <?php endif; ?>
                                 <?php if ((int)$displayStats['makeup_sessions'] > 0): ?>
                                     <div class="small text-muted">Náhradní termíny: <?= (int)$displayStats['makeup_sessions'] ?>x</div>
                                 <?php endif; ?>
@@ -1744,8 +1769,8 @@ renderHeader('Platby', false, true);
                                         <input type="hidden" name="month" value="<?= h($selectedMonthParam) ?>">
                                         <input type="hidden" name="athlete_id" value="<?= $athleteId ?>">
                                         <input type="hidden" name="action" value="<?= $isAthleteReleased ? 'unrelease_month_athlete' : 'release_month_athlete' ?>">
-                                        <button type="submit" class="btn <?= $isAthleteReleased ? 'btn-outline-warning' : 'btn-outline-success' ?> btn-sm">
-                                            <?= $isAthleteReleased ? 'Zavřít výzvu' : 'Otevřít výzvu' ?>
+                                        <button type="submit" class="btn <?= $isAthleteReleased ? 'btn-outline-warning' : 'btn-outline-success' ?> btn-sm" <?= (!$paymentServiceEnabled && !$isAthleteReleased) ? 'disabled' : '' ?>>
+                                            <?= !$paymentServiceEnabled && !$isAthleteReleased ? 'Platby vypnuté' : ($isAthleteReleased ? 'Zavřít výzvu' : 'Otevřít výzvu') ?>
                                         </button>
                                     </form>
                                     <?php if ($payment && ($payment['status'] ?? '') === 'paid'): ?>
@@ -1764,7 +1789,7 @@ renderHeader('Platby', false, true);
                                             <input type="hidden" name="athlete_id" value="<?= $athleteId ?>">
                                             <input type="hidden" name="issue_number" value="1">
                                             <input type="hidden" name="action" value="mark_paid">
-                                            <button type="submit" class="btn btn-success btn-sm" <?= (($rate === null && $onlineBillingAmount <= 0) || !$isAthleteReleased) ? 'disabled' : '' ?>>Označit uhrazeno</button>
+                                            <button type="submit" class="btn btn-success btn-sm" <?= (($paymentServiceEnabled && $rate === null && $onlineBillingAmount <= 0) || ($paymentServiceEnabled && !$isAthleteReleased)) ? 'disabled' : '' ?>>Označit uhrazeno</button>
                                         </form>
                                     <?php endif; ?>
                                 </div>
@@ -1803,7 +1828,7 @@ renderHeader('Platby', false, true);
                             $additionalStatus = (string)$additionalPayment['status'];
                             $additionalPending = $additionalStatus === 'pending';
                             $additionalPaid = $additionalStatus === 'paid';
-                            $additionalQr = ($additionalPending && $isAthleteReleased && $coachBankAccount !== null && $additionalAmount > 0)
+                            $additionalQr = ($paymentServiceEnabled && $additionalPending && $isAthleteReleased && $coachBankAccount !== null && $additionalAmount > 0)
                                 ? buildPaymentQrUrl($coachBankAccount, $additionalAmount, paymentAsciiText($coachLastName . ' ' . $selectedMonth->format('m/Y') . ' dodatecna'))
                                 : null;
                             ?>

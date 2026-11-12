@@ -92,6 +92,8 @@ function renderAdminHeader(string $title = ''): void {
 			'type' => 'group', 'id' => 'users', 'label' => 'Uživatelé', 'icon' => 'fa-users',
 			'items' => [
 				['label' => 'Trenéři', 'icon' => 'fa-user-tie', 'href' => 'coaches.php', 'match' => ['coaches.php', 'coach_add.php', 'coach_edit.php', 'coach_delete.php', 'coach_deleted_trainings.php', 'coach_athletes.php', 'coach_export.php']],
+				['label' => 'Zálohy trenérů', 'icon' => 'fa-box-archive', 'href' => 'coach_backups.php', 'match' => ['coach_backups.php', 'coach_backup_download.php']],
+				['label' => 'Migrace účtů trenérů', 'icon' => 'fa-database', 'href' => 'coach_account_migration.php', 'match' => ['coach_account_migration.php']],
 				['label' => 'Sportovci', 'icon' => 'fa-person-running', 'href' => 'athletes.php', 'match' => ['athletes.php', 'athlete_add.php', 'athlete_edit.php', 'athlete_delete.php', 'athlete_detail.php']],
 				['label' => 'Import sportovců', 'icon' => 'fa-file-import', 'href' => 'athlete_import.php', 'match' => ['athlete_import.php']],
 			],

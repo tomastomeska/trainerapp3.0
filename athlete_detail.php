@@ -82,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         try {
             if ($created['price'] > 0) {
-                createAthleteNotification($athleteId, 'Výzva k platbě: online tréninky', $created['description'] . '. Výzvu na ' . number_format($created['amount'], 2, ',', ' ') . ' Kč včetně údajů k platbě najdete v sekci Platby.');
+                createAthleteNotification($athleteId, 'Výzva k platbě: online tréninky', $created['description'] . '. Výzvu na ' . number_format($created['amount'], 2, ',', ' ') . ' Kč najdete na hlavním panelu a případně také v sekci Platby.');
             } else {
                 createAthleteNotification($athleteId, 'Online předplatné', $created['description'] . '. Předplatné je zdarma.');
             }
@@ -98,15 +98,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $account = accountForSpd(strtoupper(preg_replace('/\s+/', '', (string)($coach['bank_account'] ?? ''))));
                 $email = trim((string)($created['athlete']['email'] ?? ''));
                 if ($account && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                    $note = paymentAsciiText((string)($coach['name'] ?? '') . ' ' . date('m/Y') . ' online');
+                    $subscriptionForNote = [
+                        'starts_on' => (string)$created['starts_on'],
+                        'ends_on' => (string)$created['ends_on'],
+                    ];
+                    $note = onlineTrainingSubscriptionPaymentNote(
+                        $subscriptionForNote,
+                        trim((string)($created['athlete']['first_name'] . ' ' . $created['athlete']['last_name']))
+                    );
                     $spd = 'SPD*1.0*ACC:' . $account . '*CC:CZK*AM:' . number_format($created['amount'], 2, '.', '') . '*MSG:' . str_replace('*', ' ', $note);
                     $sent = sendPaymentRequestEmail($email, [
                         'athlete_name' => trim($created['athlete']['first_name'] . ' ' . $created['athlete']['last_name']),
                         'coach_name' => (string)($coach['name'] ?? 'Trenér'),
-                        'month_label' => date('m/Y') . ' – online tréninky',
+                        'month_label' => $created['description'],
                         'amount_text' => number_format($created['amount'], 2, ',', ' ') . ' Kč',
                         'account' => $account,
                         'note' => $note,
+                        'sender_note' => $note,
                         'qr_url' => 'https://quickchart.io/qr?size=220&text=' . rawurlencode($spd),
                     ]);
                     if (!$sent) $notificationWarnings[] = 'E-mail s výzvou se nepodařilo odeslat.';

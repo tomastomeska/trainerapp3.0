@@ -1,6 +1,7 @@
 <?php
 // admin/coach_edit.php – editace trenéra
 require_once __DIR__ . '/../includes/admin_auth.php';
+require_once __DIR__ . '/../includes/coach_account_lifecycle.php';
 require_once __DIR__ . '/header.php';
 
 requireAdminLogin();
@@ -9,6 +10,7 @@ $pdo      = getDB();
 $coachId  = intParam($_GET, 'id');
 $error    = null;
 ensurePasswordAuditColumns($pdo);
+coachAccountEnsureSchema($pdo);
 
 $stmtMakeupDeadlineCol = $pdo->query("SHOW COLUMNS FROM coaches LIKE 'makeup_booking_deadline_days'");
 $hasMakeupDeadlineColumn = $stmtMakeupDeadlineCol !== false && (bool)$stmtMakeupDeadlineCol->fetch();
@@ -63,6 +65,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password  = $_POST['password']  ?? '';
         $password2 = $_POST['password2'] ?? '';
         $isActive  = isset($_POST['is_active']) ? 1 : 0;
+        $blockReason = (string)($_POST['block_reason'] ?? '');
+        $currentActive = (int)$coach['is_active'];
         $specialTrainingEnabled = isset($_POST['special_training_enabled']) ? 1 : 0;
         $myCoachEnabled = isset($_POST['mycoach_enabled']) ? 1 : 0;
         $makeupDeadlineDays = 14;
@@ -74,6 +78,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $pdo->prepare('UPDATE coaches SET mycoach_enabled = ? WHERE id = ?')
                 ->execute([$myCoachEnabled, $coachId]);
+        };
+        $applyStatusTransition = static function () use (
+            $pdo,
+            $coachId,
+            $currentActive,
+            $isActive,
+            $blockReason,
+            $name,
+            $username,
+            $email
+        ): ?bool {
+            if ($currentActive === $isActive) {
+                return null;
+            }
+            if ($isActive === 1) {
+                $pdo->prepare('UPDATE coaches SET block_reason = NULL WHERE id = ?')->execute([$coachId]);
+                return null;
+            }
+
+            $pdo->prepare(
+                'UPDATE coaches
+                 SET block_reason = ?,
+                     inactivity_deletion_notified_at = NULL,
+                     inactivity_deletion_due_at = NULL
+                 WHERE id = ?'
+            )->execute([$blockReason, $coachId]);
+
+            $coachName = $name !== '' ? $name : $username;
+            return coachAccountSendBlockNotification($email, $coachName, $blockReason);
         };
 
         if ($error !== null) {
@@ -88,6 +121,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Hesla se neshodují.';
         } elseif ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $error = 'Neplatná e-mailová adresa.';
+        } elseif ($currentActive === 1 && $isActive === 0 && $blockReason !== 'terms_violation') {
+            $error = 'Vyberte důvod blokace trenéra.';
         } else {
             // Unikátnost uživatelského jména (kromě tohoto trenéra)
             $stmtU = $pdo->prepare('SELECT id FROM coaches WHERE username = ? AND id != ?');
@@ -120,6 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
                     $saveCoachMyCoachAccess();
+                    $statusEmailSent = $applyStatusTransition();
 
                     $host = trim((string)($_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? '')));
                     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
@@ -136,7 +172,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $message .= ' E-mail se nepodařilo odeslat.';
                     }
                     $message .= ' Dočasné heslo: ' . $tempPassword;
-                    flash('success', $message);
+                    if ($statusEmailSent === false) {
+                        $message .= ' E-mail o blokaci se nepodařilo odeslat.';
+                    }
+                    flash($statusEmailSent === false ? 'warning' : 'success', $message);
                     redirect(BASE_URL . '/admin/coach_edit.php?id=' . $coachId);
                 } elseif ($password !== '') {
                     $hash = password_hash($password, PASSWORD_DEFAULT);
@@ -186,7 +225,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     $saveCoachMyCoachAccess();
                 }
-                flash('success', 'Trenér byl aktualizován.');
+                $statusEmailSent = $applyStatusTransition();
+                flash(
+                    $statusEmailSent === false ? 'warning' : 'success',
+                    $statusEmailSent === false
+                        ? 'Trenér byl aktualizován a zablokován, ale informační e-mail se nepodařilo odeslat.'
+                        : 'Trenér byl aktualizován.'
+                );
                 redirect(BASE_URL . '/admin/coaches.php');
             }
         }
@@ -285,6 +330,13 @@ renderAdminHeader('Upravit trenéra');
                         Trenér je aktivní (může se přihlásit)
                     </label>
                 </div>
+                <?php if (!empty($coach['is_active'])): ?>
+                <label class="form-label small text-muted mt-2" for="blockReason">Důvod blokace</label>
+                <select class="form-select" name="block_reason" id="blockReason">
+                    <option value="">Vyberte důvod</option>
+                    <option value="terms_violation" <?= ($d['block_reason'] ?? '') === 'terms_violation' ? 'selected' : '' ?>>Porušení všeobecných podmínek</option>
+                </select>
+                <?php endif; ?>
             </div>
             <?php if ($hasMakeupDeadlineColumn): ?>
             <div class="mb-4">
@@ -368,5 +420,17 @@ renderAdminHeader('Upravit trenéra');
         </div>
     </div>
 </div>
+
+<script>
+const coachActiveSwitch = document.getElementById('isActive');
+const coachBlockReason = document.getElementById('blockReason');
+if (coachActiveSwitch && coachBlockReason) {
+    const updateBlockReasonRequirement = () => {
+        coachBlockReason.required = !coachActiveSwitch.checked;
+    };
+    coachActiveSwitch.addEventListener('change', updateBlockReasonRequirement);
+    updateBlockReasonRequirement();
+}
+</script>
 
 <?php renderAdminFooter(); ?>

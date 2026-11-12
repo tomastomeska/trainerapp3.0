@@ -34,6 +34,19 @@ if (!(int)$coach['mobile_app_enabled']) {
     mobileJson(['success' => false, 'error' => 'Přístup do aplikace není povolený.'], 403);
 }
 
+$pdo->prepare(
+    'UPDATE coaches
+     SET last_login = NOW(),
+         inactivity_deletion_notified_at = NULL,
+         inactivity_deletion_due_at = NULL
+     WHERE id = ? AND is_active = 1'
+)->execute([(int)$coach['id']]);
+$loginCheck = $pdo->prepare('SELECT 1 FROM coaches WHERE id = ? AND is_active = 1 LIMIT 1');
+$loginCheck->execute([(int)$coach['id']]);
+if (!$loginCheck->fetchColumn()) {
+    mobileJson(['success' => false, 'error' => 'Váš účet již není dostupný.'], 401);
+}
+
 $remember = !empty($input['remember']);
 $platform = (string)($input['platform'] ?? $_SERVER['HTTP_X_APP_PLATFORM'] ?? 'android');
 $appVersion = (string)($input['app_version'] ?? $_SERVER['HTTP_X_APP_VERSION'] ?? '');
@@ -45,8 +58,6 @@ try {
     $photo = mobilePublicPhoto((string)($photoStmt->fetchColumn() ?: ''), 'coaches');
 } catch (Throwable $e) {
 }
-$pdo->prepare('UPDATE coaches SET last_login = NOW() WHERE id = ?')->execute([(int)$coach['id']]);
-
 mobileJson([
     'success' => true,
     'token' => $token,

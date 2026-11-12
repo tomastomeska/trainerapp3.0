@@ -29,13 +29,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!$coach['is_active']) {
                     $error = 'Váš účet byl zablokován. Kontaktujte správce.';
                 } else {
-                    session_regenerate_id(true);
-                    $_SESSION['coach_id']   = $coach['id'];
-                    $_SESSION['coach_name'] = $coach['name'] ?: $username;
-                    $_SESSION['coach_force_password_change'] = (int)($coach['force_password_change'] ?? 0);
-                    // Aktualizace posledního přihlášení
-                    $pdo->prepare('UPDATE coaches SET last_login = NOW() WHERE id = ?')->execute([$coach['id']]);
-                    redirect(BASE_URL . '/dashboard.php');
+                    $pdo->prepare(
+                        'UPDATE coaches
+                         SET last_login = NOW(),
+                             inactivity_deletion_notified_at = NULL,
+                             inactivity_deletion_due_at = NULL
+                         WHERE id = ? AND is_active = 1'
+                    )->execute([(int)$coach['id']]);
+                    $loginCheck = $pdo->prepare('SELECT 1 FROM coaches WHERE id = ? AND is_active = 1 LIMIT 1');
+                    $loginCheck->execute([(int)$coach['id']]);
+                    if (!$loginCheck->fetchColumn()) {
+                        $error = 'Váš účet již není dostupný. Kontaktujte podporu.';
+                    } else {
+                        session_regenerate_id(true);
+                        $_SESSION['coach_id']   = $coach['id'];
+                        $_SESSION['coach_name'] = $coach['name'] ?: $username;
+                        $_SESSION['coach_force_password_change'] = (int)($coach['force_password_change'] ?? 0);
+                        redirect(BASE_URL . '/dashboard.php');
+                    }
                 }
             } else {
                 $error = 'Nesprávné přihlašovací údaje.';

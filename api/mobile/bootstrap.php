@@ -152,6 +152,7 @@ function mobileRequireAthlete(): array
                 a.id, a.coach_id, a.email, a.first_name, a.last_name, a.mobile_app_enabled
          FROM mobile_api_tokens t
          JOIN athletes a ON a.id = t.user_id
+         JOIN coaches c ON c.id = a.coach_id
          WHERE t.token_hash = ?
            AND t.account_type = \'athlete\'
            AND t.revoked_at IS NULL

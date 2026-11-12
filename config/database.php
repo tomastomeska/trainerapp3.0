@@ -118,6 +118,8 @@ function getDB(): PDO {
 function ensureSchemaUpgrades(PDO $pdo): void {
     require_once __DIR__ . '/../includes/dashboard_layout.php';
     dashboardLayoutEnsureSchema($pdo);
+    require_once __DIR__ . '/../includes/payment_access.php';
+    paymentAccessEnsureSchema($pdo);
 
     $pdo->exec(" 
         CREATE TABLE IF NOT EXISTS `app_event_log` (

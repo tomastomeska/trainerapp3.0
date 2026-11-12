@@ -237,23 +237,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         );
                         $error = 'Váš účet byl zablokován. Kontaktujte správce.';
                     } else {
-                        session_regenerate_id(true);
-                        unset($_SESSION['athlete_id'], $_SESSION['athlete_name'], $_SESSION['athlete_coach_id'], $_SESSION['athlete_force_password_change']);
-                        $_SESSION['coach_id']   = $coach['id'];
-                        $_SESSION['coach_name'] = $coach['name'] ?: $username;
-                        $_SESSION['coach_force_password_change'] = (int)($coach['force_password_change'] ?? 0);
-                        // Aktualizace posledního přihlášení
-                        $pdo->prepare('UPDATE coaches SET last_login = NOW() WHERE id = ?')->execute([$coach['id']]);
-                        appLogEvent(
-                            'login_success',
-                            'info',
-                            'Uspesne prihlaseni trenera',
-                            [],
-                            'coach',
-                            (int)$coach['id'],
-                            (string)($coach['name'] ?: $username)
+                        $loginUpdate = $pdo->prepare(
+                            'UPDATE coaches
+                             SET last_login = NOW(),
+                                 inactivity_deletion_notified_at = NULL,
+                                 inactivity_deletion_due_at = NULL
+                             WHERE id = ? AND is_active = 1'
                         );
-                        redirect(BASE_URL . '/dashboard.php');
+                        $loginUpdate->execute([(int)$coach['id']]);
+                        $loginCheck = $pdo->prepare('SELECT 1 FROM coaches WHERE id = ? AND is_active = 1 LIMIT 1');
+                        $loginCheck->execute([(int)$coach['id']]);
+                        if (!$loginCheck->fetchColumn()) {
+                            $error = 'Váš účet již není dostupný. Kontaktujte podporu.';
+                        } else {
+                            session_regenerate_id(true);
+                            unset($_SESSION['athlete_id'], $_SESSION['athlete_name'], $_SESSION['athlete_coach_id'], $_SESSION['athlete_force_password_change']);
+                            $_SESSION['coach_id']   = $coach['id'];
+                            $_SESSION['coach_name'] = $coach['name'] ?: $username;
+                            $_SESSION['coach_force_password_change'] = (int)($coach['force_password_change'] ?? 0);
+                            appLogEvent(
+                                'login_success',
+                                'info',
+                                'Uspesne prihlaseni trenera',
+                                [],
+                                'coach',
+                                (int)$coach['id'],
+                                (string)($coach['name'] ?: $username)
+                            );
+                            redirect(BASE_URL . '/dashboard.php');
+                        }
                     }
                 } else {
                     appLogEvent(
@@ -279,6 +291,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'SELECT id, coach_id, email, password, first_name, last_name, login_enabled, force_password_change
                      FROM athletes
                      WHERE email = ?
+                       AND EXISTS (SELECT 1 FROM coaches WHERE coaches.id = athletes.coach_id)
                      LIMIT 1'
                 );
                 $stmt->execute([$email]);
@@ -503,8 +516,67 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
             transition: opacity .42s cubic-bezier(.22,.61,.36,1), transform .42s cubic-bezier(.22,.61,.36,1);
         }
 
-        .intro-actions .btn-login {
+        .role-tiles {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
             width: min(92vw, 380px);
+            margin: 0 auto;
+        }
+
+        .role-tile {
+            min-height: 142px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 14px 10px;
+            border: 1px solid #d5deea;
+            border-radius: 18px;
+            font: inherit;
+            text-align: center;
+            cursor: pointer;
+            transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+        }
+
+        .role-tile:hover {
+            transform: translateY(-1px);
+        }
+
+        .role-tile:focus-visible {
+            outline: 3px solid var(--brand-gold-2);
+            outline-offset: 3px;
+        }
+
+        .role-tile--coach {
+            color: #fff;
+            background: linear-gradient(145deg, #3c5e7e, #2c4664);
+            box-shadow: 0 6px 16px rgba(22, 56, 95, .16), inset 0 1px 0 rgba(255, 255, 255, .2);
+        }
+
+        .role-tile--athlete {
+            color: #172a46;
+            background: linear-gradient(145deg, #fff, #edf2f8);
+            box-shadow: 0 6px 16px rgba(35, 50, 70, .1), inset 0 1px 0 #fff;
+        }
+
+        .role-tile__icon {
+            font-size: 2.1rem;
+        }
+
+        .role-tile--athlete .role-tile__icon {
+            color: #d97724;
+        }
+
+        .role-tile__label {
+            font-size: 1.12rem;
+            font-weight: 800;
+        }
+
+        .role-tile__arrow {
+            font-size: 1.15rem;
+            line-height: 1;
         }
 
         .app-store-links {
@@ -615,27 +687,16 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
             transform: translateY(-1px);
         }
 
-        .login-type-switch {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-            margin-bottom: 14px;
-        }
-
-        .login-type-btn {
-            border-radius: 12px;
-            border: 1px solid var(--panel-border);
-            background: #fff;
+        .login-back-button {
+            border: 0;
+            padding: 0;
+            background: transparent;
+            color: #805c12;
             font-weight: 700;
-            color: #26354a;
-            padding: .5rem .7rem;
-            transition: background .16s ease, border-color .16s ease, color .16s ease;
         }
 
-        .login-type-btn.active {
-            background: linear-gradient(135deg, #465368, #303c4e 65%, #243143);
-            border-color: var(--brand-navy);
-            color: #fff;
+        .login-back-button:hover {
+            color: #5e430b;
         }
 
         .login-card {
@@ -936,6 +997,24 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
                 max-height: 118px;
             }
 
+            .role-tiles {
+                gap: 8px;
+            }
+
+            .role-tile {
+                min-height: 128px;
+                padding: 12px 8px;
+                border-radius: 16px;
+            }
+
+            .role-tile__icon {
+                font-size: 1.9rem;
+            }
+
+            .role-tile__label {
+                font-size: 1rem;
+            }
+
             .app-store-links {
                 width: min(92vw, 380px);
                 gap: 8px;
@@ -990,7 +1069,18 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
         <?php endif; ?>
 
         <div class="intro-actions">
-            <button type="button" id="btnShowLogin" class="btn btn-login">Přihlášení</button>
+            <div class="role-tiles" role="group" aria-label="Vyberte typ účtu">
+                <button type="button" class="role-tile role-tile--coach" data-login-type="coach" aria-label="Přihlásit se jako trenér">
+                    <i class="fas fa-user-tie role-tile__icon" aria-hidden="true"></i>
+                    <span class="role-tile__label">Trenér</span>
+                    <i class="fas fa-chevron-right role-tile__arrow" aria-hidden="true"></i>
+                </button>
+                <button type="button" class="role-tile role-tile--athlete" data-login-type="athlete" aria-label="Přihlásit se jako sportovec">
+                    <i class="fas fa-person-running role-tile__icon" aria-hidden="true"></i>
+                    <span class="role-tile__label">Sportovec</span>
+                    <i class="fas fa-chevron-right role-tile__arrow" aria-hidden="true"></i>
+                </button>
+            </div>
             <button type="button" class="btn btn-request-access" data-bs-toggle="modal" data-bs-target="#coachAccessModal">Žádost o přístup trenéra</button>
         </div>
 
@@ -1016,6 +1106,9 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
 
         <div class="card login-card">
             <div class="card-body">
+                <button type="button" class="login-back-button mb-2" id="btnBackToRoles">
+                    <i class="fas fa-arrow-left me-1" aria-hidden="true"></i>Zpět k výběru
+                </button>
                 <h2 class="login-title">Přihlášení</h2>
                 <p class="login-sub" id="loginSubTitle">Přihlášení pro trenéry</p>
 
@@ -1030,15 +1123,6 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
                     <?= csrfField() ?>
                     <input type="hidden" name="action" value="login">
                     <input type="hidden" name="login_type" id="loginTypeInput" value="<?= h($loginType) ?>">
-
-                    <div class="login-type-switch" role="group" aria-label="Typ přihlášení">
-                        <button type="button" class="login-type-btn <?= $loginType === 'coach' ? 'active' : '' ?>" data-type="coach">
-                            Trenér
-                        </button>
-                        <button type="button" class="login-type-btn <?= $loginType === 'athlete' ? 'active' : '' ?>" data-type="athlete">
-                            Sportovec
-                        </button>
-                    </div>
 
                     <div class="mb-3">
                         <label class="form-label" for="username" id="usernameLabel">Uživatelské jméno</label>
@@ -1170,21 +1254,11 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
             });
         }
 
-        const btnShowLogin = document.getElementById('btnShowLogin');
-        if (btnShowLogin) {
-            btnShowLogin.addEventListener('click', function() {
-                document.body.classList.add('show-form');
-                setTimeout(function() {
-                    const username = document.getElementById('username');
-                    if (username) username.focus();
-                }, 420);
-            });
-        }
-
         const loginTypeInput = document.getElementById('loginTypeInput');
         const loginSubTitle = document.getElementById('loginSubTitle');
         const usernameLabel = document.getElementById('usernameLabel');
-        const typeButtons = Array.from(document.querySelectorAll('.login-type-btn'));
+        const roleButtons = Array.from(document.querySelectorAll('.role-tile'));
+        const btnBackToRoles = document.getElementById('btnBackToRoles');
         const resetTypeInput = document.getElementById('reset_account_type');
         const resetIdentityLabel = document.getElementById('reset_identity_label');
 
@@ -1199,16 +1273,32 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
             if (usernameLabel) {
                 usernameLabel.textContent = isAthlete ? 'E-mail' : 'Uživatelské jméno';
             }
-            typeButtons.forEach((btn) => {
-                btn.classList.toggle('active', btn.dataset.type === (isAthlete ? 'athlete' : 'coach'));
-            });
         }
 
-        typeButtons.forEach((btn) => {
+        roleButtons.forEach((btn) => {
             btn.addEventListener('click', function() {
-                applyLoginType(btn.dataset.type === 'athlete' ? 'athlete' : 'coach');
+                const nextType = btn.dataset.loginType === 'athlete' ? 'athlete' : 'coach';
+                if (loginTypeInput && loginTypeInput.value !== nextType) {
+                    const username = document.getElementById('username');
+                    const password = document.getElementById('password');
+                    if (username) username.value = '';
+                    if (password) password.value = '';
+                }
+                applyLoginType(nextType);
+                document.body.classList.add('show-form');
+                window.setTimeout(function() {
+                    const username = document.getElementById('username');
+                    if (username) username.focus();
+                }, 420);
             });
         });
+
+        if (btnBackToRoles) {
+            btnBackToRoles.addEventListener('click', function() {
+                document.querySelectorAll('.login-card .alert-danger').forEach((alert) => alert.remove());
+                document.body.classList.remove('show-form');
+            });
+        }
 
         function applyResetType(type) {
             if (!resetIdentityLabel) return;

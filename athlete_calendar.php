@@ -442,6 +442,10 @@ renderAthleteHeader('Můj kalendář', false, true);
     line-height: 1.2;
 }
 
+.training-month-select {
+    display: none;
+}
+
 #athleteTrainingYearFilter {
     width: 82px;
 }
@@ -454,6 +458,19 @@ renderAthleteHeader('Můj kalendář', false, true);
     .training-month-filter {
         grid-template-columns: repeat(12, minmax(0, 1fr));
     }
+}
+@media (max-width: 529.98px) {
+    .training-month-filter {
+        display: none;
+    }
+
+    .training-month-select {
+        display: block;
+    }
+}
+.training-month-filter[hidden],
+.training-month-select[hidden] {
+    display: none !important;
 }
 
 .calendar-grid {
@@ -807,6 +824,11 @@ renderAthleteHeader('Můj kalendář', false, true);
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"><div><h5 class="mb-1"><i class="fas fa-dumbbell me-2 text-warning"></i>Moje tréninky</h5><div class="small text-muted">Kompletní přehled zvoleného měsíce.</div></div><div class="d-flex gap-2"><select class="form-select form-select-sm training-filter-select" id="athleteTrainingYearFilter"><?php for ($trainingYear = (int)date('Y') - 2; $trainingYear <= (int)date('Y') + 1; $trainingYear++): ?><option value="<?= $trainingYear ?>" <?= $trainingYear === (int)date('Y') ? 'selected' : '' ?>><?= $trainingYear ?></option><?php endfor; ?></select><select class="form-select form-select-sm training-filter-select" id="athleteTrainingStatusFilter"><option value="approved" selected>Schválené a proběhlé</option><option value="planned">Naplánované</option><option value="completed">Proběhlé</option><option value="change_pending">Čeká na změnu</option></select><button type="button" class="btn btn-outline-secondary btn-sm" id="athleteShowCancelledBtn"><i class="fas fa-ban me-1"></i>Ukázat zrušené</button></div></div>
             <div class="training-month-filter mb-3" role="group" aria-label="Měsíc tréninků" id="athleteTrainingMonthFilter"><?php foreach (['01'=>'Leden','02'=>'Únor','03'=>'Březen','04'=>'Duben','05'=>'Květen','06'=>'Červen','07'=>'Červenec','08'=>'Srpen','09'=>'Září','10'=>'Říjen','11'=>'Listopad','12'=>'Prosinec'] as $monthValue => $monthLabel): ?><button type="button" class="btn btn-outline-secondary btn-sm" data-month="<?= $monthValue ?>"><?= $monthLabel ?></button><?php endforeach; ?></div>
+            <select class="form-select form-select-sm training-filter-select training-month-select mb-3" id="athleteTrainingMonthSelect" aria-label="Měsíc tréninků">
+                <?php foreach (['01'=>'Leden','02'=>'Únor','03'=>'Březen','04'=>'Duben','05'=>'Květen','06'=>'Červen','07'=>'Červenec','08'=>'Srpen','09'=>'Září','10'=>'Říjen','11'=>'Listopad','12'=>'Prosinec'] as $monthValue => $monthLabel): ?>
+                    <option value="<?= $monthValue ?>" <?= $monthValue === date('m') ? 'selected' : '' ?>><?= $monthLabel ?></option>
+                <?php endforeach; ?>
+            </select>
             <div id="athleteTrainingTiles" class="row g-3"><div class="col-12 text-muted">Načítám tréninky...</div></div>
         </div>
     </div>
@@ -1240,6 +1262,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const athleteTrainingStatusFilter = document.getElementById('athleteTrainingStatusFilter');
     const athleteShowCancelledBtn = document.getElementById('athleteShowCancelledBtn');
     const athleteTrainingMonthFilter = document.getElementById('athleteTrainingMonthFilter');
+    const athleteTrainingMonthSelect = document.getElementById('athleteTrainingMonthSelect');
     let athleteTrainingMonth = String(new Date().getMonth() + 1).padStart(2, '0');
     let athleteShowingCancelled = false;
     const athleteWeekMonthJumpInput = document.getElementById('athleteWeekMonthJumpInput');
@@ -2362,13 +2385,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const button = event.target.closest('[data-month]');
         if (!button) return;
         athleteTrainingMonth = button.dataset.month;
+        if (athleteTrainingMonthSelect) athleteTrainingMonthSelect.value = athleteTrainingMonth;
         athleteTrainingMonthFilter.querySelectorAll('[data-month]').forEach((item) => item.classList.toggle('active', item === button));
+        loadAthleteTrainingTiles();
+    });
+    if (athleteTrainingMonthSelect) athleteTrainingMonthSelect.addEventListener('change', () => {
+        athleteTrainingMonth = athleteTrainingMonthSelect.value;
+        if (athleteTrainingMonthFilter) {
+            athleteTrainingMonthFilter.querySelectorAll('[data-month]').forEach((item) => item.classList.toggle('active', item.dataset.month === athleteTrainingMonth));
+        }
         loadAthleteTrainingTiles();
     });
     if (athleteTrainingMonthFilter) {
         const currentMonthButton = athleteTrainingMonthFilter.querySelector(`[data-month="${athleteTrainingMonth}"]`);
         if (currentMonthButton) currentMonthButton.classList.add('active');
     }
+    if (athleteTrainingMonthSelect) athleteTrainingMonthSelect.value = athleteTrainingMonth;
 
     async function loadAthleteMonthList() {
         if (!athleteMonthInput || !athleteMonthInput.value) {

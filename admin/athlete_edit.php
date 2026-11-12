@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/admin_auth.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/../includes/medals.php';
 require_once __DIR__ . '/header.php';
 
 requireAdminLogin();
@@ -16,6 +17,7 @@ $athleteGenderOptions = [
 ];
 
 $pdo  = getDB();
+athleteMedalsEnsureSchema($pdo);
 $stmtGenderCol = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'gender'");
 $hasGenderColumn = $stmtGenderCol !== false && (bool)$stmtGenderCol->fetch();
 if (!$hasGenderColumn) {
@@ -94,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 deleteUploadedPhoto($athlete['photo'] ?? null, 'athletes');
                 if ($hasSpecialTrainingColumn) {
                     $stmt = $pdo->prepare(
-                        'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, phone_contact=?, email=?, notes=?, photo=?, special_training_enabled=?
+                        'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, phone_contact=?, email=?, notes=?, photo=?, photo_added_at=COALESCE(photo_added_at, NOW()), special_training_enabled=?
                          WHERE id=?'
                     );
                     $stmt->execute([
@@ -103,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]);
                 } else {
                     $stmt = $pdo->prepare(
-                        'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, phone_contact=?, email=?, notes=?, photo=?
+                        'UPDATE athletes SET first_name=?, last_name=?, birth_date=?, phone_contact=?, email=?, notes=?, photo=?, photo_added_at=COALESCE(photo_added_at, NOW())
                          WHERE id=?'
                     );
                     $stmt->execute([

@@ -92,6 +92,17 @@ function requireLogin(): void {
         exit;
     }
 
+    $pdo = getDB();
+    $coachStmt = $pdo->prepare('SELECT is_active FROM coaches WHERE id = ? LIMIT 1');
+    $coachStmt->execute([(int)$_SESSION['coach_id']]);
+    $coachActive = $coachStmt->fetchColumn();
+    if ($coachActive === false || (int)$coachActive !== 1) {
+        unset($_SESSION['coach_id'], $_SESSION['coach_name'], $_SESSION['coach_force_password_change']);
+        flash('danger', 'Váš účet již není aktivní. Kontaktujte podporu.');
+        header('Location: ' . BASE_URL . '/login.php');
+        exit;
+    }
+
     if (!empty($_SESSION['coach_force_password_change'])) {
         $script = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
         if ($script !== 'dashboard.php' && $script !== 'logout.php') {
@@ -103,6 +114,22 @@ function requireLogin(): void {
 
 function requireAthleteLogin(bool $enforcePasswordChange = true): void {
     if (!athleteIsLoggedIn()) {
+        header('Location: ' . BASE_URL . '/login.php');
+        exit;
+    }
+
+    $pdo = getDB();
+    $athleteStmt = $pdo->prepare(
+        'SELECT 1
+         FROM athletes a
+         JOIN coaches c ON c.id = a.coach_id
+         WHERE a.id = ?
+         LIMIT 1'
+    );
+    $athleteStmt->execute([(int)$_SESSION['athlete_id']]);
+    if (!$athleteStmt->fetchColumn()) {
+        unset($_SESSION['athlete_id'], $_SESSION['athlete_name'], $_SESSION['athlete_coach_id'], $_SESSION['athlete_force_password_change']);
+        flash('danger', 'Účet sportovce již není dostupný. Kontaktujte podporu.');
         header('Location: ' . BASE_URL . '/login.php');
         exit;
     }

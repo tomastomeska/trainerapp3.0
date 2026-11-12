@@ -2,6 +2,7 @@
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/payment_billing.php';
+require_once __DIR__ . '/includes/payment_access.php';
 
 $coachMode = isLoggedIn();
 $athleteMode = !$coachMode && athleteIsLoggedIn();
@@ -269,6 +270,18 @@ if ($coachMode) {
     if (!$athlete) {
         flash('danger', 'Sportovec nebyl nalezen.');
         redirect(BASE_URL . '/athlete_payments.php');
+    }
+
+    if (!paymentAccessIsEnabled($pdo, $athleteId, (int)$athlete['coach_id'])) {
+        renderAthleteHeader('Platby');
+        ?>
+        <div class="alert alert-warning mt-4">
+            <h2 class="h5"><i class="fas fa-lock me-2"></i>Platby nejsou aktivní</h2>
+            <p class="mb-0">Služba Platby je pro vás vypnutá. Pokud ji chcete aktivovat, požádejte svého trenéra o zpřístupnění.</p>
+        </div>
+        <?php
+        renderAthleteFooter();
+        return;
     }
 
     $coachId = (int)$athlete['coach_id'];

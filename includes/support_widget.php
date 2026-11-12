@@ -357,6 +357,10 @@ function renderSupportWidget(string $userType = 'coach'): void {
     .support-fab-gift {
         font-size: 22px;
     }
+    body.calendar-editor-open #supportWidgetRoot .support-fab-stack,
+    body.calendar-editor-open #supportWidgetRoot .admin-chat-panel {
+        display: none !important;
+    }
 }
 .support-fab-chat {
     background: linear-gradient(135deg, #25d366, #128c7e);
@@ -921,6 +925,36 @@ function renderSupportWidget(string $userType = 'coach'): void {
 
     pollUnreadForBadgeOnly();
     slowPollTimer = setInterval(pollUnreadForBadgeOnly, 20000);
+})();
+
+(function () {
+    const calendarModalIds = new Set(['eventModal', 'eventDetailModal', 'reserveModal']);
+    const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
+
+    document.addEventListener('show.bs.modal', function (event) {
+        const modalId = event.target instanceof Element ? event.target.id : '';
+        if (!calendarModalIds.has(modalId)) return;
+
+        document.body.classList.add('calendar-editor-open');
+        if (!isMobile()) return;
+
+        const chatPanel = document.getElementById('adminChatPanel');
+        if (chatPanel && !chatPanel.classList.contains('d-none')) {
+            document.getElementById('adminChatCloseBtn')?.click();
+        }
+    });
+
+    document.addEventListener('hidden.bs.modal', function (event) {
+        const modalId = event.target instanceof Element ? event.target.id : '';
+        if (!calendarModalIds.has(modalId)) return;
+
+        const anotherCalendarModalIsOpen = Array.from(calendarModalIds).some((id) => {
+            return document.getElementById(id)?.classList.contains('show');
+        });
+        if (!anotherCalendarModalIsOpen) {
+            document.body.classList.remove('calendar-editor-open');
+        }
+    });
 })();
 </script>
 <?php

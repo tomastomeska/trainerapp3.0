@@ -2,6 +2,7 @@
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/surveys.php';
+require_once __DIR__ . '/includes/payment_access.php';
 require_once __DIR__ . '/includes/header.php';
 require_once __DIR__ . '/includes/health_questionnaire.php';
 require_once __DIR__ . '/includes/calculators.php';
@@ -10,6 +11,31 @@ requireLogin();
 
 $coachId = getCurrentCoachId();
 $pdo     = getDB();
+paymentAccessEnsureSchema($pdo);
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_athlete_payment_access') {
+    if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
+        flash('danger', 'Neplatný bezpečnostní token.');
+        redirect(BASE_URL . '/dashboard.php');
+    }
+
+    $athleteId = (int)($_POST['athlete_id'] ?? 0);
+    $paymentEnabledInput = (string)($_POST['payment_service_enabled'] ?? '');
+    $paymentDisabledInput = (string)($_POST['payment_service_disabled'] ?? '');
+    if ($paymentEnabledInput !== '1' && $paymentDisabledInput !== '0') {
+        flash('danger', 'Neplatné nastavení dostupnosti plateb.');
+        redirect(BASE_URL . '/dashboard.php');
+    }
+    $paymentEnabled = $paymentEnabledInput === '1';
+
+    try {
+        paymentAccessSetAthlete($pdo, $athleteId, (int)$coachId, $paymentEnabled);
+        flash('success', $paymentEnabled ? 'Platby byly sportovci zapnuty.' : 'Platby byly sportovci vypnuty.');
+    } catch (Throwable $e) {
+        error_log('Athlete payment access update failed: ' . $e->getMessage());
+        flash('danger', 'Nastavení dostupnosti plateb se nepodařilo uložit.');
+    }
+    redirect(BASE_URL . '/dashboard.php');
+}
 healthQuestionnaireEnsureSchema($pdo);
 $calculatorUnseenCounts = calculatorCoachUnseenCounts($pdo, (int)$coachId);
 $mustChangePassword = !empty($_SESSION['coach_force_password_change']);
@@ -161,6 +187,7 @@ $supportQrNote = paymentAsciiText('Podpora TrainerApp - ' . $supportContributorN
 // Načtení sportovců s doplňkovými info
 $stmt = $pdo->prepare(
     'SELECT a.*, 
+            COALESCE(a.payment_access_override, c.payment_access_default) AS payment_service_enabled,
             TIMESTAMPDIFF(YEAR, a.birth_date, CURDATE()) AS age,
             (SELECT COUNT(*) FROM training_sessions ts
                          WHERE ts.athlete_id = a.id
@@ -218,6 +245,7 @@ $stmt = $pdo->prepare(
                            WHERE hu.athlete_id = a.id
                             AND hu.coach_seen_at IS NULL) AS health_pending_updates
      FROM athletes a
+     JOIN coaches c ON c.id = a.coach_id
      WHERE a.coach_id = ?' . $athleteModeSql . '
      ORDER BY ' . $athleteOrderSql
 );

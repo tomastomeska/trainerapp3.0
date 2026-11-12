@@ -1,9 +1,13 @@
 <?php
 require_once __DIR__ . '/support_widget.php';
 require_once __DIR__ . '/dashboard_layout.php';
+require_once __DIR__ . '/payment_access.php';
 
 function renderAthleteHeader(string $title = '', bool $withCharts = false, bool $compactNav = false, ?bool $sidebarNav = null): void {
     $athlete = getCurrentAthlete();
+    $athletePaymentsEnabled = $athlete
+        ? paymentAccessIsEnabled(getDB(), (int)$athlete['id'], (int)$athlete['coach_id'])
+        : false;
     $sidebarNav = $sidebarNav ?? (bool)$athlete;
     if ($sidebarNav) {
         $compactNav = true;
@@ -141,7 +145,16 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
                 <?php if (mycoachAppEnabled()): ?>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_mycoach.php"><i class="fas fa-brain me-1"></i>MYCoach</a></li>
                 <?php endif; ?>
-                <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_payments.php"><i class="fas fa-wallet me-1"></i>Platby</a></li>
+                <li class="nav-item">
+                    <a
+                        class="nav-link<?= $athletePaymentsEnabled ? '' : ' text-secondary opacity-50' ?>"
+                        href="<?= BASE_URL ?>/athlete_payments.php"
+                        title="<?= $athletePaymentsEnabled ? 'Platby' : 'Platby jsou vypnuté. Kliknutím zobrazíte informace.' ?>"
+                    >
+                        <i class="fas fa-wallet me-1"></i>Platby
+                        <?php if (!$athletePaymentsEnabled): ?><span class="badge rounded-pill bg-secondary ms-1">Vypnuto</span><?php endif; ?>
+                    </a>
+                </li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_mealplans.php"><i class="fas fa-utensils me-1"></i>Jídelníčky</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_food_diary.php"><i class="fas fa-bowl-food me-1"></i>Strava</a></li>
                 <li class="nav-item"><a class="nav-link" href="<?= BASE_URL ?>/athlete_graphs.php"><i class="fas fa-chart-line me-1"></i>Grafy</a></li>

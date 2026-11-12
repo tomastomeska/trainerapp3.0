@@ -143,6 +143,35 @@ renderHeader('Dashboard', false, true, true);
         pointer-events: none;
     }
 
+    .athlete-card-mobile-link {
+        display: none;
+    }
+
+    .athlete-card-mobile-link:focus-visible {
+        outline: 3px solid #ffc107;
+        outline-offset: 3px;
+    }
+
+    @media (max-width: 399.98px) {
+        .athlete-card .card-body > :not(.athlete-card-mobile-link) {
+            display: none !important;
+        }
+
+        .athlete-card .card-body {
+            padding: .8rem 1rem;
+        }
+
+        .athlete-card-mobile-link {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: .5rem;
+            color: #111827;
+            font-weight: 700;
+            text-decoration: none;
+        }
+    }
+
     @media (max-width: 991.98px) {
         .coach-dashboard-toolbar__sort,
         .coach-dashboard-toolbar__actions {
@@ -520,6 +549,10 @@ renderHeader('Dashboard', false, true, true);
     <div class="col-md-6 col-xl-4">
         <div class="card athlete-card<?= !empty($a['online_only']) ? ' athlete-card--online' : '' ?> border-0 shadow-sm h-100">
             <div class="card-body">
+                <a class="athlete-card-mobile-link" href="<?= BASE_URL ?>/athlete_detail.php?id=<?= (int)$a['id'] ?>">
+                    <span><?= h($a['first_name'] . ' ' . $a['last_name']) ?></span>
+                    <i class="fas fa-chevron-right" aria-hidden="true"></i>
+                </a>
                 <div class="text-center mb-3">
                     <?php if ($a['photo']): ?>
                     <img src="<?= h(photoUrl($a['photo'], 'athletes')) ?>" alt="Fotografie"
@@ -614,6 +647,27 @@ renderHeader('Dashboard', false, true, true);
                     <span class="badge bg-light text-muted border">Žádný trénink</span>
                     <?php endif; ?>
                 </div>
+
+                <form method="post" class="form-check form-switch mb-3">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="action" value="set_athlete_payment_access">
+                    <input type="hidden" name="athlete_id" value="<?= (int)$a['id'] ?>">
+                    <input type="hidden" name="payment_service_disabled" value="0">
+                    <input
+                        class="form-check-input"
+                        type="checkbox"
+                        role="switch"
+                        id="athletePayments<?= (int)$a['id'] ?>"
+                        name="payment_service_enabled"
+                        value="1"
+                        <?= (int)$a['payment_service_enabled'] === 1 ? 'checked' : '' ?>
+                        onchange="this.form.submit()"
+                    >
+                    <label class="form-check-label small fw-semibold" for="athletePayments<?= (int)$a['id'] ?>">
+                        Platby <?= (int)$a['payment_service_enabled'] === 1 ? 'zapnuto' : 'vypnuto' ?>
+                    </label>
+                    <noscript><button type="submit" class="btn btn-outline-secondary btn-sm mt-1">Uložit</button></noscript>
+                </form>
 
                 <div class="d-flex gap-2">
                     <a href="<?= BASE_URL ?>/athlete_detail.php?id=<?= $a['id'] ?>"

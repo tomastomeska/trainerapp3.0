@@ -2,6 +2,7 @@
 /**
  * @var PDO $pdo
  * @var array $athlete
+ * @var bool $athletePaymentsEnabled Set by athlete_dashboard.php before this template is included.
  * @var bool $athleteSpecialTrainingEnabled
  * @var bool $mycoachAppUserCanAccess
  * @var bool $healthQuestionnaireAccessEnabled
@@ -221,6 +222,56 @@ renderAthleteHeader('Profil sportovce', false, true, true);
         padding: 0.8rem 0.75rem;
     }
 }
+
+.athlete-medals-mobile-shortcut,
+.athlete-mobile-payments-shortcut {
+    display: none;
+}
+
+@media (max-width: 399.98px) {
+    .medal-grid--preview .medal-card__title,
+    .medal-grid--preview .medal-card__date {
+        display: none;
+    }
+}
+
+@media (max-width: 319.98px) {
+    .athlete-dashboard-medals > .card-header,
+    .athlete-dashboard-medals > .card-body,
+    .athlete-mobile-payments-summary > .athlete-mobile-summary-card__head,
+    .athlete-mobile-payments-summary > .athlete-mobile-summary-card__body {
+        display: none !important;
+    }
+
+    .athlete-medals-mobile-shortcut,
+    .athlete-mobile-payments-shortcut {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        padding: 0.65rem 0.75rem;
+        background: #212529;
+        color: #fff;
+        font-weight: 700;
+        text-decoration: none;
+    }
+
+    .athlete-medals-mobile-shortcut__action,
+    .athlete-mobile-payments-shortcut__action {
+        flex: 0 0 auto;
+        border-radius: 0.5rem;
+        padding: 0.35rem 0.55rem;
+        background: #ffc107;
+        color: #111;
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+
+    .athlete-mobile-payments-summary .athlete-mobile-payments-shortcut {
+        background: #f8fafc;
+        color: #111;
+    }
+}
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
@@ -256,11 +307,15 @@ renderAthleteHeader('Profil sportovce', false, true, true);
     </div>
 </div>
 
-<section class="card border-0 shadow-sm mb-4" aria-labelledby="athlete-medals-title">
+<section class="card border-0 shadow-sm mb-4 athlete-dashboard-medals" aria-labelledby="athlete-medals-title">
     <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center gap-2 flex-wrap">
         <span id="athlete-medals-title"><i class="fas fa-medal me-2 text-warning"></i>Moje ocenění</span>
         <a href="<?= BASE_URL ?>/athlete_medals.php" class="btn btn-warning btn-sm fw-semibold">Všechny medaile</a>
     </div>
+    <a class="athlete-medals-mobile-shortcut" href="<?= BASE_URL ?>/athlete_medals.php">
+        <span><i class="fas fa-medal me-2 text-warning"></i>Moje ocenění</span>
+        <span class="athlete-medals-mobile-shortcut__action">Všechny medaile</span>
+    </a>
     <div class="card-body">
         <div class="medal-grid medal-grid--preview">
             <?php foreach (array_slice($athleteMedals, 0, 5) as $medal): ?>
@@ -328,7 +383,8 @@ renderAthleteHeader('Profil sportovce', false, true, true);
         </div>
     </div>
 
-    <div class="athlete-mobile-summary-card mb-3">
+    <?php if ($athletePaymentsEnabled): ?>
+    <div class="athlete-mobile-summary-card mb-3 athlete-mobile-payments-summary">
         <div class="athlete-mobile-summary-card__head">
             <div>
                 <div class="athlete-mobile-summary-card__title"><i class="fas fa-wallet me-2 text-warning"></i>Platby</div>
@@ -338,6 +394,10 @@ renderAthleteHeader('Profil sportovce', false, true, true);
                 Všechny
             </a>
         </div>
+        <a class="athlete-mobile-payments-shortcut" href="<?= BASE_URL ?>/athlete_payments.php">
+            <span><i class="fas fa-wallet me-2 text-warning"></i>Platby</span>
+            <span class="athlete-mobile-payments-shortcut__action">Všechny</span>
+        </a>
         <div class="athlete-mobile-summary-card__body">
             <?php if (!empty($paymentRowsForView)): ?>
                 <?php foreach (array_slice($paymentRowsForView, 0, 3) as $row): ?>
@@ -366,6 +426,7 @@ renderAthleteHeader('Profil sportovce', false, true, true);
             <?php endif; ?>
         </div>
     </div>
+    <?php endif; ?>
 
     <div class="accordion athlete-mobile-accordion" id="athleteMobileAccordion">
         <div class="accordion-item">
@@ -802,6 +863,7 @@ $calcBmiToneClass = [
 <?php endif; ?>
 
 <div class="athlete-activity-grid mb-4 athlete-desktop-only">
+<?php if ($athletePaymentsEnabled): ?>
 <div class="card border-0 shadow-sm">
     <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
         <span><i class="fas fa-wallet me-2"></i>Platby</span>
@@ -937,6 +999,7 @@ $calcBmiToneClass = [
         <?php endif; ?>
     </div>
 </div>
+<?php endif; ?>
 
 <div class="card border-0 shadow-sm">
     <div class="card-header bg-dark text-white"><i class="fas fa-history me-2"></i>Historie tréninků</div>

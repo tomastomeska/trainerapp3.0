@@ -73,6 +73,34 @@ function onlineTrainingFuturePaidSubscription(PDO $pdo, int $coachId, int $athle
     return $stmt->fetch() ?: null;
 }
 
+function onlineTrainingAthleteUnpaidSubscription(PDO $pdo, int $coachId, int $athleteId): ?array {
+    $stmt = $pdo->prepare("SELECT s.id, s.starts_on, s.ends_on, s.price, b.billing_month, b.issue_number,
+            p.billed_amount AS payment_amount
+        FROM online_training_subscriptions s
+        LEFT JOIN online_training_billing b ON b.subscription_id = s.id
+        LEFT JOIN athlete_monthly_payments p ON p.coach_id = s.trainer_id AND p.athlete_id = s.athlete_id
+            AND p.billing_month = b.billing_month AND p.issue_number = b.issue_number
+        WHERE s.trainer_id = ? AND s.athlete_id = ? AND s.status = 'active'
+            AND s.price > 0 AND s.starts_on IS NOT NULL AND s.ends_on IS NOT NULL AND s.ends_on >= CURDATE()
+            AND (p.status IS NULL OR p.status <> 'paid')
+        ORDER BY s.starts_on ASC, s.id ASC LIMIT 1");
+    $stmt->execute([$coachId, $athleteId]);
+    return $stmt->fetch() ?: null;
+}
+
+function onlineTrainingSubscriptionPaymentNote(array $subscription, string $athleteName): string {
+    $startsOn = (string)($subscription['starts_on'] ?? '');
+    $endsOn = (string)($subscription['ends_on'] ?? '');
+    $startLabel = $startsOn !== '' ? date('d.m.Y', strtotime($startsOn)) : '';
+    $endLabel = $endsOn !== '' ? date('d.m.Y', strtotime($endsOn)) : '';
+    $period = trim($startLabel . ($endLabel !== '' ? '-' . $endLabel : ''));
+    $prefix = 'Online predplatne ';
+    $suffix = $period !== '' ? ' ' . $period : '';
+    $name = paymentAsciiText(trim($athleteName));
+    $name = substr($name, 0, max(0, 60 - strlen($prefix) - strlen($suffix)));
+    return trim($prefix . $name . $suffix);
+}
+
 function onlineTrainingCoachActiveSubscriptions(PDO $pdo, int $coachId): array {
     $stmt = $pdo->prepare("SELECT DISTINCT s.id, s.athlete_id, s.starts_on, s.ends_on, s.price,
             a.first_name, a.last_name, DATEDIFF(s.ends_on, CURDATE()) AS days_remaining
@@ -205,7 +233,16 @@ function onlineTrainingCreateSubscription(PDO $pdo, int $coachId, int $athleteId
                 ->execute([$coachId, $athleteId, $month]);
         }
         $pdo->commit();
-        return ['athlete' => $athlete, 'month' => $month, 'issue_number' => $issueNumber, 'amount' => $amount, 'price' => (float)$price, 'description' => $description];
+        return [
+            'athlete' => $athlete,
+            'month' => $month,
+            'issue_number' => $issueNumber,
+            'amount' => $amount,
+            'price' => (float)$price,
+            'description' => $description,
+            'starts_on' => $startsOn,
+            'ends_on' => $endsOn,
+        ];
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $e;

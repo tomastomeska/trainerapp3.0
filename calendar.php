@@ -453,6 +453,10 @@ renderHeader('Kalendář', false, true);
     line-height: 1.2;
 }
 
+.training-month-select {
+    display: none;
+}
+
 #trainingYearFilter {
     width: 82px;
 }
@@ -464,6 +468,20 @@ renderHeader('Kalendář', false, true);
     .training-month-filter {
         grid-template-columns: repeat(12, minmax(0, 1fr));
     }
+}
+
+@media (max-width: 529.98px) {
+    .training-month-filter {
+        display: none;
+    }
+
+    .training-month-select {
+        display: block;
+    }
+}
+.training-month-filter[hidden],
+.training-month-select[hidden] {
+    display: none !important;
 }
 
 .calendar-grid {
@@ -1038,6 +1056,11 @@ renderHeader('Kalendář', false, true);
             <div class="training-month-filter mb-3" role="group" aria-label="Měsíc tréninků" id="trainingMonthFilter">
                 <?php foreach (['01'=>'Leden','02'=>'Únor','03'=>'Březen','04'=>'Duben','05'=>'Květen','06'=>'Červen','07'=>'Červenec','08'=>'Srpen','09'=>'Září','10'=>'Říjen','11'=>'Listopad','12'=>'Prosinec'] as $monthValue => $monthLabel): ?><button type="button" class="btn btn-outline-secondary btn-sm" data-month="<?= $monthValue ?>"><?= $monthLabel ?></button><?php endforeach; ?>
             </div>
+            <select class="form-select form-select-sm training-filter-select training-month-select mb-3" id="trainingMonthSelect" aria-label="Měsíc tréninků">
+                <?php foreach (['01'=>'Leden','02'=>'Únor','03'=>'Březen','04'=>'Duben','05'=>'Květen','06'=>'Červen','07'=>'Červenec','08'=>'Srpen','09'=>'Září','10'=>'Říjen','11'=>'Listopad','12'=>'Prosinec'] as $monthValue => $monthLabel): ?>
+                    <option value="<?= $monthValue ?>" <?= $monthValue === date('m') ? 'selected' : '' ?>><?= $monthLabel ?></option>
+                <?php endforeach; ?>
+            </select>
             <div id="trainingTiles" class="row g-3"><div class="col-12 text-muted">Načítám tréninky...</div></div>
         </div>
     </div>
@@ -1668,6 +1691,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const trainingAthleteFilter = document.getElementById('trainingAthleteFilter');
     const trainingYearFilter = document.getElementById('trainingYearFilter');
     const trainingMonthFilter = document.getElementById('trainingMonthFilter');
+    const trainingMonthSelect = document.getElementById('trainingMonthSelect');
     const trainingAlertBadge = document.getElementById('trainingAlertBadge');
     const trainingTiles = document.getElementById('trainingTiles');
     let trainingMonth = String(new Date().getMonth() + 1).padStart(2, '0');
@@ -1684,6 +1708,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let pendingFocusEventId = Number(urlParams.get('focus_event') || 0);
     let activeLockSeriesId = '';
     let weekDataRequestSeq = 0;
+    let trainingTilesRequestSeq = 0;
     let navigationMonthValue = '';
 
     function setCalendarNavBusy(isBusy) {
@@ -3104,16 +3129,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function loadTrainingTiles() {
         if (!trainingTiles) return;
+        const requestId = ++trainingTilesRequestSeq;
         const showDateFilters = !trainingStatusFilter || trainingStatusFilter.value !== 'actionable';
         if (trainingYearFilter) trainingYearFilter.hidden = !showDateFilters;
         if (trainingMonthFilter) trainingMonthFilter.hidden = !showDateFilters;
+        if (trainingMonthSelect) trainingMonthSelect.hidden = !showDateFilters;
         trainingTiles.innerHTML = '<div class="col-12 text-muted">Načítám tréninky...</div>';
         const query = new URLSearchParams({
             athlete_id: trainingAthleteFilter ? trainingAthleteFilter.value : '0',
             status: trainingStatusFilter ? trainingStatusFilter.value : 'all',
             month: `${trainingYearFilter ? trainingYearFilter.value : new Date().getFullYear()}-${trainingMonth}`,
         });
-        const payload = await fetchJson(`<?= BASE_URL ?>/api/calendar_training_list.php?${query.toString()}`);
+        let payload;
+        try {
+            payload = await fetchJson(`<?= BASE_URL ?>/api/calendar_training_list.php?${query.toString()}`, { cache: 'no-store' });
+        } catch (error) {
+            if (requestId !== trainingTilesRequestSeq) return;
+            console.error('Načtení tréninků selhalo.', error);
+            trainingTiles.innerHTML = '<div class="col-12 text-danger">Tréninky se nepodařilo načíst. Zkuste záložku otevřít znovu.</div>';
+            return;
+        }
+        if (requestId !== trainingTilesRequestSeq) return;
         const actionCount = Number(payload.action_count || 0);
         if (trainingAlertBadge) {
             trainingAlertBadge.textContent = actionCount > 99 ? '99+' : String(actionCount);
@@ -3689,6 +3725,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (trainingAthleteFilter) {
         trainingAthleteFilter.addEventListener('change', loadTrainingTiles);
     }
+    const trainingListTab = document.getElementById('training-list-tab');
+    if (trainingListTab) {
+        trainingListTab.addEventListener('shown.bs.tab', loadTrainingTiles);
+    }
     if (trainingStatusFilter) {
         trainingStatusFilter.addEventListener('change', loadTrainingTiles);
     }
@@ -3697,13 +3737,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const button = event.target.closest('[data-month]');
         if (!button) return;
         trainingMonth = button.dataset.month;
+        if (trainingMonthSelect) trainingMonthSelect.value = trainingMonth;
         trainingMonthFilter.querySelectorAll('[data-month]').forEach((item) => item.classList.toggle('active', item === button));
+        loadTrainingTiles();
+    });
+    if (trainingMonthSelect) trainingMonthSelect.addEventListener('change', () => {
+        trainingMonth = trainingMonthSelect.value;
+        if (trainingMonthFilter) {
+            trainingMonthFilter.querySelectorAll('[data-month]').forEach((item) => item.classList.toggle('active', item.dataset.month === trainingMonth));
+        }
         loadTrainingTiles();
     });
     if (trainingMonthFilter) {
         const currentMonthButton = trainingMonthFilter.querySelector(`[data-month="${trainingMonth}"]`);
         if (currentMonthButton) currentMonthButton.classList.add('active');
     }
+    if (trainingMonthSelect) trainingMonthSelect.value = trainingMonth;
 
     deleteEventBtn.addEventListener('click', async () => {
         const finishDelete = beginBusyButton(deleteEventBtn, 'Mazu...');
@@ -4026,8 +4075,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateModeUI();
 
     (async () => {
-        await loadWeekData();
-        await loadTrainingTiles();
+        await Promise.all([loadWeekData(), loadTrainingTiles()]);
 
         if (pendingFocusEventId > 0) {
             const focusEvent = events.find((event) => Number(event.id || 0) === pendingFocusEventId);

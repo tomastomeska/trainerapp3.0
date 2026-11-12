@@ -154,9 +154,11 @@ requireAthleteLogin();
 
 $athleteId = (int)getCurrentAthleteId();
 $pdo = getDB();
+paymentAccessEnsureSchema($pdo);
 
 $athleteStmt = $pdo->prepare(
-    'SELECT a.*, c.id AS coach_id, c.name AS coach_name, c.username AS coach_username
+    'SELECT a.*, c.id AS coach_id, c.name AS coach_name, c.username AS coach_username,
+            c.payment_access_default AS coach_payment_access_default
      FROM athletes a
      JOIN coaches c ON c.id = a.coach_id
      WHERE a.id = ?
@@ -170,8 +172,39 @@ if (!$athlete) {
     redirect(BASE_URL . '/login.php');
 }
 
+$athletePaymentsEnabled = (int)($athlete['payment_access_override'] ?? $athlete['coach_payment_access_default'] ?? 1) === 1;
 $athleteSpecialTrainingEnabled = ((int)($athlete['special_training_enabled'] ?? 0)) === 1;
 $activeOnlineSubscription = onlineTrainingActiveSubscription($pdo, (int)$athlete['coach_id'], $athleteId);
+$unpaidOnlineSubscription = onlineTrainingAthleteUnpaidSubscription($pdo, (int)$athlete['coach_id'], $athleteId);
+$unpaidOnlineSubscriptionQr = null;
+if ($unpaidOnlineSubscription) {
+    try {
+        if (athleteDashboardPaymentColumnExists($pdo, 'coaches', 'bank_account')) {
+            $coachBankStmt = $pdo->prepare('SELECT bank_account FROM coaches WHERE id = ? LIMIT 1');
+            $coachBankStmt->execute([(int)$athlete['coach_id']]);
+            $rawBankAccount = strtoupper(str_replace(' ', '', trim((string)($coachBankStmt->fetchColumn() ?: ''))));
+            $spdAccount = accountForSpd($rawBankAccount);
+            if ($spdAccount !== null) {
+                $subscriptionNote = onlineTrainingSubscriptionPaymentNote(
+                    $unpaidOnlineSubscription,
+                    trim((string)($athlete['first_name'] . ' ' . $athlete['last_name']))
+                );
+                $unpaidOnlineSubscriptionQr = [
+                    'account' => $spdAccount,
+                    'note' => $subscriptionNote,
+                    'qr_url' => buildPaymentQrUrl(
+                        $spdAccount,
+                        (float)($unpaidOnlineSubscription['payment_amount'] ?? $unpaidOnlineSubscription['price']),
+                        $subscriptionNote
+                    ),
+                ];
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('Athlete dashboard online subscription payment details: ' . $e->getMessage());
+        $unpaidOnlineSubscriptionQr = null;
+    }
+}
 $athleteMyCoachEnabled = mycoachAccessEnabledForAthlete($pdo, $athleteId);
 $onlineTrainingCount = 0;
 try {
@@ -806,7 +839,7 @@ try {
                 ? (($billableSingle * $rate) + ($billablePaired * $pairedRate))
                 : null;
 
-            if ($paymentStatus === 'pending' && $rate !== null && $amount !== null) {
+            if ($athletePaymentsEnabled && $paymentStatus === 'pending' && $rate !== null && $amount !== null) {
                 $pendingPlan = max(0, (int)($payment['planned_sessions'] ?? 0));
                 $pendingCarry = max(0, (int)($payment['carryover_used_sessions'] ?? 0));
                 $pendingAmount = (float)($payment['billed_amount'] ?? 0.0);
@@ -847,7 +880,7 @@ try {
             $isPendingVisible = ($isPending && $isAthleteReleased);
 
             // Legacy data fix: if a month is released but missing snapshot row, create one now and freeze future changes.
-            if ($payment === null && $isAthleteReleased && $rate !== null && $displayAmount !== null) {
+            if ($athletePaymentsEnabled && $payment === null && $isAthleteReleased && $rate !== null && $displayAmount !== null) {
                 try {
                     athleteDashboardBackfillPendingSnapshot(
                         $pdo,

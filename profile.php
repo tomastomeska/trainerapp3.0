@@ -2,12 +2,17 @@
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/surveys.php';
+require_once __DIR__ . '/includes/payment_access.php';
 require_once __DIR__ . '/includes/header.php';
 
 requireLogin();
 
 $coachId = getCurrentCoachId();
 $pdo     = getDB();
+paymentAccessEnsureSchema($pdo);
+$coachPaymentAccessStmt = $pdo->prepare('SELECT payment_access_default FROM coaches WHERE id = ? LIMIT 1');
+$coachPaymentAccessStmt->execute([$coachId]);
+$coachPaymentsEnabled = (int)$coachPaymentAccessStmt->fetchColumn() === 1;
 $error   = null;
 $coachSpecialTrainingEnabled = false;
 $coachMyCoachEnabled = false;
@@ -111,6 +116,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($mustChangePassword && $action !== 'change_password') {
             $error = 'Při prvním přihlášení je nutné nejdříve změnit heslo.';
+        }
+
+        if ($error === null && $action === 'set_payment_access_all') {
+            $targetEnabled = (string)($_POST['payment_access_default'] ?? '');
+            if (!in_array($targetEnabled, ['0', '1'], true)) {
+                $error = 'Neplatné nastavení dostupnosti plateb.';
+            } else {
+                try {
+                    paymentAccessSetAll($pdo, (int)$coachId, $targetEnabled === '1');
+                    flash(
+                        'success',
+                        $targetEnabled === '1'
+                            ? 'Platby byly zapnuty všem současným i novým sportovcům.'
+                            : 'Platby byly vypnuty všem současným i novým sportovcům.'
+                    );
+                    redirect(BASE_URL . '/profile.php');
+                } catch (Throwable $e) {
+                    error_log('Coach payment access update failed: ' . $e->getMessage());
+                    $error = 'Nastavení dostupnosti plateb se nepodařilo uložit.';
+                }
+            }
         }
 
         if ($error === null && $action === 'request_account_deletion') {
@@ -470,6 +496,28 @@ renderHeader('Můj profil', false, true);
 
 <div class="d-flex align-items-center mb-4 gap-3">
     <h2 class="mb-0"><i class="fas fa-user-circle me-2 text-warning"></i>Můj profil</h2>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-3">
+        <div>
+            <div class="fw-bold"><i class="fas fa-wallet me-2 text-warning"></i>Platby za tréninky</div>
+            <div class="small text-muted">
+                Výchozí stav pro nové sportovce:
+                <strong><?= $coachPaymentsEnabled ? 'zapnuto' : 'vypnuto' ?></strong>.
+                Hromadná změna nastaví stejný stav všem současným sportovcům.
+            </div>
+        </div>
+        <form method="post" onsubmit="return confirm('Opravdu chcete změnit dostupnost plateb všem sportovcům? Individuální nastavení bude zrušeno.');">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="set_payment_access_all">
+            <input type="hidden" name="payment_access_default" value="<?= $coachPaymentsEnabled ? '0' : '1' ?>">
+            <button type="submit" class="btn <?= $coachPaymentsEnabled ? 'btn-outline-danger' : 'btn-warning' ?>">
+                <i class="fas fa-<?= $coachPaymentsEnabled ? 'toggle-off' : 'toggle-on' ?> me-1"></i>
+                <?= $coachPaymentsEnabled ? 'Vypnout platby všem' : 'Zapnout platby všem' ?>
+            </button>
+        </form>
+    </div>
 </div>
 
 <div class="dashboard-quick-tiles mb-3">

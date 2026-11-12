@@ -1,11 +1,13 @@
 <?php
 // admin/coach_delete.php – potvrzovací stránka smazání trenéra se zálohou
 require_once __DIR__ . '/../includes/admin_auth.php';
+require_once __DIR__ . '/../includes/coach_account_lifecycle.php';
 require_once __DIR__ . '/header.php';
 
 requireAdminLogin();
 
 $pdo     = getDB();
+coachAccountEnsureSchema($pdo);
 $coachId = intParam($_GET, 'id') ?: intParam($_POST, 'coach_id');
 
 $stmt = $pdo->prepare('SELECT * FROM coaches WHERE id = ?');
@@ -23,8 +25,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
         flash('danger', 'Neplatný bezpečnostní token.');
         redirect(BASE_URL . '/admin/coaches.php');
     }
-    $pdo->prepare('DELETE FROM coaches WHERE id = ?')->execute([$coachId]);
-    flash('success', 'Trenér ' . h($coach['username']) . ' byl smazán se všemi daty.');
+    try {
+        $backupId = coachAccountArchiveAndDelete($pdo, $coachId);
+        flash('success', 'Trenér ' . h($coach['username']) . ' byl smazán. Záloha #' . $backupId . ' je dostupná v archivu záloh po dobu jednoho roku.');
+    } catch (Throwable $e) {
+        error_log('Manual coach deletion failed for #' . $coachId . ': ' . $e->getMessage());
+        flash('danger', 'Trenéra se nepodařilo bezpečně smazat. Záloha nebyla potvrzena; zkuste to znovu nebo kontaktujte podporu.');
+    }
     redirect(BASE_URL . '/admin/coaches.php');
 }
 
@@ -160,18 +167,18 @@ renderAdminHeader('Smazat trenéra');
     <div class="card-body d-flex align-items-center gap-4">
         <div>
             <h6 class="fw-bold mb-1">
-                <i class="fas fa-download me-2 text-success"></i>Doporučeno: Stáhněte si zálohu před smazáním
+                <i class="fas fa-download me-2 text-success"></i>Automatická záloha při smazání
             </h6>
             <p class="text-muted small mb-0">
-                Záloha obsahuje všechna data trenéra ve formátu SQL.
-                Lze ji importovat zpět přes phpMyAdmin nebo MySQL klientem.
+                Při smazání se uloží roční SQL záloha trenéra, jeho sportovců a souvisejících tréninkových dat.
+                Zálohu lze uložit do archivu na jeden rok a stáhnout také už nyní.
             </p>
         </div>
         <div class="ms-auto flex-shrink-0">
             <a href="<?= BASE_URL ?>/admin/coach_export.php?id=<?= $coachId ?>"
                class="btn btn-success fw-bold px-4"
                target="_blank">
-                <i class="fas fa-file-code me-2"></i>Stáhnout zálohu (.sql)
+                <i class="fas fa-file-code me-2"></i>Stáhnout SQL nyní
             </a>
         </div>
     </div>

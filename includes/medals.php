@@ -25,6 +25,23 @@ if (!function_exists('athleteMedalDefinitions')) {
             'image' => 'health_questionnaire.png',
         ];
 
+        $definitions[] = [
+            'id' => 'calendar_first_request',
+            'title' => 'První žádost o trénink do kalendáře',
+            'description' => 'Poslat trenérovi první žádost o tréninkový termín.',
+            'category' => 'calendar_request',
+            'threshold' => 1,
+            'image' => 'calendar_first_request.png',
+        ];
+        $definitions[] = [
+            'id' => 'profile_photo',
+            'title' => 'Přidána profilová fotografie',
+            'description' => 'Přidat profilovou fotografii.',
+            'category' => 'profile_photo',
+            'threshold' => 1,
+            'image' => 'profile_photo.png',
+        ];
+
         $onlineMilestones = [1, 10, 50, 100, 200, 1000];
         foreach ($onlineMilestones as $count) {
             $definitions[] = [
@@ -83,6 +100,30 @@ if (!function_exists('athleteMedalDefinitions')) {
         ];
 
         return $definitions;
+    }
+}
+
+if (!function_exists('athleteMedalsEnsureSchema')) {
+    function athleteMedalsEnsureSchema(PDO $pdo): void
+    {
+        $stmt = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'photo_added_at'");
+        if ($stmt === false || !$stmt->fetch()) {
+            try {
+                $pdo->exec('ALTER TABLE athletes ADD COLUMN photo_added_at DATETIME NULL DEFAULT NULL AFTER photo');
+            } catch (PDOException $e) {
+                if ((int)($e->errorInfo[1] ?? 0) !== 1060) {
+                    throw $e;
+                }
+            }
+        }
+
+        $pdo->exec(
+            "UPDATE athletes
+             SET photo_added_at = COALESCE(created_at, NOW())
+             WHERE photo_added_at IS NULL
+               AND photo IS NOT NULL
+               AND TRIM(photo) <> ''"
+        );
     }
 }
 
@@ -166,6 +207,7 @@ if (!function_exists('athleteMedalPopulationHolders')) {
 if (!function_exists('athleteMedalPopulationStats')) {
     function athleteMedalPopulationStats(PDO $pdo): array
     {
+        athleteMedalsEnsureSchema($pdo);
         $athletesById = [];
         $athleteStmt = $pdo->query(
             'SELECT a.id AS athlete_id, a.first_name, a.last_name,
@@ -207,6 +249,14 @@ if (!function_exists('athleteMedalPopulationStats')) {
             'health' => 'SELECT athlete_id, COUNT(*) AS event_count
                          FROM athlete_health_questionnaire_submissions
                          GROUP BY athlete_id',
+            'calendar_request' => "SELECT requested_by_athlete_id AS athlete_id, COUNT(*) AS event_count
+                                   FROM coach_calendar_events
+                                   WHERE requested_by_athlete_id IS NOT NULL
+                                     AND title_type = 'training'
+                                   GROUP BY requested_by_athlete_id",
+            'profile_photo' => 'SELECT id AS athlete_id, 1 AS event_count
+                                FROM athletes
+                                WHERE photo_added_at IS NOT NULL',
             'food_meal' => 'SELECT d.athlete_id, COUNT(DISTINCT d.date) AS event_count
                             FROM food_diary_days d
                             JOIN food_diary_meals m ON m.day_id = d.id AND m.skipped = 0
@@ -296,6 +346,7 @@ if (!function_exists('athleteMedalThresholdDates')) {
 if (!function_exists('athleteMedalsLoad')) {
     function athleteMedalsLoad(PDO $pdo, int $athleteId): array
     {
+        athleteMedalsEnsureSchema($pdo);
         $definitions = athleteMedalDefinitions();
         $thresholdsByCategory = [];
         foreach ($definitions as $definition) {
@@ -313,6 +364,20 @@ if (!function_exists('athleteMedalsLoad')) {
                             AND ts.deleted_by_coach_at IS NULL
                           ORDER BY ts.completed_at ASC, ts.id ASC
                           LIMIT 1000',
+            ],
+            'calendar_request' => [
+                'sql' => "SELECT DATE(created_at) AS event_date
+                          FROM coach_calendar_events
+                          WHERE requested_by_athlete_id = ?
+                            AND title_type = 'training'
+                          ORDER BY created_at ASC, id ASC
+                          LIMIT 1",
+            ],
+            'profile_photo' => [
+                'sql' => 'SELECT DATE(photo_added_at) AS event_date
+                          FROM athletes
+                          WHERE id = ? AND photo_added_at IS NOT NULL
+                          LIMIT 1',
             ],
             'online' => [
                 'sql' => "SELECT DATE(ot.completed_at) AS event_date

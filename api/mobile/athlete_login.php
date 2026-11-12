@@ -19,6 +19,7 @@ $stmt = $pdo->prepare(
     'SELECT id, coach_id, email, password, first_name, last_name, mobile_app_enabled, force_password_change, photo
      FROM athletes
      WHERE email = ?
+       AND EXISTS (SELECT 1 FROM coaches WHERE coaches.id = athletes.coach_id)
      LIMIT 1'
 );
 $stmt->execute([$email]);
