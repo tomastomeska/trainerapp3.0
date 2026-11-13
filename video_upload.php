@@ -320,12 +320,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
+            $titleValues = $_POST['video_titles'] ?? [];
+            $customTitle = is_array($titleValues) && isset($titleValues[$i]) && is_scalar($titleValues[$i])
+                ? trim((string)$titleValues[$i])
+                : '';
+            $displayName = $customTitle !== '' ? mb_substr($customTitle, 0, 255, 'UTF-8') : (string)$origName;
+
             $ins = $pdo->prepare('INSERT INTO video_files (coach_id, folder_id, file_path, original_name, file_size, mime_type, description, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
             $ins->execute([
                 $coachId,
                 $folderId > 0 ? $folderId : null,
                 $storedName,
-                (string)$origName,
+                $displayName,
                 $storedSize,
                 $storedMime,
                 $description !== '' ? $description : null,
@@ -342,11 +348,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($visibility === 'all_athletes') {
                 foreach ($athletes as $a) {
-                    notifyAthleteVideo((int)$a['id'], (int)$coachId, (string)$origName, $pdo);
+                    notifyAthleteVideo((int)$a['id'], (int)$coachId, $displayName, $pdo);
                 }
             } elseif ($visibility === 'specific_athletes' && !empty($specificIds)) {
                 foreach ($specificIds as $aid) {
-                    notifyAthleteVideo((int)$aid, (int)$coachId, (string)$origName, $pdo);
+                    notifyAthleteVideo((int)$aid, (int)$coachId, $displayName, $pdo);
                 }
             }
 
@@ -419,6 +425,8 @@ $defaultVisibility = $prefillAthleteId > 0 ? 'specific_athletes' : 'private';
                 <input type="file" name="files[]" id="fileInput" class="form-control" multiple required accept="video/*,.mp4,.mov,.avi,.mkv,.webm,.m4v">
                 <div class="form-text">Povolene formaty: MP4, MOV, AVI, MKV, WEBM, M4V. Max <?= (int)$maxVideoSizeMb ?> MB na video.</div>
             </div>
+
+            <div class="mb-3" id="videoTitleFields" aria-live="polite"></div>
 
             <div class="d-flex gap-2 mb-4 flex-wrap">
                 <label class="btn btn-outline-danger" title="Natocit video primo">
@@ -497,12 +505,41 @@ document.getElementById('visSelect')?.addEventListener('change', function () {
     document.getElementById('specificAthletes')?.classList.toggle('d-none', this.value !== 'specific_athletes');
 });
 
+const videoInput = document.getElementById('fileInput');
+const videoTitleFields = document.getElementById('videoTitleFields');
+
+function renderVideoTitleFields() {
+    videoTitleFields.replaceChildren();
+    Array.from(videoInput.files || []).forEach((file, index) => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'mb-2';
+
+        const label = document.createElement('label');
+        label.className = 'form-label fw-semibold';
+        label.htmlFor = 'video-title-' + index;
+        label.textContent = 'Název videa: ' + file.name;
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.name = 'video_titles[' + index + ']';
+        input.id = 'video-title-' + index;
+        input.className = 'form-control';
+        input.maxLength = 255;
+        input.placeholder = file.name;
+
+        wrapper.append(label, input);
+        videoTitleFields.append(wrapper);
+    });
+}
+
+videoInput.addEventListener('change', renderVideoTitleFields);
+
 function mergeFiles(captureInput) {
-    const main = document.getElementById('fileInput');
     const dt = new DataTransfer();
-    for (const file of (main.files || [])) dt.items.add(file);
+    for (const file of (videoInput.files || [])) dt.items.add(file);
     for (const file of (captureInput.files || [])) dt.items.add(file);
-    main.files = dt.files;
+    videoInput.files = dt.files;
+    renderVideoTitleFields();
     captureInput.value = '';
 }
 </script>

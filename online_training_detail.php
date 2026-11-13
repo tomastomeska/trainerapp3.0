@@ -157,8 +157,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $attachment = null;
             $url = trim((string)($_POST['external_url'] ?? ''));
             $description = $isCoach ? trim((string)($_POST['link_description'] ?? '')) : '';
+            $libraryVideoId = (int)($_POST['video_file_id'] ?? 0);
             if ($url !== '') onlineTrainingValidateLink($url, $description);
-            elseif ($description !== '') throw new RuntimeException('K popisu odkazu zadejte také internetovou adresu.');
+            elseif ($description !== '' && $libraryVideoId <= 0) throw new RuntimeException('K popisu odkazu zadejte také internetovou adresu.');
             $targetExerciseId = (int)($_POST['online_training_exercise_id'] ?? 0);
             if (!$isCoach && $targetExerciseId > 0) {
                 throw new RuntimeException('Přílohu můžete přidat pouze k celému tréninku, ne ke konkrétnímu cviku.');
@@ -168,14 +169,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $targetCheck->execute([$targetExerciseId, $id]);
                 if (!$targetCheck->fetch()) throw new RuntimeException('Cílový cvik nebyl nalezen.');
             }
+            $libraryVideo = null;
+            if ($libraryVideoId > 0) {
+                if (!$isCoach || $targetExerciseId <= 0) {
+                    throw new RuntimeException('Video z knihovny lze přidat pouze k cviku jako trenér.');
+                }
+                $videoStmt = $pdo->prepare('SELECT id, original_name FROM video_files WHERE id = ? AND coach_id = ? AND archived_at IS NULL LIMIT 1');
+                $videoStmt->execute([$libraryVideoId, $coachId]);
+                $libraryVideo = $videoStmt->fetch();
+                if (!$libraryVideo) throw new RuntimeException('Vybrané video nebylo nalezeno ve vaší knihovně.');
+                if (strlen($description) > 10000) throw new RuntimeException('Vysvětlení videa je příliš dlouhé (nejvýše 10 000 bajtů).');
+                $hasUploadedFile = !empty($_FILES['attachment'])
+                    && (int)($_FILES['attachment']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
+                if ($hasUploadedFile || $url !== '') {
+                    throw new RuntimeException('Vyberte video z knihovny, nebo přidejte soubor či odkaz. Tyto možnosti nelze kombinovat.');
+                }
+            }
             try {
                 $pdo->beginTransaction();
-                if (!empty($_FILES['attachment'])) $attachment = onlineTrainingSaveUpload($_FILES['attachment'], $isCoach ? 'trainer' : 'athlete');
-                if (!$attachment && $url === '') throw new RuntimeException('Vyberte soubor nebo zadejte URL.');
+                if ($libraryVideo) {
+                    $pdo->prepare("INSERT INTO online_training_attachments (online_training_id, online_training_exercise_id, attachment_type, video_file_id, original_name, description, uploaded_by) VALUES (?, ?, 'video', ?, ?, ?, 'trainer')")
+                        ->execute([$id, $targetExerciseId, $libraryVideoId, $libraryVideo['original_name'], $description !== '' ? $description : null]);
+                } else {
+                    if (!empty($_FILES['attachment'])) $attachment = onlineTrainingSaveUpload($_FILES['attachment'], $isCoach ? 'trainer' : 'athlete');
+                    if (!$attachment && $url === '') throw new RuntimeException('Vyberte soubor nebo zadejte URL.');
+                }
                 if ($attachment) {
                     $pdo->prepare('INSERT INTO online_training_attachments (online_training_id, online_training_exercise_id, attachment_type, file_path, original_name, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)')->execute([$id, $targetExerciseId ?: null, $attachment['type'], $attachment['path'], $attachment['name'], $attachment['uploaded_by']]);
                 }
-                if ($url !== '') $pdo->prepare("INSERT INTO online_training_attachments (online_training_id, online_training_exercise_id, attachment_type, external_url, description, uploaded_by) VALUES (?, ?, 'url', ?, ?, ?)")->execute([$id, $targetExerciseId ?: null, $url, $description !== '' ? $description : null, $isCoach ? 'trainer' : 'athlete']);
+                if (!$libraryVideo && $url !== '') $pdo->prepare("INSERT INTO online_training_attachments (online_training_id, online_training_exercise_id, attachment_type, external_url, description, uploaded_by) VALUES (?, ?, 'url', ?, ?, ?)")->execute([$id, $targetExerciseId ?: null, $url, $description !== '' ? $description : null, $isCoach ? 'trainer' : 'athlete']);
                 $pdo->commit();
             } catch (Throwable $e) {
                 if ($pdo->inTransaction()) $pdo->rollBack();
@@ -312,6 +334,12 @@ if ($isCoach && $training['status'] === 'created') {
     $availableStmt->execute([$coachId, $id]);
     $availableExercises = $availableStmt->fetchAll();
 }
+$libraryVideos = [];
+if ($isCoach) {
+    $libraryVideoStmt = $pdo->prepare('SELECT id, original_name FROM video_files WHERE coach_id = ? AND archived_at IS NULL ORDER BY original_name, id');
+    $libraryVideoStmt->execute([$coachId]);
+    $libraryVideos = $libraryVideoStmt->fetchAll();
+}
 $attachmentStmt = $pdo->prepare('SELECT ota.*, ote.exercise_name FROM online_training_attachments ota LEFT JOIN online_training_exercises ote ON ote.id = ota.online_training_exercise_id WHERE ota.online_training_id = ? ORDER BY ota.created_at, ota.id');
 $attachmentStmt->execute([$id]);
 $attachments = $attachmentStmt->fetchAll();
@@ -334,10 +362,12 @@ $renderAttachmentCards = static function (array $items) use ($id, $ownRole, $can
 <img src="<?= BASE_URL ?>/uploads/<?= h($attachment['file_path']) ?>" alt="Fotografie k online tréninku">
 </a>
 <?php elseif ($attachment['attachment_type'] === 'video'): ?>
-<button type="button" class="online-video-open" data-video-src="<?= BASE_URL ?>/uploads/<?= h($attachment['file_path']) ?>" aria-label="Přehrát video<?= !empty($attachment['original_name']) ? ': ' . h((string)$attachment['original_name']) : '' ?>">
-<video muted playsinline preload="metadata"><source src="<?= BASE_URL ?>/uploads/<?= h($attachment['file_path']) ?>"></video>
+<?php $videoSrc = !empty($attachment['video_file_id']) ? BASE_URL . '/video_stream.php?id=' . (int)$attachment['video_file_id'] : BASE_URL . '/uploads/' . (string)$attachment['file_path']; ?>
+<button type="button" class="online-video-open" data-video-src="<?= h($videoSrc) ?>" aria-label="Přehrát video<?= !empty($attachment['original_name']) ? ': ' . h((string)$attachment['original_name']) : '' ?>">
+<video muted playsinline preload="metadata"><source src="<?= h($videoSrc) ?>"></video>
 <span class="online-video-open__play" aria-hidden="true"><i class="fas fa-play"></i></span>
 </button>
+<?php if (!empty($attachment['description'])): ?><div class="small mt-2 text-break" style="white-space:pre-wrap"><?= h((string)$attachment['description']) ?></div><?php endif; ?>
 <?php else: ?>
 <a href="<?= h($attachment['external_url']) ?>" target="_blank" rel="noopener noreferrer">Otevřít internetový odkaz</a>
 <?php if (!empty($attachment['description'])): ?><div class="small mt-2 text-break" style="white-space:pre-wrap"><?= h((string)$attachment['description']) ?></div><?php endif; ?>
@@ -566,10 +596,11 @@ $exerciseAttachments = array_values(array_filter(
 <form data-online-attachment-form data-exercise-name="<?= h($exercise['exercise_name']) ?>" method="post" enctype="multipart/form-data" class="border rounded bg-white p-3">
 <?= csrfField() ?><input type="hidden" name="training_id" value="<?= $id ?>"><input type="hidden" name="action" value="attachment"><input type="hidden" name="online_training_exercise_id" value="<?= (int)$exercise['id'] ?>">
 <div class="row g-2 align-items-end">
+<?php if ($isCoach): ?><div class="col-12"><label class="form-label small" for="exercise-video-library-<?= (int)$exercise['id'] ?>">Vybrat z Moje videa (volitelné)</label><select id="exercise-video-library-<?= (int)$exercise['id'] ?>" name="video_file_id" class="form-select"><option value="0">Nevybírat video z knihovny</option><?php foreach ($libraryVideos as $libraryVideo): ?><option value="<?= (int)$libraryVideo['id'] ?>"><?= h($libraryVideo['original_name']) ?></option><?php endforeach; ?></select><?php if (!$libraryVideos): ?><div class="form-text">V knihovně zatím nemáte žádná videa. <a href="<?= BASE_URL ?>/video_upload.php" target="_blank" rel="noopener">Nahrát video</a></div><?php else: ?><div class="form-text">Při výběru z knihovny nepřidávejte současně soubor ani odkaz.</div><?php endif; ?></div><?php endif; ?>
 <div class="col-md-5"><label class="form-label small" for="exercise-file-<?= (int)$exercise['id'] ?>">Fotografie nebo video</label><input id="exercise-file-<?= (int)$exercise['id'] ?>" type="file" name="attachment" class="form-control" accept="image/*,video/*"></div>
 <div class="col-md-5"><label class="form-label small" for="exercise-url-<?= (int)$exercise['id'] ?>">Odkaz (volitelně)</label><input id="exercise-url-<?= (int)$exercise['id'] ?>" name="external_url" type="url" maxlength="1000" class="form-control" placeholder="https://..."></div>
 <div class="col-md-2"><button type="submit" class="btn btn-outline-primary w-100 online-attachment-submit"><i class="fas fa-paperclip me-1"></i>Přidat</button></div>
-<?php if ($isCoach): ?><div class="col-12"><label class="form-label small" for="exercise-link-description-<?= (int)$exercise['id'] ?>">Vysvětlení odkazu (volitelné)</label><textarea id="exercise-link-description-<?= (int)$exercise['id'] ?>" name="link_description" class="form-control" rows="2"></textarea></div><?php endif; ?>
+<?php if ($isCoach): ?><div class="col-12"><label class="form-label small" for="exercise-link-description-<?= (int)$exercise['id'] ?>" data-attachment-description-label>Vysvětlení odkazu (volitelné)</label><textarea id="exercise-link-description-<?= (int)$exercise['id'] ?>" name="link_description" class="form-control" rows="2"></textarea></div><?php endif; ?>
 </div>
 <div class="form-text">Příloha se zobrazí sportovci přímo u cviku.</div>
 </form>
@@ -629,6 +660,7 @@ $athleteExerciseAttachments = array_values(array_filter($exerciseAttachments, st
 <form data-online-attachment-form data-exercise-name="<?= h($exercise['exercise_name']) ?>" method="post" enctype="multipart/form-data" class="border rounded bg-white p-3">
 <?= csrfField() ?><input type="hidden" name="training_id" value="<?= $id ?>"><input type="hidden" name="action" value="attachment"><input type="hidden" name="online_training_exercise_id" value="<?= (int)$exercise['id'] ?>">
 <div class="row g-2 align-items-end">
+<?php if ($isCoach): ?><div class="col-12"><label class="form-label small" for="exercise-video-library-<?= (int)$exercise['id'] ?>">Vybrat z Moje videa (volitelné)</label><select id="exercise-video-library-<?= (int)$exercise['id'] ?>" name="video_file_id" class="form-select"><option value="0">Nevybírat video z knihovny</option><?php foreach ($libraryVideos as $libraryVideo): ?><option value="<?= (int)$libraryVideo['id'] ?>"><?= h($libraryVideo['original_name']) ?></option><?php endforeach; ?></select><?php if (!$libraryVideos): ?><div class="form-text">V knihovně zatím nemáte žádná videa. <a href="<?= BASE_URL ?>/video_upload.php" target="_blank" rel="noopener">Nahrát video</a></div><?php else: ?><div class="form-text">Při výběru z knihovny nepřidávejte současně soubor ani odkaz.</div><?php endif; ?></div><?php endif; ?>
 <div class="col-md-5"><label class="form-label small" for="exercise-file-<?= (int)$exercise['id'] ?>">Fotografie nebo video</label><input id="exercise-file-<?= (int)$exercise['id'] ?>" type="file" name="attachment" class="form-control" accept="image/*,video/*"></div>
 <div class="col-md-5"><label class="form-label small" for="exercise-url-<?= (int)$exercise['id'] ?>">Odkaz (volitelně)</label><input id="exercise-url-<?= (int)$exercise['id'] ?>" name="external_url" type="url" maxlength="1000" class="form-control" placeholder="https://..."></div>
 <div class="col-md-2"><button type="submit" class="btn btn-outline-primary w-100 online-attachment-submit"><i class="fas fa-paperclip me-1"></i>Přidat</button></div>
@@ -745,10 +777,11 @@ $athleteExerciseAttachments = array_values(array_filter($exerciseAttachments, st
 <form data-online-attachment-form data-exercise-name="<?= h($exercise['exercise_name']) ?>" method="post" enctype="multipart/form-data" class="border rounded bg-white p-3">
 <?= csrfField() ?><input type="hidden" name="training_id" value="<?= $id ?>"><input type="hidden" name="action" value="attachment"><input type="hidden" name="online_training_exercise_id" value="<?= (int)$exercise['id'] ?>">
 <div class="row g-2 align-items-end">
+<?php if ($isCoach): ?><div class="col-12"><label class="form-label small" for="exercise-video-library-<?= (int)$exercise['id'] ?>">Vybrat z Moje videa (volitelné)</label><select id="exercise-video-library-<?= (int)$exercise['id'] ?>" name="video_file_id" class="form-select"><option value="0">Nevybírat video z knihovny</option><?php foreach ($libraryVideos as $libraryVideo): ?><option value="<?= (int)$libraryVideo['id'] ?>"><?= h($libraryVideo['original_name']) ?></option><?php endforeach; ?></select><?php if (!$libraryVideos): ?><div class="form-text">V knihovně zatím nemáte žádná videa. <a href="<?= BASE_URL ?>/video_upload.php" target="_blank" rel="noopener">Nahrát video</a></div><?php else: ?><div class="form-text">Při výběru z knihovny nepřidávejte současně soubor ani odkaz.</div><?php endif; ?></div><?php endif; ?>
 <div class="col-md-5"><label class="form-label small" for="exercise-file-<?= (int)$exercise['id'] ?>">Fotografie nebo video</label><input id="exercise-file-<?= (int)$exercise['id'] ?>" type="file" name="attachment" class="form-control" accept="image/*,video/*"></div>
 <div class="col-md-5"><label class="form-label small" for="exercise-url-<?= (int)$exercise['id'] ?>">Odkaz (volitelně)</label><input id="exercise-url-<?= (int)$exercise['id'] ?>" name="external_url" type="url" maxlength="1000" class="form-control" placeholder="https://..."></div>
 <div class="col-md-2"><button type="submit" class="btn btn-outline-primary w-100 online-attachment-submit"><i class="fas fa-paperclip me-1"></i>Přidat</button></div>
-<?php if ($isCoach): ?><div class="col-12"><label class="form-label small" for="exercise-link-description-<?= (int)$exercise['id'] ?>">Vysvětlení odkazu (volitelné)</label><textarea id="exercise-link-description-<?= (int)$exercise['id'] ?>" name="link_description" class="form-control" rows="2"></textarea></div><?php endif; ?>
+<?php if ($isCoach): ?><div class="col-12"><label class="form-label small" for="exercise-link-description-<?= (int)$exercise['id'] ?>" data-attachment-description-label>Vysvětlení odkazu (volitelné)</label><textarea id="exercise-link-description-<?= (int)$exercise['id'] ?>" name="link_description" class="form-control" rows="2"></textarea></div><?php endif; ?>
 </div>
 <div class="form-text">Příloha se zobrazí sportovci přímo u cviku.</div>
 </form>
@@ -944,10 +977,13 @@ foreach ($groups as $role => $heading):
         const hasUnsubmittedAttachment = attachmentForms.some(function (form) {
             const file = form.querySelector('[name="attachment"]');
             const url = form.querySelector('[name="external_url"]');
-            return (file && file.files.length) || (url && url.value.trim());
+            const libraryVideo = form.querySelector('[name="video_file_id"]');
+            return (file && file.files.length)
+                || (url && url.value.trim())
+                || (libraryVideo && libraryVideo.value !== '' && libraryVideo.value !== '0');
         });
         if (hasUnsubmittedAttachment) {
-            alert('Vybranou přílohu nebo odkaz nejdříve nahrajte tlačítkem Nahrát přílohu.');
+            alert('Vybrané video, přílohu nebo odkaz nejdříve přidejte tlačítkem Nahrát přílohu.');
             return;
         }
         if (!confirm('Opravdu dokončit online trénink? Po dokončení už nepůjdou výsledky upravovat.')) return;
@@ -980,7 +1016,7 @@ foreach ($groups as $role => $heading):
     });
 })();
 </script><?php endif; ?>
-<?php if ($isCoach && $training['status'] === 'created'): ?>
+<?php if ($isCoach && $canManageAttachments): ?>
 <div id="onlineAttachmentWarning" class="online-attachment-warning" hidden aria-hidden="true">
     <section class="online-attachment-warning__dialog" role="dialog" aria-modal="true" aria-labelledby="onlineAttachmentWarningTitle" aria-describedby="onlineAttachmentWarningMessage">
         <div class="online-attachment-warning__icon"><i class="fas fa-exclamation-triangle" aria-hidden="true"></i></div>
@@ -1104,15 +1140,22 @@ foreach ($groups as $role => $heading):
             const file = form.querySelector('[name="attachment"]');
             const url = form.querySelector('[name="external_url"]');
             const description = form.querySelector('[name="link_description"]');
+            const libraryVideo = form.querySelector('[name="video_file_id"]');
             const items = [];
             const exerciseName = form.dataset.exerciseName || 'tréninku';
+            if (libraryVideo && libraryVideo.value !== '' && libraryVideo.value !== '0') {
+                const selectedVideo = libraryVideo.selectedOptions[0];
+                items.push({ form: form, label: exerciseName + ': video z knihovny „' + selectedVideo.textContent + '“' });
+            }
             if (file && file.files.length > 0) {
                 const selectedFile = file.files[0];
                 const kind = selectedFile.type.indexOf('video/') === 0 ? 'video' : (selectedFile.type.indexOf('image/') === 0 ? 'obrázek' : 'soubor');
                 items.push({ form: form, label: exerciseName + ': ' + kind + ' „' + selectedFile.name + '“' });
             }
             if (url && url.value.trim() !== '') items.push({ form: form, label: exerciseName + ': odkaz' });
-            else if (description && description.value.trim() !== '') items.push({ form: form, label: exerciseName + ': popis odkazu bez URL' });
+            else if (!libraryVideo?.value || libraryVideo.value === '0') {
+                if (description && description.value.trim() !== '') items.push({ form: form, label: exerciseName + ': popis odkazu bez URL' });
+            }
             return items;
         });
     }
@@ -1158,6 +1201,17 @@ foreach ($groups as $role => $heading):
     attachmentForms.forEach(function (form) {
         form.addEventListener('input', updateButtons);
         form.addEventListener('change', updateButtons);
+        const libraryVideo = form.querySelector('[name="video_file_id"]');
+        const descriptionLabel = form.querySelector('[data-attachment-description-label]');
+        if (libraryVideo && descriptionLabel) {
+            const updateDescriptionLabel = function () {
+                descriptionLabel.textContent = libraryVideo.value !== '' && libraryVideo.value !== '0'
+                    ? 'Vysvětlení videa (volitelné)'
+                    : 'Vysvětlení odkazu (volitelné)';
+            };
+            libraryVideo.addEventListener('change', updateDescriptionLabel);
+            updateDescriptionLabel();
+        }
     });
     updateButtons();
 
@@ -1170,7 +1224,10 @@ foreach ($groups as $role => $heading):
         nextItem.form.scrollIntoView({ behavior: 'smooth', block: 'center' });
         const fileInput = nextItem.form.querySelector('[name="attachment"]');
         const urlInput = nextItem.form.querySelector('[name="external_url"]');
-        const target = fileInput && fileInput.files.length ? fileInput : (urlInput && urlInput.value.trim() ? urlInput : nextItem.form.querySelector('.online-attachment-submit'));
+        const libraryVideo = nextItem.form.querySelector('[name="video_file_id"]');
+        const target = libraryVideo && libraryVideo.value !== '' && libraryVideo.value !== '0'
+            ? libraryVideo
+            : (fileInput && fileInput.files.length ? fileInput : (urlInput && urlInput.value.trim() ? urlInput : nextItem.form.querySelector('.online-attachment-submit')));
         if (target) target.focus({ preventScroll: true });
     });
 

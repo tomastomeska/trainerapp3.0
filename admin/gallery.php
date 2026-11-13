@@ -39,6 +39,8 @@ $athleteAudienceEnabled = str_contains($visibilityType, "'specific_athletes'")
     && str_contains($visibilityType, "'all_users'")
     && (bool)$athleteRecipientsTable;
 $galleryUpgradeReady = $athleteAudienceEnabled && $galleryPostTitleEnabled;
+$transformationTableStmt = $pdo->query("SHOW TABLES LIKE 'athlete_transformation_entries'");
+$transformationMigrationReady = $transformationTableStmt !== false && (bool)$transformationTableStmt->fetchColumn();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
@@ -47,6 +49,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $action = $_POST['action'] ?? '';
+
+    if ($action === 'run_transformation_migration') {
+        $oldSecret = $_GET['secret'] ?? null;
+        $_GET['secret'] = getCronSecret();
+        ob_start();
+        require __DIR__ . '/../scripts/migrate_athlete_transformation.php';
+        $migrationOutput = trim((string)ob_get_clean());
+        if ($oldSecret === null) {
+            unset($_GET['secret']);
+        } else {
+            $_GET['secret'] = $oldSecret;
+        }
+        $migrationResult = json_decode($migrationOutput, true);
+        if (is_array($migrationResult) && !empty($migrationResult['success'])) {
+            flash('success', 'Databáze proměny sportovce v čase je připravena.');
+        } else {
+            $message = is_array($migrationResult)
+                ? (string)($migrationResult['error'] ?? 'Neznámá chyba migrace.')
+                : 'Migrace vrátila neočekávanou odpověď.';
+            flash('danger', 'Migraci proměny se nepodařilo dokončit: ' . $message);
+        }
+        redirect(BASE_URL . '/admin/gallery.php');
+    }
 
     if ($action === 'enable_athlete_audience') {
         try {
@@ -348,6 +373,23 @@ renderAdminHeader('Galerie');
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalUpload">
         <i class="fas fa-cloud-upload-alt me-1"></i>Nahrát soubory
     </button>
+</div>
+
+<div class="alert <?= $transformationMigrationReady ? 'alert-success' : 'alert-info' ?> d-flex justify-content-between align-items-center gap-3 flex-wrap">
+    <div>
+        <i class="fas fa-chart-line me-2"></i>
+        <strong>Moje proměna v čase:</strong>
+        <?= $transformationMigrationReady ? 'databáze modulu je připravena.' : 'před zpřístupněním sportovcům je potřeba připravit databázi.' ?>
+    </div>
+    <?php if (!$transformationMigrationReady): ?>
+    <form method="post" class="m-0" onsubmit="return confirm('Vytvořit tabulku pro fotografie a měření proměny sportovců?');">
+        <?= csrfField() ?>
+        <input type="hidden" name="action" value="run_transformation_migration">
+        <button type="submit" class="btn btn-warning fw-semibold">
+            <i class="fas fa-database me-1"></i>Připravit databázi
+        </button>
+    </form>
+    <?php endif; ?>
 </div>
 
 <?php if (!$galleryUpgradeReady): ?>

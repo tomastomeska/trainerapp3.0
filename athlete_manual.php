@@ -357,6 +357,11 @@ renderAthleteHeader('Návod pro sportovce', false, true);
     <div class="card-body">
         <ol>
             <li>Otevřete Galerii.</li>
+            <li>V sekci <strong>Moje proměna v čase</strong> přidejte fotografii a datum, ke kterému se záznam vztahuje. Datum lze nastavit i zpětně.</li>
+            <li>Váhu, výšku a míry vyplňte podle potřeby. U každého obvodu je vysvětleno místo měření; věk se dopočítá z data narození ve vašem profilu.</li>
+            <li>Nákres neutrální postavy barevně označuje místa měření a zobrazuje hodnoty posledního záznamu. Je orientační, nejde o přesný model těla.</li>
+            <li>V grafu vyberte kteroukoli sledovanou veličinu; její vývoj se zobrazí po zadání alespoň dvou hodnot. U nejnovějšího záznamu jsou porovnání s prvním i předchozím měřením.</li>
+            <li>Vaše fotografie a měření jsou soukromé. Klepnutím na fotografii ji otevřete ve větším zobrazení, i na mobilu.</li>
             <li>Vyberte složku nebo fotografii, kterou sdílel trenér.</li>
             <li>Zkontrolujte, zda jde o aktuální podklad k tréninku.</li>
             <li>Při nejasnostech pošlete dotaz přes Zprávy.</li>

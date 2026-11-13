@@ -17,6 +17,15 @@ header('Content-Type: application/json; charset=utf-8');
 try {
     $pdo = getDB();
 
+    $videoArchivedAtColumn = $pdo->query("SHOW COLUMNS FROM video_files LIKE 'archived_at'");
+    if (!$videoArchivedAtColumn || !$videoArchivedAtColumn->fetch()) {
+        $pdo->exec('ALTER TABLE video_files ADD COLUMN archived_at DATETIME NULL AFTER visibility');
+    }
+    $videoArchiveIndex = $pdo->query("SHOW INDEX FROM video_files WHERE Key_name = 'idx_video_files_archive'");
+    if (!$videoArchiveIndex || !$videoArchiveIndex->fetch()) {
+        $pdo->exec('CREATE INDEX idx_video_files_archive ON video_files (coach_id, archived_at, created_at)');
+    }
+
     $rateColumn = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'online_training_rate'");
     if (!$rateColumn || !$rateColumn->fetch()) {
         $pdo->exec("ALTER TABLE athletes ADD COLUMN online_training_rate DECIMAL(10,2) NULL AFTER training_rate");
@@ -138,15 +147,30 @@ try {
         online_training_exercise_id INT NULL,
         attachment_type ENUM('photo','video','url') NOT NULL,
         file_path VARCHAR(500) NULL,
+        video_file_id INT NULL,
         original_name VARCHAR(255) NULL,
         external_url VARCHAR(1000) NULL,
         description TEXT NULL,
         uploaded_by ENUM('trainer','athlete') NOT NULL,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         KEY idx_online_attachment_training (online_training_id),
+        KEY idx_online_attachment_video_file (video_file_id),
         CONSTRAINT fk_online_attachment_training FOREIGN KEY (online_training_id) REFERENCES online_trainings(id) ON DELETE CASCADE,
-        CONSTRAINT fk_online_attachment_exercise FOREIGN KEY (online_training_exercise_id) REFERENCES online_training_exercises(id) ON DELETE CASCADE
+        CONSTRAINT fk_online_attachment_exercise FOREIGN KEY (online_training_exercise_id) REFERENCES online_training_exercises(id) ON DELETE CASCADE,
+        CONSTRAINT fk_online_attachment_video_file FOREIGN KEY (video_file_id) REFERENCES video_files(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $videoFileColumn = $pdo->query("SHOW COLUMNS FROM online_training_attachments LIKE 'video_file_id'");
+    if (!$videoFileColumn || !$videoFileColumn->fetch()) {
+        $pdo->exec('ALTER TABLE online_training_attachments ADD COLUMN video_file_id INT NULL AFTER file_path');
+    }
+    $videoFileIndex = $pdo->query("SHOW INDEX FROM online_training_attachments WHERE Key_name = 'idx_online_attachment_video_file'");
+    if (!$videoFileIndex || !$videoFileIndex->fetch()) {
+        $pdo->exec('CREATE INDEX idx_online_attachment_video_file ON online_training_attachments (video_file_id)');
+    }
+    $videoFileForeignKey = $pdo->query("SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'online_training_attachments' AND COLUMN_NAME = 'video_file_id' AND REFERENCED_TABLE_NAME = 'video_files' LIMIT 1");
+    if (!$videoFileForeignKey || !$videoFileForeignKey->fetch()) {
+        $pdo->exec('ALTER TABLE online_training_attachments ADD CONSTRAINT fk_online_attachment_video_file FOREIGN KEY (video_file_id) REFERENCES video_files(id) ON DELETE CASCADE');
+    }
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS online_training_billing (
         id INT AUTO_INCREMENT PRIMARY KEY,

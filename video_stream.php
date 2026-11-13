@@ -30,25 +30,52 @@ if (isLoggedIn()) {
     }
 
     $coachId = (int)$athlete['coach_id'];
+    $trainingAttachmentAccess = '';
+    $trainingAttachmentParams = [];
+    $attachmentsTable = $pdo->query("SHOW TABLES LIKE 'online_training_attachments'");
+    if ($attachmentsTable && $attachmentsTable->fetch()) {
+        $videoFileColumn = $pdo->query("SHOW COLUMNS FROM online_training_attachments LIKE 'video_file_id'");
+        if ($videoFileColumn && $videoFileColumn->fetch()) {
+            $trainingAttachmentAccess = "
+               OR EXISTS (
+                   SELECT 1
+                   FROM online_training_attachments ota
+                   JOIN online_trainings ot ON ot.id = ota.online_training_id
+                   WHERE ota.video_file_id = vf.id
+                     AND ota.attachment_type = 'video'
+                     AND ota.uploaded_by = 'trainer'
+                     AND ot.athlete_id = ?
+                     AND ot.trainer_id = vf.coach_id
+                     AND ot.status IN ('sent', 'in_progress', 'completed')
+               )";
+            $trainingAttachmentParams[] = $athleteId;
+        }
+    }
     $stmt = $pdo->prepare(
         "SELECT vf.*
          FROM video_files vf
          WHERE vf.id = ?
            AND vf.coach_id = ?
            AND (
-               vf.visibility = 'all_athletes'
-               OR (
-                   vf.visibility = 'specific_athletes'
-                   AND EXISTS (
-                       SELECT 1
-                       FROM video_file_athletes vfa
-                       WHERE vfa.file_id = vf.id
-                         AND vfa.athlete_id = ?
+              (
+                  vf.archived_at IS NULL
+                  AND (
+                      vf.visibility = 'all_athletes'
+                      OR (
+                          vf.visibility = 'specific_athletes'
+                          AND EXISTS (
+                              SELECT 1
+                              FROM video_file_athletes vfa
+                              WHERE vfa.file_id = vf.id
+                                AND vfa.athlete_id = ?
+                          )
+                      )
                    )
                )
+               " . $trainingAttachmentAccess . "
            )"
     );
-    $stmt->execute([$fileId, $coachId, $athleteId]);
+    $stmt->execute(array_merge([$fileId, $coachId, $athleteId], $trainingAttachmentParams));
     $file = $stmt->fetch();
 } else {
     http_response_code(403);

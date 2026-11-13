@@ -2997,6 +2997,34 @@ function ensureSchemaUpgrades(PDO $pdo): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
 
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS `athlete_transformation_entries` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `athlete_id` INT NOT NULL,
+            `photo_path` VARCHAR(255) NOT NULL,
+            `photo_mime_type` VARCHAR(100) NOT NULL,
+            `measured_on` DATE NOT NULL,
+            `age_years` TINYINT UNSIGNED NULL,
+            `weight_kg` DECIMAL(5,2) NULL,
+            `height_cm` DECIMAL(5,2) NULL,
+            `chest_cm` DECIMAL(5,2) NULL,
+            `waist_cm` DECIMAL(5,2) NULL,
+            `hips_cm` DECIMAL(5,2) NULL,
+            `left_arm_cm` DECIMAL(5,2) NULL,
+            `right_arm_cm` DECIMAL(5,2) NULL,
+            `left_thigh_cm` DECIMAL(5,2) NULL,
+            `right_thigh_cm` DECIMAL(5,2) NULL,
+            `left_calf_cm` DECIMAL(5,2) NULL,
+            `right_calf_cm` DECIMAL(5,2) NULL,
+            `body_fat_percent` DECIMAL(5,2) NULL,
+            `note` TEXT NULL,
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY `idx_transformation_athlete_date` (`athlete_id`, `measured_on`, `id`),
+            CONSTRAINT `fk_transformation_entries_athlete`
+                FOREIGN KEY (`athlete_id`) REFERENCES `athletes`(`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ");
+
     $athleteFilesDisplayName = $pdo->query("SHOW COLUMNS FROM athlete_files LIKE 'display_name'");
     if ($athleteFilesDisplayName !== false && !$athleteFilesDisplayName->fetch()) {
         $pdo->exec('ALTER TABLE athlete_files ADD COLUMN display_name VARCHAR(255) NULL AFTER original_name');
@@ -3127,15 +3155,25 @@ function ensureSchemaUpgrades(PDO $pdo): void {
             `mime_type`     VARCHAR(100) NULL,
             `description`   TEXT NULL,
             `visibility`    ENUM('private','all_athletes','specific_athletes') NOT NULL DEFAULT 'private',
+            `archived_at`   DATETIME NULL,
             `created_at`    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             KEY `idx_video_files_coach` (`coach_id`, `created_at`),
             KEY `idx_video_files_folder` (`folder_id`),
+            KEY `idx_video_files_archive` (`coach_id`, `archived_at`, `created_at`),
             CONSTRAINT `fk_video_files_coach`
                 FOREIGN KEY (`coach_id`) REFERENCES `coaches`(`id`) ON DELETE CASCADE,
             CONSTRAINT `fk_video_files_folder`
                 FOREIGN KEY (`folder_id`) REFERENCES `video_folders`(`id`) ON DELETE SET NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ");
+    $videoArchivedAtColumn = $pdo->query("SHOW COLUMNS FROM video_files LIKE 'archived_at'");
+    if (!$videoArchivedAtColumn || !$videoArchivedAtColumn->fetch()) {
+        $pdo->exec('ALTER TABLE video_files ADD COLUMN archived_at DATETIME NULL AFTER visibility');
+    }
+    $videoArchiveIndex = $pdo->query("SHOW INDEX FROM video_files WHERE Key_name = 'idx_video_files_archive'");
+    if (!$videoArchiveIndex || !$videoArchiveIndex->fetch()) {
+        $pdo->exec('CREATE INDEX idx_video_files_archive ON video_files (coach_id, archived_at, created_at)');
+    }
 
     // Konkretni sportovci s pristupem k videu
     $pdo->exec(" 

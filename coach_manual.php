@@ -305,7 +305,7 @@ renderHeader('Návod pro trenéry', false, true);
     <div class="card-header fw-semibold"><i class="fas fa-laptop me-2 text-warning"></i>Online tréninky</div>
     <div class="card-body">
         <p>Online trénink je samostatně odcvičený trénink sportovce. Je oddělený od klasického tréninku s trenérem a jeho výsledky se nepoužijí jako poslední výkon pro klasickou session.</p>
-        <p>Každý sportovec má u každého trenéra vlastní číselnou řadu online tréninků od 1. Pro vytvoření a odeslání je potřeba platné předplatné. Připravte koncept, nastavte cviky a série, přidejte instrukce a přílohy a odešlete jej sportovci. Po odcvičení zkontrolujte výsledky a pošlete sportovci zpětnou vazbu.</p>
+        <p>Každý sportovec má u každého trenéra vlastní číselnou řadu online tréninků od 1. Pro vytvoření a odeslání je potřeba platné předplatné. Připravte koncept, nastavte cviky a série a u přílohy konkrétního cviku buď nahrajte nové video, nebo vyberte video ze sekce Moje videa. Přidejte instrukce a odešlete jej sportovci. Po odcvičení zkontrolujte výsledky a pošlete sportovci zpětnou vazbu.</p>
         <p class="mb-0"><a class="btn btn-warning btn-sm fw-bold" href="<?= BASE_URL ?>/online_training_manual.php"><i class="fas fa-book-open me-1"></i>Otevřít podrobný návod včetně obrázků a řešení potíží</a></p>
     </div>
 </div>
@@ -505,6 +505,7 @@ renderHeader('Návod pro trenéry', false, true);
         <ol>
             <li>Klikněte na Nahrát video.</li>
             <li>Vyberte jedno nebo více videí (maximálně 1 GB na video).</li>
+            <li>U každého vybraného souboru můžete zadat vlastní název; prázdný název ponechá původní jméno souboru.</li>
             <li>Zvolte viditelnost: Soukromé / Všichni sportovci / Vybraní sportovci.</li>
             <li>Při volbě Vybraní sportovci označte konkrétní příjemce.</li>
             <li>Volitelně doplňte popis videa a zvolte vlastní složku.</li>
@@ -517,7 +518,9 @@ renderHeader('Návod pro trenéry', false, true);
             <li>Otevřete video z Moje videa nebo ze složky sportovce.</li>
             <li>V detailu videa upravte popis, složku a viditelnost.</li>
             <li>Ve složce konkrétního sportovce použijte tlačítko Vypnout, pokud chcete sdílení odebrat jen jemu.</li>
-            <li>Při úplném smazání videa se záznam odstraní ze všech složek.</li>
+            <li>Starší video můžete archivovat. Zmizí z knihovny a nových výběrů, ale zůstane přehratelné v již vytvořených online trénincích. V archivu jej můžete obnovit.</li>
+            <li>Při nahrání aktualizované verze použijte nový soubor; staré tréninky zůstanou beze změny a nové video můžete použít v dalších trénincích.</li>
+            <li>Při volbě Smazat trvale se video odstraní i ze všech online tréninků. Před potvrzením se zobrazí počet dotčených tréninků; akci nelze vrátit.</li>
         </ol>
     </div>
 </div>

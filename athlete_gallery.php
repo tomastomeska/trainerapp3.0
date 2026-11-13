@@ -217,6 +217,20 @@ renderAthleteHeader('Galerie', false, true);
     <h2 class="mb-0"><i class="fas fa-images me-2 text-warning"></i>Galerie</h2>
 </div>
 
+<div class="card border-0 shadow-sm mb-4 overflow-hidden">
+    <div class="card-body p-4 p-md-5 d-flex justify-content-between align-items-center gap-4 flex-wrap"
+         style="background:linear-gradient(120deg,#fff8e1 0%,#fff 60%,#eef6ff 100%)">
+        <div>
+            <div class="text-uppercase small fw-bold text-warning mb-2">Vaše osobní časová osa</div>
+            <h3 class="fw-bold mb-2"><i class="fas fa-chart-line me-2 text-warning"></i>Moje proměna v čase</h3>
+            <p class="text-muted mb-0">Ukládejte fotografie, váhu a tělesné míry. Sledujte změny přehledně v čase.</p>
+        </div>
+        <a href="<?= BASE_URL ?>/athlete_transformation.php" class="btn btn-warning fw-semibold flex-shrink-0">
+            <i class="fas fa-arrow-trend-up me-1"></i>Zobrazit moji proměnu
+        </a>
+    </div>
+</div>
+
 <div id="gallerySharedSection"><?= $sharedHtml ?></div>
 
 <div class="modal fade" id="filePreviewModal" tabindex="-1" aria-hidden="true">

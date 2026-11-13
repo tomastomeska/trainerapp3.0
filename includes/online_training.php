@@ -502,16 +502,22 @@ function onlineTrainingCopy(PDO $pdo, int $coachId, int $athleteId, int $sourceT
             if (!is_dir($targetDirectory) && !mkdir($targetDirectory, 0750, true) && !is_dir($targetDirectory)) {
                 throw new RuntimeException('Úložiště příloh není dostupné.');
             }
-            $attachmentStmt = $pdo->prepare("SELECT ota.online_training_exercise_id, ota.attachment_type, ota.file_path, ota.original_name, ota.external_url, ota.description
+            $attachmentStmt = $pdo->prepare("SELECT ota.online_training_exercise_id, ota.attachment_type, ota.file_path, ota.video_file_id, ota.original_name, ota.external_url, ota.description
                 FROM online_training_attachments ota
                 JOIN online_trainings source ON source.id = ota.online_training_id
                 WHERE ota.online_training_id = ?
                     AND ota.uploaded_by = 'trainer'
                     AND source.status IN ('sent', 'in_progress', 'completed')
                     AND (source.status <> 'completed' OR ota.created_at <= source.completed_at)
+                    AND (ota.video_file_id IS NULL OR EXISTS (
+                        SELECT 1
+                        FROM video_files vf
+                        WHERE vf.id = ota.video_file_id
+                          AND vf.archived_at IS NULL
+                    ))
                 ORDER BY ota.id");
             $attachmentStmt->execute([$sourceTrainingId]);
-            $insertAttachment = $pdo->prepare("INSERT INTO online_training_attachments (online_training_id, online_training_exercise_id, attachment_type, file_path, original_name, external_url, description, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, 'trainer')");
+            $insertAttachment = $pdo->prepare("INSERT INTO online_training_attachments (online_training_id, online_training_exercise_id, attachment_type, file_path, video_file_id, original_name, external_url, description, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'trainer')");
             foreach ($attachmentStmt->fetchAll() as $attachment) {
                 $newFilePath = null;
                 if (!empty($attachment['file_path'])) {
@@ -539,6 +545,7 @@ function onlineTrainingCopy(PDO $pdo, int $coachId, int $athleteId, int $sourceT
                     $newExerciseId,
                     $attachment['attachment_type'],
                     $newFilePath,
+                    $attachment['video_file_id'],
                     $attachment['original_name'],
                     $attachment['external_url'],
                     $attachment['description'],

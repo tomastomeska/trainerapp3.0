@@ -41,6 +41,14 @@ if (!function_exists('athleteMedalDefinitions')) {
             'threshold' => 1,
             'image' => 'profile_photo.png',
         ];
+        $definitions[] = [
+            'id' => 'first_transformation',
+            'title' => 'První proměna',
+            'description' => 'Uložit první fotografii postavy spolu alespoň s jednou tělesnou mírou.',
+            'category' => 'transformation',
+            'threshold' => 1,
+            'image' => 'first_transformation.png',
+        ];
 
         $onlineMilestones = [1, 10, 50, 100, 200, 1000];
         foreach ($onlineMilestones as $count) {
@@ -100,6 +108,14 @@ if (!function_exists('athleteMedalDefinitions')) {
         ];
 
         return $definitions;
+    }
+}
+
+if (!function_exists('athleteTransformationEntriesTableExists')) {
+    function athleteTransformationEntriesTableExists(PDO $pdo): bool
+    {
+        $stmt = $pdo->query("SHOW TABLES LIKE 'athlete_transformation_entries'");
+        return $stmt !== false && (bool)$stmt->fetchColumn();
     }
 }
 
@@ -281,6 +297,17 @@ if (!function_exists('athleteMedalPopulationStats')) {
                                 ) complete_days
                                 GROUP BY complete_days.athlete_id',
         ];
+        if (athleteTransformationEntriesTableExists($pdo)) {
+            $queries['transformation'] = 'SELECT athlete_id, COUNT(*) AS event_count
+                                          FROM athlete_transformation_entries
+                                          WHERE TRIM(photo_path) <> \'\'
+                                            AND COALESCE(
+                                                weight_kg, height_cm, chest_cm, waist_cm, hips_cm,
+                                                left_arm_cm, right_arm_cm, left_thigh_cm, right_thigh_cm,
+                                                left_calf_cm, right_calf_cm, body_fat_percent
+                                            ) IS NOT NULL
+                                          GROUP BY athlete_id';
+        }
 
         foreach ($queries as $category => $sql) {
             $athleteCountsByCategory[$category] = array_fill_keys(array_keys($athletesById), 0);
@@ -428,6 +455,21 @@ if (!function_exists('athleteMedalsLoad')) {
                           ORDER BY complete_days.date ASC',
             ],
         ];
+        if (athleteTransformationEntriesTableExists($pdo)) {
+            $eventQueries['transformation'] = [
+                'sql' => 'SELECT DATE(created_at) AS event_date
+                          FROM athlete_transformation_entries
+                          WHERE athlete_id = ?
+                            AND TRIM(photo_path) <> \'\'
+                            AND COALESCE(
+                                weight_kg, height_cm, chest_cm, waist_cm, hips_cm,
+                                left_arm_cm, right_arm_cm, left_thigh_cm, right_thigh_cm,
+                                left_calf_cm, right_calf_cm, body_fat_percent
+                            ) IS NOT NULL
+                          ORDER BY created_at ASC, id ASC
+                          LIMIT 1',
+            ];
+        }
 
         $milestoneDates = [];
         foreach ($eventQueries as $category => $query) {

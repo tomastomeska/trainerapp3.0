@@ -28,6 +28,7 @@
  * @var array{settings: array, latest: array, height: array}|null $calculatorProfile
  */
 require_once __DIR__ . '/dashboard_quick_menu.php';
+require_once __DIR__ . '/info_channel_notification.php';
 // Dashboard view; data and POST actions stay in athlete_dashboard.php.
 $latestWeightLog = $weightHistory[0] ?? null;
 $weightTodayLog = null;
@@ -326,6 +327,23 @@ renderAthleteHeader('Profil sportovce', false, true, true);
 </section>
 
 <?php require __DIR__ . '/athlete_quick_menu.php'; ?>
+
+<a href="<?= BASE_URL ?>/athlete_transformation.php"
+   class="card border-0 shadow-sm mb-4 text-decoration-none text-dark"
+   aria-label="Otevřít stránku Moje proměna v čase">
+    <div class="card-body d-flex align-items-center gap-3 p-3 p-md-4">
+        <span class="d-flex align-items-center justify-content-center rounded-circle bg-warning text-dark flex-shrink-0"
+              style="width:48px;height:48px;font-size:1.25rem">
+            <i class="fas fa-chart-line" aria-hidden="true"></i>
+        </span>
+        <span class="flex-grow-1">
+            <span class="d-block small text-uppercase fw-bold text-warning">Vaše osobní časová osa</span>
+            <span class="d-block fs-5 fw-bold">Moje proměna v čase</span>
+            <span class="d-block small text-muted">Fotografie a měření vašeho vývoje na jednom místě.</span>
+        </span>
+        <i class="fas fa-chevron-right text-primary" aria-hidden="true"></i>
+    </div>
+</a>
 
 <div class="d-md-none mb-4 athlete-mobile-dashboard">
     <div class="athlete-mobile-summary-card mb-3 athlete-mobile-next-training">
@@ -1327,4 +1345,5 @@ $calcBmiToneClass = [
 </script>
 <?php endif; ?>
 
+<?php renderUnreadInfoChannelNotification($pdo, 'athlete', (int)$athlete['id']); ?>
 <?php renderAthleteFooter();

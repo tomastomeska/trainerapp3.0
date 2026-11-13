@@ -15,6 +15,7 @@
  * @var array<int, int> $calculatorUnseenCounts
  */
 require_once __DIR__ . '/dashboard_quick_menu.php';
+require_once __DIR__ . '/info_channel_notification.php';
 // Dashboard view; data and POST actions stay in dashboard.php.
 renderHeader('Dashboard', false, true, true);
 ?>
@@ -831,4 +832,7 @@ renderHeader('Dashboard', false, true, true);
 </div>
 <?php endif; ?>
 
+<?php if (!$mustChangePassword): ?>
+    <?php renderUnreadInfoChannelNotification($pdo, 'coach', (int)$coachId); ?>
+<?php endif; ?>
 <?php renderFooter(); ?>

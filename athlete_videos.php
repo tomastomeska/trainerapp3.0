@@ -21,6 +21,7 @@ $files = $pdo->prepare(
     "SELECT vf.*
      FROM video_files vf
      WHERE vf.coach_id = ?
+      AND vf.archived_at IS NULL
        AND (
            vf.visibility = 'all_athletes'
            OR (

@@ -58,14 +58,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$mineCountStmt = $pdo->prepare('SELECT COUNT(*) FROM video_files WHERE coach_id = ?');
+$mineCountStmt = $pdo->prepare('SELECT COUNT(*) FROM video_files WHERE coach_id = ? AND archived_at IS NULL');
 $mineCountStmt->execute([$coachId]);
 $mineCount = (int)$mineCountStmt->fetchColumn();
+$archivedCountStmt = $pdo->prepare('SELECT COUNT(*) FROM video_files WHERE coach_id = ? AND archived_at IS NOT NULL');
+$archivedCountStmt->execute([$coachId]);
+$archivedCount = (int)$archivedCountStmt->fetchColumn();
 
 $customFoldersStmt = $pdo->prepare(
     "SELECT f.id, f.name, COUNT(vf.id) AS file_count
      FROM video_folders f
-     LEFT JOIN video_files vf ON vf.folder_id = f.id
+     LEFT JOIN video_files vf ON vf.folder_id = f.id AND vf.archived_at IS NULL
      WHERE f.coach_id = ?
        AND f.folder_type = 'custom'
      GROUP BY f.id, f.name
@@ -85,6 +88,7 @@ $athleteFoldersStmt = $pdo->prepare(
             SELECT COUNT(*)
             FROM video_files vf
             WHERE vf.coach_id = f.coach_id
+              AND vf.archived_at IS NULL
               AND (
                   vf.visibility = 'all_athletes'
                   OR (
@@ -118,6 +122,9 @@ renderHeader('Videa', false, true);
         </button>
         <a href="<?= BASE_URL ?>/video_upload.php" class="btn btn-danger btn-sm fw-bold">
             <i class="fas fa-cloud-upload-alt me-1"></i>Nahrat video
+        </a>
+        <a href="<?= BASE_URL ?>/video_folder.php?mine=1&amp;archived=1" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-box-archive me-1"></i>Archiv videí (<?= $archivedCount ?>)
         </a>
     </div>
 </div>

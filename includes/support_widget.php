@@ -181,17 +181,24 @@ function renderSupportWidget(string $userType = 'coach'): void {
     ?>
 <div id="supportWidgetRoot">
     <div class="support-fab-stack">
-        <?php if ($showChatWidget): ?>
-        <button type="button" class="support-fab support-fab-chat" id="adminChatFab" title="Zprávy">
-            <i class="fas fa-comment-dots"></i>
-            <span class="support-fab-badge<?= $chatWidgetUnreadInitial > 0 ? '' : ' d-none' ?>" id="adminChatBadge"><?= $chatWidgetUnreadInitial ?></span>
-        </button>
-        <?php endif; ?>
-        <button type="button" class="support-fab support-fab-gift" id="supportGiftFab" title="Dobrovolná podpora provozu">
-            <span aria-hidden="true">🎁</span>
-        </button>
-        <button type="button" class="support-fab support-fab-help" id="supportFab" title="Nahlásit problém">
-            <i class="fas fa-question"></i>
+        <div class="support-fab-actions" id="supportFabActions">
+            <?php if ($showChatWidget): ?>
+            <button type="button" class="support-fab support-fab-chat" id="adminChatFab" title="Zprávy">
+                <i class="fas fa-comment-dots"></i>
+                <span class="support-fab-badge<?= $chatWidgetUnreadInitial > 0 ? '' : ' d-none' ?>" id="adminChatBadge"><?= $chatWidgetUnreadInitial ?></span>
+            </button>
+            <?php endif; ?>
+            <button type="button" class="support-fab support-fab-gift" id="supportGiftFab" title="Dobrovolná podpora provozu">
+                <span aria-hidden="true">🎁</span>
+            </button>
+            <button type="button" class="support-fab support-fab-help" id="supportFab" title="Nahlásit problém">
+                <i class="fas fa-question"></i>
+            </button>
+        </div>
+        <button type="button" class="support-fab support-fab-menu-toggle" id="supportFabMenuToggle"
+                aria-label="Zobrazit rychlé akce" aria-expanded="false" aria-controls="supportFabActions"
+                title="Zobrazit rychlé akce">
+            <i class="fas fa-ellipsis"></i>
         </button>
     </div>
 
@@ -306,8 +313,16 @@ function renderSupportWidget(string $userType = 'coach'): void {
     bottom: 18px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
     z-index: 1080;
+}
+.support-fab-actions {
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+}
+.support-fab-stack.is-open .support-fab-actions {
+    display: flex;
 }
 .support-fab {
     width: 54px;
@@ -320,6 +335,11 @@ function renderSupportWidget(string $userType = 'coach'): void {
     align-items: center;
     justify-content: center;
     transition: transform .15s ease, box-shadow .2s ease;
+}
+.support-fab.support-fab-menu-toggle {
+    display: inline-flex;
+    background: linear-gradient(135deg, #343a40, #212529);
+    box-shadow: 0 10px 24px rgba(33, 37, 41, .32);
 }
 .support-fab-help {
     background: linear-gradient(135deg, #0d6efd, #0b5ed7);
@@ -344,9 +364,15 @@ function renderSupportWidget(string $userType = 'coach'): void {
     transform: translateY(0);
 }
 @media (max-width: 768px) {
+    body {
+        padding-bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+    }
     .support-fab-stack {
         right: 12px;
-        bottom: 12px;
+        bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+        gap: 8px;
+    }
+    .support-fab-actions {
         gap: 8px;
     }
     .support-fab {
@@ -528,6 +554,51 @@ function renderSupportWidget(string $userType = 'coach'): void {
 
 <script>
 (function () {
+    const supportFabStack = document.querySelector('.support-fab-stack');
+    const supportFabMenuToggle = document.getElementById('supportFabMenuToggle');
+    if (supportFabStack && supportFabMenuToggle) {
+        const toggleIcon = supportFabMenuToggle.querySelector('i');
+        const closeActions = () => {
+            supportFabStack.classList.remove('is-open');
+            supportFabMenuToggle.setAttribute('aria-expanded', 'false');
+            supportFabMenuToggle.setAttribute('aria-label', 'Zobrazit rychlé akce');
+            supportFabMenuToggle.title = 'Zobrazit rychlé akce';
+            if (toggleIcon) {
+                toggleIcon.classList.replace('fa-times', 'fa-ellipsis');
+            }
+        };
+        supportFabMenuToggle.addEventListener('click', () => {
+            const isOpen = supportFabStack.classList.toggle('is-open');
+            supportFabMenuToggle.setAttribute('aria-expanded', String(isOpen));
+            supportFabMenuToggle.setAttribute('aria-label', isOpen ? 'Skrýt rychlé akce' : 'Zobrazit rychlé akce');
+            supportFabMenuToggle.title = isOpen ? 'Skrýt rychlé akce' : 'Zobrazit rychlé akce';
+            if (toggleIcon) {
+                toggleIcon.classList.toggle('fa-ellipsis', !isOpen);
+                toggleIcon.classList.toggle('fa-times', isOpen);
+            }
+        });
+        supportFabStack.querySelectorAll('.support-fab-actions .support-fab').forEach(button => {
+            button.addEventListener('click', closeActions);
+        });
+        document.addEventListener('click', event => {
+            if (window.matchMedia('(max-width: 768px)').matches
+                && supportFabStack.classList.contains('is-open')
+                && !supportFabStack.contains(event.target)) {
+                closeActions();
+            }
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                closeActions();
+            }
+        });
+        window.addEventListener('resize', () => {
+            if (!window.matchMedia('(max-width: 768px)').matches) {
+                closeActions();
+            }
+        });
+    }
+
     const supportFab = document.getElementById('supportFab');
     const supportGiftFab = document.getElementById('supportGiftFab');
     const supportModalEl = document.getElementById('supportModal');

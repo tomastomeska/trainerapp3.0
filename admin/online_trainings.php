@@ -87,7 +87,18 @@ $rateColumnStmt = $pdo->query("SHOW COLUMNS FROM athletes LIKE 'online_training_
 $rateColumnExists = $rateColumnStmt !== false && (bool)$rateColumnStmt->fetch();
 $billingMonthColumnStmt = $pdo->query("SHOW COLUMNS FROM online_training_billing LIKE 'billing_month'");
 $billingMonthColumnExists = $billingMonthColumnStmt !== false && (bool)$billingMonthColumnStmt->fetch();
-$ready = !in_array(false, array_column($statusRows, 'exists'), true) && $rateColumnExists && $billingMonthColumnExists;
+$videoFileColumnStmt = $pdo->query("SHOW COLUMNS FROM online_training_attachments LIKE 'video_file_id'");
+$videoFileColumnExists = $videoFileColumnStmt !== false && (bool)$videoFileColumnStmt->fetch();
+$videoFileForeignKeyStmt = $pdo->query("SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'online_training_attachments' AND COLUMN_NAME = 'video_file_id' AND REFERENCED_TABLE_NAME = 'video_files' LIMIT 1");
+$videoFileForeignKeyExists = $videoFileForeignKeyStmt !== false && (bool)$videoFileForeignKeyStmt->fetch();
+$videoArchivedAtColumnStmt = $pdo->query("SHOW COLUMNS FROM video_files LIKE 'archived_at'");
+$videoArchivedAtColumnExists = $videoArchivedAtColumnStmt !== false && (bool)$videoArchivedAtColumnStmt->fetch();
+$ready = !in_array(false, array_column($statusRows, 'exists'), true)
+    && $rateColumnExists
+    && $billingMonthColumnExists
+    && $videoFileColumnExists
+    && $videoFileForeignKeyExists
+    && $videoArchivedAtColumnExists;
 $diagnostics = [
     'trainings' => null,
     'series' => null,
@@ -139,7 +150,7 @@ renderAdminHeader('Online tréninky');
         <p class="text-muted mb-0">Kontrola databázové připravenosti modulu Online tréninky.</p>
     </div>
     <?php if (!$ready): ?>
-    <form method="post" onsubmit="return confirm('Spustit migraci Online tréninků a vytvořit chybějící tabulky?');">
+    <form method="post" onsubmit="return confirm('Spustit migraci Online tréninků a doplnit chybějící tabulky nebo sloupce?');">
         <?= csrfField() ?>
         <input type="hidden" name="action" value="run_migration">
         <button class="btn btn-warning fw-bold"><i class="fas fa-database me-1"></i>Spustit migraci nyní</button>
@@ -167,6 +178,9 @@ renderAdminHeader('Online tréninky');
 </div>
 <div class="card border-0 shadow-sm mb-4"><div class="card-body d-flex justify-content-between align-items-center"><code>athletes.online_training_rate</code><?php if ($rateColumnExists): ?><span class="badge bg-success">Existuje</span><?php else: ?><span class="badge bg-danger">Chybí</span><?php endif; ?></div></div>
 <div class="card border-0 shadow-sm mb-4"><div class="card-body d-flex justify-content-between align-items-center"><code>online_training_billing.billing_month</code><?php if ($billingMonthColumnExists): ?><span class="badge bg-success">Existuje</span><?php else: ?><span class="badge bg-danger">Chybí</span><?php endif; ?></div></div>
+<div class="card border-0 shadow-sm mb-4"><div class="card-body d-flex justify-content-between align-items-center"><code>online_training_attachments.video_file_id</code><?php if ($videoFileColumnExists): ?><span class="badge bg-success">Existuje</span><?php else: ?><span class="badge bg-danger">Chybí</span><?php endif; ?></div></div>
+<div class="card border-0 shadow-sm mb-4"><div class="card-body d-flex justify-content-between align-items-center"><code>online_training_attachments → video_files (mazání příloh)</code><?php if ($videoFileForeignKeyExists): ?><span class="badge bg-success">Existuje</span><?php else: ?><span class="badge bg-danger">Chybí</span><?php endif; ?></div></div>
+<div class="card border-0 shadow-sm mb-4"><div class="card-body d-flex justify-content-between align-items-center"><code>video_files.archived_at</code><?php if ($videoArchivedAtColumnExists): ?><span class="badge bg-success">Existuje</span><?php else: ?><span class="badge bg-danger">Chybí</span><?php endif; ?></div></div>
 
 <?php if ($ready): ?>
 <div class="card border-0 shadow-sm mb-4">
