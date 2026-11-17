@@ -2,6 +2,7 @@
 // api/coach_athlete_chat.php – AJAX chat mezi přihlášeným trenérem a jedním jeho sportovcem
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/push_chat_notifications.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -123,6 +124,7 @@ if ($action === 'send' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $pdo->prepare("INSERT INTO coach_athlete_chat_messages (coach_id, athlete_id, sender, body, coach_read_at) VALUES (?, ?, 'coach', ?, NOW())")
         ->execute([$coachId, $athleteId, $body]);
     $newId = (int)$pdo->lastInsertId();
+    pushNotifyCoachAthleteChatMessage($pdo, $newId);
     session_write_close();
 
     $athleteName = trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']);

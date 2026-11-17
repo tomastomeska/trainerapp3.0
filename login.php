@@ -411,7 +411,13 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#243143">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Přihlášení – <?= APP_NAME ?></title>
+    <link rel="manifest" href="<?= BASE_URL ?>/manifest.webmanifest">
+    <link rel="icon" type="image/png" sizes="192x192" href="<?= BASE_URL ?>/assets/pwa/icon-192.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="<?= BASE_URL ?>/assets/pwa/icon-180.png">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <style>
@@ -1246,6 +1252,7 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="<?= BASE_URL ?>/assets/js/pwa.js" defer></script>
     <script>
         const brandLogo = document.getElementById('brandLogo');
         if (brandLogo) {

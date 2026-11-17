@@ -3,6 +3,7 @@
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/athlete_header.php';
+require_once __DIR__ . '/includes/push_chat_notifications.php';
 
 requireAthleteLogin();
 $athleteId = (int)getCurrentAthleteId();
@@ -45,6 +46,7 @@ if ($target !== '' && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
                     "INSERT INTO coach_athlete_chat_messages (coach_id, athlete_id, sender, body, athlete_read_at) VALUES (?, ?, 'athlete', ?, NOW())"
                 )->execute([$coachId, $athleteId, $body]);
                 $newId = (int)$pdo->lastInsertId();
+                pushNotifyCoachAthleteChatMessage($pdo, $newId);
 
                 $athleteName = trim((string)($athlete['first_name'] ?? '') . ' ' . (string)($athlete['last_name'] ?? ''));
                 if (!empty($coach['email'])) {
@@ -216,6 +218,28 @@ $targetName = $target === 'coach' ? ($coachName !== '' ? $coachName : 'Trenér')
 <script>document.body.classList.add('dashboard-standalone-chat');</script>
 <?php endif; ?>
 
+<script src="<?= BASE_URL ?>/assets/js/push-subscriptions.js?v=2"></script>
+<script>
+window.trainerAppSuppressCoachChatAlerts = true;
+(function () {
+    var push = window.TrainerAppPushSubscriptions;
+    var csrf = <?= json_encode(csrfToken(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    if (!push) {
+        console.error('Nastavení push oznámení není dostupné.');
+        return;
+    }
+    Promise.all([push.list(csrf), push.getPreferences(csrf)]).then(function (results) {
+        if (!Array.isArray(results[0].devices) || typeof results[1].preferences.messages !== 'boolean') {
+            throw new Error('Neplatné nastavení oznámení.');
+        }
+        window.trainerAppSuppressCoachChatAlerts = !results[1].preferences.messages
+            || results[0].devices.some(function (device) { return Number(device.is_current) === 1; });
+    }).catch(function (error) {
+        console.error('Nastavení upozornění na zprávy se nepodařilo ověřit.', error);
+    });
+})();
+</script>
+
 <?php if ($target !== ''): ?>
 <div class="topbar">
     <a href="<?= BASE_URL ?>/athlete_chat_mobile.php"><i class="fas fa-arrow-left"></i></a>
@@ -285,7 +309,7 @@ $targetName = $target === 'coach' ? ($coachName !== '' ? $coachName : 'Trenér')
                     if (m.sender !== 'athlete') { hasIncoming = true; }
                 });
                 box.scrollTop = box.scrollHeight;
-                if (hasIncoming && 'Notification' in window && Notification.permission === 'granted' && document.hidden) {
+                if (hasIncoming && (<?= json_encode($target) ?> !== 'coach' || !window.trainerAppSuppressCoachChatAlerts) && 'Notification' in window && Notification.permission === 'granted' && document.hidden) {
                     new Notification('Nová zpráva od ' + partnerLabel, { body: 'Máš novou zprávu v chatu.' });
                 }
             })
@@ -383,7 +407,7 @@ $targetName = $target === 'coach' ? ($coachName !== '' ? $coachName : 'Trenér')
                     if (row) {
                         row.innerHTML = count > 0 ? '<div class="badge-unread">' + count + '</div>' : '';
                     }
-                    if (lastCounts[ep.target] !== undefined && count > lastCounts[ep.target] && 'Notification' in window && Notification.permission === 'granted') {
+                    if (lastCounts[ep.target] !== undefined && count > lastCounts[ep.target] && (ep.target !== 'coach' || !window.trainerAppSuppressCoachChatAlerts) && 'Notification' in window && Notification.permission === 'granted') {
                         var label = ep.target === 'coach' ? 'trenéra' : 'administrátora';
                         new Notification('Nová zpráva od ' + label, { body: 'Máš novou zprávu v chatu.', icon: '' });
                     }

@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/../../includes/push_chat_notifications.php';
 
 $coach = mobileRequireCoach();
 $pdo = getDB();
@@ -169,7 +170,9 @@ if ($action === 'send' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $stmt = $pdo->prepare("INSERT INTO coach_athlete_chat_messages (coach_id, athlete_id, sender, body, coach_read_at, created_at) VALUES (?, ?, 'coach', ?, NOW(), NOW())");
             $stmt->execute([$coach['id'], $athleteId, $body]);
-            mobileJson(['success' => true, 'id' => (int)$pdo->lastInsertId()]);
+            $newId = (int)$pdo->lastInsertId();
+            pushNotifyCoachAthleteChatMessage($pdo, $newId);
+            mobileJson(['success' => true, 'id' => $newId]);
         } catch (Throwable $e) {
             mobileJson(['success' => false, 'error' => 'Chyba odeslání: ' . $e->getMessage()], 500);
         }

@@ -4,6 +4,7 @@ require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/surveys.php';
 require_once __DIR__ . '/includes/payment_access.php';
 require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/includes/push_settings.php';
 
 requireLogin();
 
@@ -497,6 +498,8 @@ renderHeader('Můj profil', false, true);
 <div class="d-flex align-items-center mb-4 gap-3">
     <h2 class="mb-0"><i class="fas fa-user-circle me-2 text-warning"></i>Můj profil</h2>
 </div>
+
+<?php renderPushSettings(); ?>
 
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-3">

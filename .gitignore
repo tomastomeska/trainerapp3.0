@@ -33,3 +33,4 @@ Thumbs.db
 # PHP composer
 vendor/
 composer.lock
+!dependencies/webpush/composer.lock

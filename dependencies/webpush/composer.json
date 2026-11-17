@@ -1,0 +1,19 @@
+{
+    "name": "trainerapp/webpush-dependencies",
+    "description": "Production dependencies for TrainerApp Web Push",
+    "type": "project",
+    "require": {
+        "php": ">=8.2",
+        "minishlink/web-push": "^10.0",
+        "guzzlehttp/guzzle": "^7.9"
+    },
+    "config": {
+        "allow-plugins": {
+            "php-http/discovery": false
+        },
+        "platform": {
+            "php": "8.4.27"
+        },
+        "sort-packages": true
+    }
+}

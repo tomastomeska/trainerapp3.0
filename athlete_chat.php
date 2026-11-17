@@ -3,6 +3,7 @@
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/includes/push_chat_notifications.php';
 
 requireLogin();
 $coachId = getCurrentCoachId();
@@ -97,11 +98,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'send'
                  VALUES (?, ?, "coach", ?, ?, ?, NOW())'
             );
             $ins->execute([$coachId, $athleteId, $body, $attachmentPath, $attachmentName]);
+            $newId = (int)$pdo->lastInsertId();
+            pushNotifyCoachAthleteChatMessage($pdo, $newId);
 
             if (!empty($athlete['email'])) {
                 $coach = getCurrentCoach();
                 $coachName = trim((string)($coach['name'] ?? '')) !== '' ? (string)$coach['name'] : trim((string)($coach['username'] ?? 'trenér'));
-                notifyAthleteAboutNewCoachChatMessage($coachId, $athleteId, (int)$pdo->lastInsertId(), (string)$athlete['email'], $athleteName, $coachName, $body);
+                notifyAthleteAboutNewCoachChatMessage($coachId, $athleteId, $newId, (string)$athlete['email'], $athleteName, $coachName, $body);
             }
 
             redirect(BASE_URL . '/athlete_chat.php?id=' . $athleteId);

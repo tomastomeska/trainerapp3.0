@@ -3,6 +3,7 @@
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/includes/push_chat_notifications.php';
 
 requireLogin();
 $coachId = getCurrentCoachId();
@@ -51,6 +52,7 @@ if (($athlete || $target === 'admin') && $_SERVER['REQUEST_METHOD'] === 'POST' &
                     "INSERT INTO coach_athlete_chat_messages (coach_id, athlete_id, sender, body, coach_read_at) VALUES (?, ?, 'coach', ?, NOW())"
                 )->execute([$coachId, $athleteId, $body]);
                 $newId = (int)$pdo->lastInsertId();
+                pushNotifyCoachAthleteChatMessage($pdo, $newId);
 
                 $athleteName = trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']);
                 if (!empty($athlete['email'])) {
