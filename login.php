@@ -255,6 +255,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $_SESSION['coach_id']   = $coach['id'];
                             $_SESSION['coach_name'] = $coach['name'] ?: $username;
                             $_SESSION['coach_force_password_change'] = (int)($coach['force_password_change'] ?? 0);
+                            try {
+                                rememberRevokeCurrent($pdo);
+                                if (isset($_POST['remember_device'])) {
+                                    rememberIssue($pdo, 'coach', (int)$coach['id'], (string)$coach['password']);
+                                }
+                            } catch (Throwable $e) {
+                                error_log('Persistent coach login failed: ' . get_class($e));
+                                rememberLoginFailure();
+                                flash('warning', 'Přihlášení se nepodařilo na tomto zařízení zapamatovat.');
+                            }
                             appLogEvent(
                                 'login_success',
                                 'info',
@@ -328,6 +338,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['athlete_coach_id'] = (int)$athlete['coach_id'];
                     $_SESSION['athlete_force_password_change'] = (int)($athlete['force_password_change'] ?? 1);
                     unset($_SESSION['coach_force_password_change']);
+
+                    try {
+                        rememberRevokeCurrent($pdo);
+                        if (isset($_POST['remember_device'])) {
+                            rememberIssue($pdo, 'athlete', (int)$athlete['id'], (string)$athlete['password']);
+                        }
+                    } catch (Throwable $e) {
+                        error_log('Persistent athlete login failed: ' . get_class($e));
+                        rememberLoginFailure();
+                        flash('warning', 'Přihlášení se nepodařilo na tomto zařízení zapamatovat.');
+                    }
 
                     $pdo->prepare('UPDATE athletes SET last_login = NOW() WHERE id = ?')->execute([(int)$athlete['id']]);
                     appLogEvent(
@@ -1143,6 +1164,11 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
                             autocomplete="current-password" required>
                     </div>
 
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="rememberDevice" name="remember_device" value="1" <?= $_SERVER['REQUEST_METHOD'] !== 'POST' || isset($_POST['remember_device']) ? 'checked' : '' ?>>
+                        <label class="form-check-label" for="rememberDevice">Zůstat přihlášen na tomto zařízení</label>
+                        <div class="small text-muted">Na sdíleném zařízení zaškrtnutí zrušte.</div>
+                    </div>
                     <button type="submit" class="btn btn-login w-100">Přihlásit se</button>
                 </form>
 
@@ -1252,7 +1278,7 @@ $showFormOnLoad = $_SERVER['REQUEST_METHOD'] === 'POST';
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="<?= BASE_URL ?>/assets/js/pwa.js" defer></script>
+    <script src="<?= BASE_URL ?>/assets/js/pwa.js?v=3" defer></script>
     <script>
         const brandLogo = document.getElementById('brandLogo');
         if (brandLogo) {

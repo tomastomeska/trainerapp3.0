@@ -120,7 +120,7 @@ function renderSharedFilesSection(array $sharedFiles, string $uploadBaseUrl, str
     </h5>
     <div class="row g-3">
         <?php foreach ($sharedFiles as $f): ?>
-        <div class="col-6 col-md-4 col-lg-3 col-xl-2">
+        <div class="col-6 col-md-4 col-lg-3 col-xl-2" data-gallery-source="<?= h((string)$f['_source']) ?>" data-gallery-id="<?= (int)$f['id'] ?>">
             <div class="card border-0 shadow-sm h-100">
                 <?php
                 $fileSrc = $uploadBaseUrl . '/' . rawurlencode($f['file_path']);
@@ -217,6 +217,8 @@ renderAthleteHeader('Galerie', false, true);
     <h2 class="mb-0"><i class="fas fa-images me-2 text-warning"></i>Galerie</h2>
 </div>
 
+<div class="alert alert-warning d-none" id="galleryFocusStatus" role="status">Tento příspěvek již není dostupný.</div>
+
 <div class="card border-0 shadow-sm mb-4 overflow-hidden">
     <div class="card-body p-4 p-md-5 d-flex justify-content-between align-items-center gap-4 flex-wrap"
          style="background:linear-gradient(120deg,#fff8e1 0%,#fff 60%,#eef6ff 100%)">
@@ -290,6 +292,17 @@ function openGalleryPreview(type, src, name, description, createdAt) {
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     modal.show();
 }
+
+document.addEventListener('DOMContentLoaded', function () {
+    const params = new URLSearchParams(window.location.search);
+    const source = params.has('admin_file') ? 'admin' : (params.has('coach_file') ? 'coach' : '');
+    const id = source === 'admin' ? params.get('admin_file') : params.get('coach_file');
+    if (!source || !/^[1-9]\d*$/.test(id || '')) return;
+    const card = document.querySelector(`[data-gallery-source="${source}"][data-gallery-id="${id}"]`);
+    const button = card && card.querySelector('button');
+    if (button) button.click();
+    else document.getElementById('galleryFocusStatus').classList.remove('d-none');
+});
 
 async function pollAthleteGallery() {
     try {

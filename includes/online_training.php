@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/push_online_training_notifications.php';
 
 function onlineTrainingStatusLabel(string $status): string {
     return [
@@ -690,6 +691,7 @@ function onlineTrainingSend(PDO $pdo, int $trainingId, int $coachId, ?string $co
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $e;
     }
+    pushOnlineTrainingNotify($pdo, $trainingId, 'sent');
     $url = BASE_URL . '/online_training.php?id=' . $trainingId;
     $messageId = createAthleteNotification((int)$training['athlete_id'], 'Nový online trénink', 'Trenér vám odeslal nový online trénink. Otevřít: ' . $url);
     $athleteStmt = $pdo->prepare('SELECT first_name, last_name, email FROM athletes WHERE id = ?');

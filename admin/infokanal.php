@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/admin_auth.php';
+require_once __DIR__ . '/../includes/push_notifications.php';
 require_once __DIR__ . '/header.php';
 
 requireAdminLogin();
@@ -109,6 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'INSERT INTO info_articles (category_id, title, body, target_audience, is_active, published_at, created_by)
                      VALUES (?, ?, ?, ?, ?, ?, ?)'
                 )->execute([$categoryId, $title, $body, $targetAudience, $isActive, $publishedAt, $createdBy > 0 ? $createdBy : null]);
+                pushContentNotify($pdo, 'info_article', (int)$pdo->lastInsertId());
                 flash('success', 'Článek byl vytvořen.');
             }
         }
@@ -127,11 +129,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif (!in_array($targetAudience, $validAudience, true)) {
                 flash('danger', 'Neplatné cílení článku.');
             } else {
+                $previousRoles = null;
+                try {
+                    $previousRoles = pushContentRoles('info_article', pushContentLoad($pdo, 'info_article', $articleId));
+                } catch (Throwable $e) {
+                    error_log('Previous info article visibility lookup failed: ' . get_class($e));
+                }
                 $pdo->prepare(
                     'UPDATE info_articles
                      SET category_id = ?, title = ?, body = ?, target_audience = ?, is_active = ?, published_at = ?
                      WHERE id = ?'
                 )->execute([$categoryId, $title, $body, $targetAudience, $isActive, $publishedAt, $articleId]);
+                if ($previousRoles !== null) {
+                    pushContentNotify($pdo, 'info_article', $articleId, $previousRoles);
+                }
                 flash('success', 'Článek byl upraven.');
             }
         }

@@ -10,6 +10,7 @@ if (ob_get_level() === 0) {
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/app_monitor.php';
+require_once __DIR__ . '/remembered_devices.php';
 
 if (php_sapi_name() !== 'cli' && !headers_sent()) {
     $hostHeader = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
@@ -38,13 +39,34 @@ if (session_status() === PHP_SESSION_NONE) {
         session_set_cookie_params([
             'lifetime' => 0,
             'path'     => $cookiePath,
-            'secure'   => defined('SESSION_SECURE') ? SESSION_SECURE : false,
+            'secure'   => (defined('SESSION_SECURE') && SESSION_SECURE)
+                || (!empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off')
+                || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower(trim((string)$_SERVER['HTTP_X_FORWARDED_PROTO'])) === 'https')
+                || (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443),
             'httponly' => true,
             'samesite' => 'Lax',
         ]);
     }
     @session_start();
     unset($cookiePath);
+}
+
+if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_ACTIVE
+    && empty($_SESSION['superadmin_id']) && empty($_SESSION['impersonating_admin_id'])
+    && empty($_SESSION['pending_superadmin_id'])) {
+    try {
+        if (!empty($_SESSION['remember_selector'])) {
+            rememberValidateSession(getDB());
+        } elseif (empty($_SESSION['coach_id']) && empty($_SESSION['athlete_id'])
+            && isset($_COOKIE[REMEMBER_COOKIE])) {
+            rememberRestoreSession(getDB());
+            if (!empty($_SESSION['remember_selector'])) rememberValidateSession(getDB());
+        }
+    } catch (Throwable $e) {
+        error_log('Persistent authentication failed: ' . get_class($e));
+        http_response_code(503);
+        exit('Přihlášení se nyní nepodařilo ověřit. Zkuste to prosím později.');
+    }
 }
 
 if (!function_exists('trainerAppShouldReleaseSessionLock')) {

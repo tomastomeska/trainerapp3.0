@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/../../includes/payment_billing.php';
 require_once __DIR__ . '/../../includes/push_chat_notifications.php';
+require_once __DIR__ . '/../../includes/push_calendar_notifications.php';
 
 $athlete = mobileRequireAthlete();
 $pdo = getDB();
@@ -612,6 +613,7 @@ if ($action === 'create' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         mobileJson(['success' => false, 'error' => $e->getMessage()], 422);
     }
+    pushCalendarNotify($pdo, 'athlete_request', $coachId, [], $newEventId, 'calendar-request:' . $newEventId, $startSql, true, $athleteId, $location);
     mobileJson(['success' => true, 'id' => $newEventId]);
 }
 
@@ -659,7 +661,9 @@ if ($action === 'request_change' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $location !== '' ? $location : null,
         $startSql, $endSql,
     ]);
-    mobileJson(['success' => true, 'id' => (int)$pdo->lastInsertId()]);
+    $newRequestEventId = (int)$pdo->lastInsertId();
+    pushCalendarNotify($pdo, 'athlete_request', $coachId, [], $newRequestEventId, 'calendar-request:' . $newRequestEventId, $startSql, true, $athleteId, $location);
+    mobileJson(['success' => true, 'id' => $newRequestEventId]);
 }
 
 if ($action === 'update_request' && $_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -693,6 +697,9 @@ if ($action === 'update_request' && $_SERVER['REQUEST_METHOD'] === 'POST') {
          WHERE id = ? AND coach_id = ? AND requested_by_athlete_id = ? AND approval_status = "pending"'
     );
     $update->execute([$title !== '' ? $title : 'Trénink', $location, $startSql, $endSql, $start->format('Y-m-01'), $eventId, $coachId, $athleteId]);
+    if ($update->rowCount() > 0) {
+        pushCalendarNotify($pdo, 'athlete_request_changed', $coachId, [], $eventId, '', $startSql, true, $athleteId, $location);
+    }
     mobileJson(['success' => true]);
 }
 
@@ -723,6 +730,7 @@ if ($action === 'cancel_event' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($deleteRequestStmt->rowCount() !== 1) {
             mobileJson(['success' => false, 'error' => 'Žádost o změnu se nepodařilo zrušit.'], 404);
         }
+        pushCalendarNotify($pdo, 'athlete_request_cancelled', (int)$event['coach_id'], [], $eventId, 'calendar-request-cancel:' . $eventId, (string)$event['starts_at'], false, $athleteId, (string)($event['location'] ?? ''));
         mobileJson(['success' => true, 'message' => 'Žádost o změnu termínu byla zrušena. Původní termín zůstává zachovaný.']);
     }
     $eventStartTs = strtotime((string)$event['starts_at']);
@@ -783,6 +791,10 @@ if ($action === 'cancel_event' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $logAthleteId = $primaryAthleteId > 0 ? $primaryAthleteId : null;
         $logSecondId = $secondAthleteId > 0 ? $secondAthleteId : null;
     }
+    pushCalendarNotify(
+        $pdo, 'athlete_cancelled', (int)$event['coach_id'], [], $eventId,
+        'calendar-athlete-cancel:' . $eventId . ':' . $athleteId, (string)$event['starts_at'], $removedFromPairOnly, $athleteId, (string)($event['location'] ?? '')
+    );
     try {
         $columns = ['coach_id', 'athlete_id', 'second_athlete_id', 'canceled_by', 'canceled_by_athlete_id', 'cancellation_scope', 'approval_status', 'is_makeup_session', 'custom_title', 'location', 'starts_at', 'ends_at', 'canceled_at'];
         $values = ['?', '?', '?', '"athlete"', '?', '?', '?', '?', '?', '?', '?', '?', 'NOW()'];
@@ -898,11 +910,20 @@ if ($action === 'cancel_event' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
 if ($action === 'cancel_request' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $eventId = (int)($input['event_id'] ?? 0);
+    $requestEvent = [];
+    try {
+        $requestStmt = $pdo->prepare('SELECT starts_at, location FROM coach_calendar_events WHERE id = ? AND coach_id = ? AND requested_by_athlete_id = ? AND approval_status = "pending" LIMIT 1');
+        $requestStmt->execute([$eventId, $coachId, $athleteId]);
+        $requestEvent = $requestStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    } catch (Throwable $e) {
+        error_log('Calendar push request snapshot failed: ' . get_class($e));
+    }
     $del = $pdo->prepare('DELETE FROM coach_calendar_events WHERE id = ? AND coach_id = ? AND requested_by_athlete_id = ? AND approval_status = "pending"');
     $del->execute([$eventId, $coachId, $athleteId]);
     if ($del->rowCount() < 1) {
         mobileJson(['success' => false, 'error' => 'Žádost se nepodařilo zrušit.'], 404);
     }
+    pushCalendarNotify($pdo, 'athlete_request_cancelled', $coachId, [], $eventId, 'calendar-request-cancel:' . $eventId, (string)($requestEvent['starts_at'] ?? ''), false, $athleteId, (string)($requestEvent['location'] ?? ''));
     mobileJson(['success' => true]);
 }
 

@@ -130,7 +130,11 @@ if ($mustChangePassword && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pdo->prepare('UPDATE coaches SET password = ?, force_password_change = 0 WHERE id = ?')
                         ->execute([$newHash, $coachId]);
                     $_SESSION['coach_force_password_change'] = 0;
-                    flash('success', 'Heslo bylo úspěšně změněno.');
+                    if (rememberPasswordChanged($pdo, 'coach', (int)$coachId, $newHash)) {
+                        flash('success', 'Heslo bylo úspěšně změněno.');
+                    } else {
+                        flash('warning', 'Heslo bylo změněno, ale přihlášení na tomto zařízení se nepodařilo zapamatovat.');
+                    }
                     redirect(BASE_URL . '/dashboard.php');
                 }
             }

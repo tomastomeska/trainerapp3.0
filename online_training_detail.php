@@ -23,14 +23,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('success', 'Online trénink byl odeslán.'); redirect(BASE_URL . '/online_training.php?id=' . $id);
         }
         if ($isCoach && $action === 'note') {
-            $pdo->prepare('UPDATE online_trainings SET coach_note = ? WHERE id = ? AND trainer_id = ?')->execute([trim((string)$_POST['coach_note']), $id, $coachId]);
+            $note = trim((string)$_POST['coach_note']);
+            $saveNote = $pdo->prepare('UPDATE online_trainings SET coach_note = ? WHERE id = ? AND trainer_id = ?');
+            $saveNote->execute([$note, $id, $coachId]);
+            if ($saveNote->rowCount() > 0 && $note !== '' && $note !== trim((string)($training['coach_note'] ?? ''))
+                && (string)$training['status'] !== 'created') {
+                pushOnlineTrainingNotify($pdo, $id, 'note');
+            }
         }
         if ($isCoach && $action === 'coach_reaction') {
             if ($training['status'] !== 'completed') throw new RuntimeException('Na dokončený trénink můžete reagovat až po jeho ukončení sportovcem.');
             $reaction = trim((string)($_POST['coach_reaction'] ?? ''));
             if ($reaction === '') throw new RuntimeException('Napište reakci před jejím odesláním sportovci.');
-            $pdo->prepare("UPDATE online_trainings SET coach_reaction = ?, trainer_reviewed_at = COALESCE(trainer_reviewed_at, NOW()) WHERE id = ? AND trainer_id = ? AND status = 'completed'")
-                ->execute([$reaction, $id, $coachId]);
+            $saveReaction = $pdo->prepare("UPDATE online_trainings SET coach_reaction = ?, trainer_reviewed_at = COALESCE(trainer_reviewed_at, NOW()) WHERE id = ? AND trainer_id = ? AND status = 'completed'");
+            $saveReaction->execute([$reaction, $id, $coachId]);
+            if ($saveReaction->rowCount() > 0 && $reaction !== trim((string)($training['coach_reaction'] ?? ''))) {
+                pushOnlineTrainingNotify($pdo, $id, 'reaction');
+            }
             $number = str_pad((string)$training['sequence_number'], 3, '0', STR_PAD_LEFT);
             createAthleteNotification(
                 (int)$training['athlete_id'],
@@ -285,7 +294,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $startedStmt = $pdo->prepare('SELECT started_at FROM online_trainings WHERE id = ? AND athlete_id = ? AND status = \'in_progress\''); $startedStmt->execute([$id, $athleteId]); $startedAt = $startedStmt->fetchColumn();
             if (!$startedAt) throw new RuntimeException('Trénink musí být nejdříve zahájen.');
             $duration = max(0, time() - (strtotime((string)$startedAt) ?: time()));
-            $pdo->prepare("UPDATE online_trainings SET status = 'completed', completed_at = NOW(), duration_seconds = ? WHERE id = ? AND athlete_id = ? AND status = 'in_progress'")->execute([$duration, $id, $athleteId]);
+            $complete = $pdo->prepare("UPDATE online_trainings SET status = 'completed', completed_at = NOW(), duration_seconds = ? WHERE id = ? AND athlete_id = ? AND status = 'in_progress'");
+            $complete->execute([$duration, $id, $athleteId]);
+            if ($complete->rowCount() !== 1) throw new RuntimeException('Trénink se nepodařilo dokončit.');
+            pushOnlineTrainingNotify($pdo, $id, 'completed');
             $completed = onlineTrainingLoadForCoach($pdo, $id, (int)$training['trainer_id']);
             if ($completed) onlineTrainingNotifyCompleted($pdo, $completed);
             flash('success', 'Online trénink byl dokončen.'); redirect(BASE_URL . '/online_training.php?id=' . $id);

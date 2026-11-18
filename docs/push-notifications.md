@@ -113,6 +113,11 @@ Immediate dispatch is attempted only when `fastcgi_finish_request` is
 available; its actual behavior still needs testing on the hosting server.
 Without that function, delivery waits for the scheduled worker.
 
+Bulk messages sent by an administrator or coach to athletes enqueue a generic
+notification for each recipient after the message is committed. They use the
+messages preference and open the athlete's inbox; existing messages are not
+notified retroactively.
+
 The CRON setup page creates a separate secret after an authenticated CSRF-
 protected action and displays the URL only to the administrator. Do not share
 the URL: the WEDOS service requires the secret in a GET parameter, which may
@@ -148,6 +153,12 @@ delete the temporary page both locally and on the server. Do not remove queue
 or log records as part of this cleanup.
 
 ## Stage 6: profile notification settings
+
+The shared profile notification card includes an expandable illustrated
+installation and notification guide for iPhone/iPad, Android and computers.
+Deploy `includes/push_install_guide.php` together with
+`includes/push_settings.php`; both coach and athlete profiles use it. The
+illustrations are schematic because browser and system menus can vary.
 
 Back up the deployed `api/push_subscriptions.php`,
 `assets/js/push-subscriptions.js`, `profile.php`, and
@@ -207,3 +218,183 @@ To roll back, restore the seven backed-up chat files before removing the new
 helper. Keep the queue, logs, subscriptions and settings. Previously queued
 notifications can still be sent by a running worker; pause it if necessary and
 do not delete queued data without a separate decision.
+
+### Calendar notification integration
+
+Back up `api/athlete_calendar_save_event.php`,
+`api/athlete_calendar_delete_event.php`, `api/calendar_save_event.php`,
+`api/calendar_delete_event.php`, `api/calendar_approve_event.php`,
+`api/mobile/athlete_portal.php`, and `api/mobile/calendar.php`. Upload
+`includes/push_calendar_notifications.php` first, then those seven API files.
+No SQL changes are required.
+
+Requests, changed requests and athlete cancellations notify the coach.
+Coach-created, changed, approved, rejected and cancelled events notify the
+affected athletes. Both participants of a paired event are considered, and
+one bulk series action queues at most one notification per recipient and device.
+Deleting an event from its detail also sends push without changing the existing
+payment or replacement behavior. Calendar preferences and registered devices
+are checked by the existing queue. Coach-facing notifications include the
+athlete's name. Calendar notifications include the date, time and location,
+or explicitly say when these are unavailable. For series actions, the date
+and location describe the first affected event for that recipient. This
+information can appear on a locked screen and is stored in the delivery queue,
+including after delivery; it is also sent to the device's push provider.
+New coach and athlete notifications open the calendar at the relevant date
+where available and focus an accessible event when it still exists. Cancelled
+events open the relevant week without attempting to open a deleted event.
+Notifications queued before this change retain their original target.
+
+Verify create, approval, change, rejection, cancellation and paired or
+recurring events using test accounts, with the calendar category both enabled
+and disabled. Confirm click navigation in the installed iPhone app as well as
+on the coach's device. The icon badge still counts unread chat messages, not
+calendar events. Immediate dispatch is best effort; queued failures have no
+scheduled retries until CRON is configured separately. Online training and
+reminders are not connected by this stage.
+
+To roll back, restore the seven API files before removing the calendar helper.
+Keep subscriptions, preferences, queues and logs. Already queued notifications
+may still be sent by a worker; do not delete queue data without a decision.
+
+For the calendar refresh and athlete click-navigation update, back up and
+upload `athlete_calendar.php`, `calendar.php`, and
+`includes/push_calendar_notifications.php`. No SQL is required. Test fresh
+notifications for events in another week, cancellation from the athlete detail
+and both backgrounded and closed installed PWAs. Calendars request fresh data
+when returning to the foreground or receiving a notification-click message.
+A failed auxiliary month or training list is reported in that list,
+independently of the week view. Restore the three backups to roll back.
+
+For the coach calendar refresh warning update, back up and upload
+`calendar.php`; no SQL is required. An automatic weekly refresh failure now
+shows a non-blocking warning with a retry button, while a monthly-list failure
+has its own warning and retry. Previously displayed data may be outdated.
+Test foregrounding and notification clicks, connection loss and recovery,
+and month-list retry. If a failure persists, capture the browser console error
+(`Obnovení kalendáře selhalo` or `Načtení měsíčního seznamu selhalo`);
+the warning alone does not identify its cause. Restore the backup to roll back.
+
+For the athlete calendar refresh update, back up and upload
+`athlete_calendar.php`; no SQL is required. Automatic refreshes retry once
+after a failure and ignore obsolete request failures. A remaining failure is
+shown with details and a retry button, while the last displayed week remains
+visible when the data request fails. Check notification clicks, the event
+detail, returning to the app and connection loss/recovery on an athlete device.
+Console errors are logged
+as `Obnovení kalendáře sportovce selhalo`. Restore the backup to roll back.
+
+For the calendar scrolling fix, back up and upload `athlete_calendar.php` and
+`calendar.php`; no SQL is required. Both calendars use a non-scrolling
+DayPilot grid and no longer call `scrollToHour`. Test loading the current week
+and opening an athlete event from a new notification. Restore both backups to
+roll back.
+
+### Online training notifications
+
+Back up `includes/online_training.php`, `online_training_detail.php`,
+`api/online_training_complete.php`, and `api/online_training_save_coach_note.php`.
+Upload `includes/push_online_training_notifications.php` first, then the four
+updated files. No SQL change is required.
+
+Sending an online training notifies the athlete; completion notifies the coach
+with the athlete's name. A new or changed visible coach note or reaction also
+notifies the athlete. Messages identify the training number but do not include
+the note, results or exercise details. A set and its series are prepared in an
+invisible draft, so they do not generate separate pushes before sending.
+
+Test sending, completing and reacting with test accounts, both with the online
+training preference enabled and disabled, including click navigation. Push
+subscriptions do not keep a user logged in. To roll back, restore the four
+backed-up files before removing the helper. Retain all queue and account data.
+
+### Notification click navigation on iOS
+
+Back up and upload `sw.js`, `assets/js/pwa.js`, `includes/athlete_header.php`,
+`includes/header.php`, `login.php`, `athlete_chat_mobile.php` and
+`coach_chat_mobile.php`. No SQL is required. The worker stores the same-origin
+target of a notification click briefly in IndexedDB so the app can recover it
+if iOS opens the start page instead. The target is consumed once and expires
+after two minutes; the existing direct navigation remains the fallback if
+storage fails. This does not extend the user's login session.
+
+Reopen the installed app so the updated scripts and worker can activate, then
+test fresh notifications with the app both in the background and closed.
+Verify both account roles and the opened chat. Restoring those seven backed-up
+files rolls back the change; the worker's temporary navigation record expires
+without deleting any existing application data.
+
+### Unread-message badge
+
+Back up `api/push_subscriptions.php`, `includes/push_notifications.php`,
+`sw.js`, `assets/js/pwa.js`, `includes/athlete_header.php`,
+`includes/header.php`, `login.php`, `athlete_chat_mobile.php`, and
+`coach_chat_mobile.php`, as well as `api/athlete_coach_chat.php`,
+`api/athlete_chat_admin.php`, and `includes/support_widget.php`. Upload the
+new `includes/push_unread.php` first, then the updated APIs and sender before
+the other files. The preceding notification-click fix is included in these
+files. No SQL change is required.
+
+On supported installed PWAs, the badge shows unread coach-athlete and
+administrator chat messages. The server counts only the authenticated
+recipient's messages; a push carries a numeric snapshot, and an open app
+refreshes the count on startup, return to the foreground, and periodically
+while visible. A zero count clears the badge. Push notification display does
+not depend on the badge succeeding. Background chat polling avoids marking
+messages as read until the conversation is visible again.
+
+The badge is a best-effort snapshot, not an always-live cross-device count:
+out-of-order pushes, an expired session or reading messages on another device
+can leave it stale until the next successful update. On iOS/iPadOS the app must
+be installed on the Home Screen, notifications must be allowed, and system
+badge display must be enabled. Android may show a system-managed dot rather
+than the numeric count. Other notification categories are not counted yet.
+
+The quick-actions button shows the same unread-chat total while its actions are
+collapsed. Athlete-to-coach chat pushes include the athlete's name, which can
+appear on a lock screen and is retained in the delivery queue. Back up and
+upload `includes/support_widget.php` and `includes/push_chat_notifications.php`
+for these changes; no SQL is required. Restore those files to roll back.
+
+Test a fresh notification with the installed app closed, then open the chat
+and check that the badge clears after the unread messages are read. Check the
+count with two unread messages and with both roles. Restore the backed-up files
+to roll back; do not delete subscriptions, logs or other application data.
+
+### Surveys, information channel and gallery
+
+Back up the database and affected files. Run `sql/push_content_categories.sql`
+in phpMyAdmin before deploying the PHP changes; it extends the two existing
+category enums without removing old values. Stop if either statement fails.
+Upload `includes/push_content_notifications.php` before replacing
+`includes/push_notifications.php`, followed by `api/push_subscriptions.php`,
+`includes/push_settings.php`, `includes/survey_page.php`, `admin/surveys.php`,
+`admin/infokanal.php`, `admin/gallery.php`, `gallery_upload.php`, `gallery.php`
+and `athlete_gallery.php`. Do not replace the existing push subscriptions.
+
+Polls and questionnaires notify their selected audience when published.
+Information articles notify newly eligible audiences when published immediately;
+future scheduled articles are deliberately not notified automatically.
+Admin gallery uploads notify their selected audience once per upload, and
+coach gallery files notify their selected athletes once per file. Private
+files are silent. Titles or filenames appear on lock screens and in the queue.
+Each category has a separate setting, enabled by default. Existing permissions
+are checked again before queued delivery.
+
+The existing push CRON must be configured for queued batches and retries.
+Upload `cron_push_notifications.php` and `admin/push_cron_setup.php` if absent.
+Before enabling it, inspect pending queue counts and ages; it may deliver old
+queued notifications. Decide how to handle any backlog before starting CRON.
+As superadministrator, open the setup page over HTTPS and copy the generated
+secret URL directly to WEDOS CRON; do not share it. Use the shortest available
+interval, all hours and days. Each run processes a bounded batch, so a large
+queue may need multiple runs. A longer hosting interval also delays retries.
+CRON delivers already queued pushes; it does not publish scheduled articles.
+
+Test each audience, disabled settings, direct links, hidden/private items,
+multiple files and devices, and a queue larger than the immediate batch. If
+rolling back, allow new-category queued deliveries to finish under the new
+worker first; then pause CRON and restore the backed-up PHP files. Keep the
+new helper, expanded enums, subscriptions, preferences, logs and queue data.
+Do not run an old worker against pending new-category items or shrink enums
+without a separate data migration.

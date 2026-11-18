@@ -67,8 +67,10 @@ if ($action === 'thread' && $_SERVER['REQUEST_METHOD'] === 'GET') {
 
 if ($action === 'poll' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $sinceId = max(0, (int)($_GET['since_id'] ?? 0));
-    $pdo->prepare("UPDATE coach_athlete_chat_messages SET athlete_read_at = NOW() WHERE athlete_id = ? AND sender = 'coach' AND athlete_read_at IS NULL")
-        ->execute([$athleteId]);
+    if (($_GET['mark_read'] ?? '') !== '0') {
+        $pdo->prepare("UPDATE coach_athlete_chat_messages SET athlete_read_at = NOW() WHERE athlete_id = ? AND sender = 'coach' AND athlete_read_at IS NULL")
+            ->execute([$athleteId]);
+    }
     session_write_close();
 
     $stmt = $pdo->prepare('SELECT * FROM coach_athlete_chat_messages WHERE athlete_id = ? AND id > ? ORDER BY created_at ASC, id ASC LIMIT 100');

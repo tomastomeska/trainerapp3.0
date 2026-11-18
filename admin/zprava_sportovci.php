@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/admin_auth.php';
+require_once __DIR__ . '/../includes/push_chat_notifications.php';
 require_once __DIR__ . '/header.php';
 
 requireAdminLogin();
@@ -109,6 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') !== 'run_c
                 $recipientStmt->execute([$broadcastId, $athleteId, (int)$pdo->lastInsertId()]);
             }
             $pdo->commit();
+            pushNotifyAthleteBroadcast($pdo, 'admin', $broadcastId, $activeAthleteIds);
 
             $emailSent = 0;
             foreach ($activeAthletes as $athlete) {

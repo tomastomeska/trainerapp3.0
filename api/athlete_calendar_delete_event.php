@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/push_calendar_notifications.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -98,6 +99,7 @@ if ($isRescheduleRequest) {
         exit;
     }
 
+    pushCalendarNotify($pdo, 'athlete_request_cancelled', (int)$event['coach_id'], [], $eventId, 'calendar-request-cancel:' . $eventId, (string)$event['starts_at'], false, $athleteId, (string)($event['location'] ?? ''));
     echo json_encode([
         'success' => true,
         'message' => 'Žádost o změnu termínu byla zrušena. Původní termín zůstává zachovaný.',
@@ -356,6 +358,10 @@ if ($primaryAthleteId > 0 && $secondAthleteId > 0) {
     }
 }
 
+pushCalendarNotify(
+    $pdo, 'athlete_cancelled', (int)$event['coach_id'], [], $eventId,
+    'calendar-athlete-cancel:' . $eventId . ':' . $athleteId, (string)$event['starts_at'], $removedFromPairOnly, $athleteId, (string)($event['location'] ?? '')
+);
 $coachDisplayName = ($event['coach_name'] ?? '') !== '' ? (string)$event['coach_name'] : (string)($event['coach_username'] ?? 'trenér');
 
 if ($removedFromPairOnly) {

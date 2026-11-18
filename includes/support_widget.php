@@ -185,7 +185,7 @@ function renderSupportWidget(string $userType = 'coach'): void {
             <?php if ($showChatWidget): ?>
             <button type="button" class="support-fab support-fab-chat" id="adminChatFab" title="Zprávy">
                 <i class="fas fa-comment-dots"></i>
-                <span class="support-fab-badge<?= $chatWidgetUnreadInitial > 0 ? '' : ' d-none' ?>" id="adminChatBadge"><?= $chatWidgetUnreadInitial ?></span>
+                <span class="support-fab-badge<?= $chatWidgetUnreadInitial > 0 ? '' : ' d-none' ?>" id="adminChatBadge"><?= $chatWidgetUnreadInitial > 99 ? '99+' : $chatWidgetUnreadInitial ?></span>
             </button>
             <?php endif; ?>
             <button type="button" class="support-fab support-fab-gift" id="supportGiftFab" title="Dobrovolná podpora provozu">
@@ -197,8 +197,12 @@ function renderSupportWidget(string $userType = 'coach'): void {
         </div>
         <button type="button" class="support-fab support-fab-menu-toggle" id="supportFabMenuToggle"
                 aria-label="Zobrazit rychlé akce" aria-expanded="false" aria-controls="supportFabActions"
+                <?php if ($showChatWidget): ?>aria-describedby="supportFabMenuBadge"<?php endif; ?>
                 title="Zobrazit rychlé akce">
             <i class="fas fa-ellipsis"></i>
+            <?php if ($showChatWidget): ?>
+            <span class="support-fab-badge<?= $chatWidgetUnreadInitial > 0 ? '' : ' d-none' ?>" id="supportFabMenuBadge" aria-label="Nepřečtené zprávy: <?= $chatWidgetUnreadInitial ?>"><?= $chatWidgetUnreadInitial > 99 ? '99+' : $chatWidgetUnreadInitial ?></span>
+            <?php endif; ?>
         </button>
     </div>
 
@@ -338,6 +342,7 @@ function renderSupportWidget(string $userType = 'coach'): void {
 }
 .support-fab.support-fab-menu-toggle {
     display: inline-flex;
+    position: relative;
     background: linear-gradient(135deg, #343a40, #212529);
     box-shadow: 0 10px 24px rgba(33, 37, 41, .32);
 }
@@ -412,6 +417,9 @@ function renderSupportWidget(string $userType = 'coach'): void {
     align-items: center;
     justify-content: center;
     line-height: 1;
+}
+.support-fab-stack.is-open #supportFabMenuBadge {
+    display: none;
 }
 .admin-chat-panel {
     position: fixed;
@@ -707,6 +715,7 @@ function renderSupportWidget(string $userType = 'coach'): void {
     const chatFab = document.getElementById('adminChatFab');
     const chatPanel = document.getElementById('adminChatPanel');
     const chatBadge = document.getElementById('adminChatBadge');
+    const menuBadge = document.getElementById('supportFabMenuBadge');
     const chatHub = document.getElementById('adminChatHub');
     const chatBody = document.getElementById('adminChatBody');
     const chatForm = document.getElementById('adminChatForm');
@@ -732,8 +741,10 @@ function renderSupportWidget(string $userType = 'coach'): void {
     let currentThread = null; // { apiUrl, extraQuery, label }
     let lastId = 0;
     let fastPollTimer = null;
-    let slowPollTimer = null;
-    const unreadByKey = {};
+    const unreadByKey = {
+        admin: <?= (int)$adminChatUnreadInitial ?>,
+        peer: <?= (int)$peerChatUnreadInitial ?>,
+    };
 
     const escapeHtml = (str) => String(str).replace(/[&<>"']/g, (c) => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -743,12 +754,12 @@ function renderSupportWidget(string $userType = 'coach'): void {
 
     const updateBadge = () => {
         const count = totalUnread();
-        if (count > 0) {
-            chatBadge.textContent = count > 99 ? '99+' : String(count);
-            chatBadge.classList.remove('d-none');
-        } else {
-            chatBadge.classList.add('d-none');
-        }
+        [chatBadge, menuBadge].forEach((badge) => {
+            if (!badge) return;
+            badge.textContent = count > 99 ? '99+' : String(count);
+            badge.classList.toggle('d-none', count <= 0);
+        });
+        if (menuBadge) menuBadge.setAttribute('aria-label', 'Nepřečtené zprávy: ' + count);
     };
 
     const messageIsMine = (m) => {
@@ -892,25 +903,34 @@ function renderSupportWidget(string $userType = 'coach'): void {
         if (showAdminChat) {
             fetch(adminApiUrl + '?action=unread_count', { credentials: 'same-origin' })
                 .then((r) => r.json())
-                .then((data) => { if (data && data.ok) { unreadByKey.admin = data.unread_count || 0; updateBadge(); } })
-                .catch(() => {});
+                .then((data) => {
+                    if (!data || !data.ok) throw new Error('Admin unread count is unavailable.');
+                    unreadByKey.admin = data.unread_count || 0;
+                    updateBadge();
+                })
+                .catch((error) => console.error('Načtení počtu zpráv administrátora selhalo:', error));
         }
         if (showPeerChat) {
             fetch(peerApiUrl + '?action=unread_count', { credentials: 'same-origin' })
                 .then((r) => r.json())
-                .then((data) => { if (data && data.ok) { unreadByKey.peer = data.unread_count || 0; updateBadge(); } })
-                .catch(() => {});
+                .then((data) => {
+                    if (!data || !data.ok) throw new Error('Peer unread count is unavailable.');
+                    unreadByKey.peer = data.unread_count || 0;
+                    updateBadge();
+                })
+                .catch((error) => console.error('Načtení počtu zpráv trenéra a sportovce selhalo:', error));
         }
     };
 
     const pollNewMessages = async () => {
-        if (!currentThread) { return; }
+        if (!currentThread || document.hidden) { return; }
         try {
             const res = await fetch(currentThread.apiUrl + '?action=poll&since_id=' + lastId + currentThread.extraQuery, { credentials: 'same-origin' });
             const data = await res.json();
             if (data && data.ok && data.messages.length > 0) {
                 data.messages.forEach((m) => renderMessage(m));
                 scrollToBottom();
+                pollUnreadForBadgeOnly();
             }
         } catch (e) { /* tichy fail */ }
     };
@@ -929,6 +949,7 @@ function renderSupportWidget(string $userType = 'coach'): void {
                     data.messages.forEach((m) => renderMessage(m));
                 }
                 scrollToBottom();
+                pollUnreadForBadgeOnly();
             }
             if (fastPollTimer) { clearInterval(fastPollTimer); }
             fastPollTimer = setInterval(pollNewMessages, 5000);
@@ -941,7 +962,6 @@ function renderSupportWidget(string $userType = 'coach'): void {
     const openPanel = () => {
         isOpen = true;
         chatPanel.classList.remove('d-none');
-        if (slowPollTimer) { clearInterval(slowPollTimer); slowPollTimer = null; }
         showHub();
     };
 
@@ -949,7 +969,7 @@ function renderSupportWidget(string $userType = 'coach'): void {
         isOpen = false;
         chatPanel.classList.add('d-none');
         if (fastPollTimer) { clearInterval(fastPollTimer); fastPollTimer = null; }
-        slowPollTimer = setInterval(pollUnreadForBadgeOnly, 20000);
+        pollUnreadForBadgeOnly();
     };
 
     chatFab.addEventListener('click', function () {
@@ -995,7 +1015,10 @@ function renderSupportWidget(string $userType = 'coach'): void {
     });
 
     pollUnreadForBadgeOnly();
-    slowPollTimer = setInterval(pollUnreadForBadgeOnly, 20000);
+    setInterval(pollUnreadForBadgeOnly, 20000);
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) pollUnreadForBadgeOnly();
+    });
 })();
 
 (function () {

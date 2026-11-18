@@ -1,6 +1,8 @@
 <?php
 
 require_once __DIR__ . '/push_endpoint.php';
+require_once __DIR__ . '/push_unread.php';
+require_once __DIR__ . '/push_content_notifications.php';
 
 function pushNotificationInputIsValid(
     string $role,
@@ -13,7 +15,7 @@ function pushNotificationInputIsValid(
     string $eventKey
 ): bool {
     if (!in_array($role, ['coach', 'athlete'], true) || $ownerId < 1
-        || !in_array($category, ['messages', 'calendar', 'online_training', 'athlete', 'payments'], true)
+        || !in_array($category, ['messages', 'calendar', 'online_training', 'athlete', 'payments', 'surveys', 'info_channel', 'gallery'], true)
         || preg_match('/^[a-z0-9_]{1,64}$/D', $type) !== 1
         || $eventKey === '' || strlen($eventKey) > 200 || preg_match('//u', $eventKey) !== 1
     ) {
@@ -285,13 +287,17 @@ function pushDeliveryPayload(array $delivery): string
     )) {
         throw new InvalidArgumentException('Invalid stored push notification.');
     }
-    return json_encode([
+    $payload = [
         'title' => $delivery['title'],
         'body' => $delivery['body'],
         'url' => $delivery['target_url'],
         'type' => $delivery['notification_type'],
         'tag' => 'push-' . $delivery['log_id'],
-    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    ];
+    if (isset($delivery['unread_count']) && is_int($delivery['unread_count']) && $delivery['unread_count'] >= 0) {
+        $payload['unread_count'] = $delivery['unread_count'];
+    }
+    return json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
 
 function pushSendDelivery(\Minishlink\WebPush\WebPush $sender, array $delivery): \Minishlink\WebPush\MessageSentReport
@@ -391,8 +397,23 @@ function pushProcessQueue(PDO $pdo, int $maxJobs = 40, int $maxSeconds = 20): in
             $error = 'invalid_endpoint';
         } else {
             try {
-                $report = pushSendDelivery($sender, $delivery);
-                [$result, $status, $error] = pushClassifyReport($report);
+                if (!pushContentDeliveryAllowed($pdo, $delivery)) {
+                    $result = 'skipped';
+                    $error = 'content_unavailable';
+                } else {
+                    try {
+                        $isCoach = $delivery['coach_id'] !== null;
+                        $delivery['unread_count'] = pushUnreadChatCount(
+                            $pdo,
+                            $isCoach ? 'coach' : 'athlete',
+                            (int)($isCoach ? $delivery['coach_id'] : $delivery['athlete_id'])
+                        );
+                    } catch (Throwable $e) {
+                        error_log('Push unread count failed: ' . get_class($e));
+                    }
+                    $report = pushSendDelivery($sender, $delivery);
+                    [$result, $status, $error] = pushClassifyReport($report);
+                }
             } catch (InvalidArgumentException $e) {
                 $result = 'failed';
                 $error = 'invalid_data';

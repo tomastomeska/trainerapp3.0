@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/push_install_guide.php';
+
 function renderPushSettings(): void
 {
     ?>
@@ -10,6 +12,7 @@ function renderPushSettings(): void
         <div class="card-body">
             <p class="text-muted small">Push oznámení můžete spravovat pro každé zařízení zvlášť. Na iPhonu otevřete TrainerApp přidanou na plochu.</p>
             <p class="text-muted small">Jednotlivé typy událostí se postupně zapojují; nastavení kategorie samo o sobě nezapne dosud nepřipojené oznámení.</p>
+            <?php renderPushInstallGuide(); ?>
             <p id="push-status" role="status" aria-live="polite">Načítám nastavení oznámení…</p>
             <div class="d-flex flex-wrap gap-2 mb-3">
                 <button id="push-activate" type="button" class="btn btn-warning fw-semibold" disabled>Aktivovat na tomto zařízení</button>
@@ -26,6 +29,9 @@ function renderPushSettings(): void
                     'online_training' => 'Online tréninky',
                     'athlete' => 'Sportovec',
                     'payments' => 'Platby',
+                    'surveys' => 'Ankety a dotazníky',
+                    'info_channel' => 'Infokanál',
+                    'gallery' => 'Galerie',
                 ] as $category => $label): ?>
                     <div class="form-check form-switch mb-2">
                         <input class="form-check-input" type="checkbox" id="push-category-<?= h($category) ?>" data-push-category="<?= h($category) ?>">

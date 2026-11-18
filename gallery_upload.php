@@ -3,6 +3,7 @@
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/includes/push_notifications.php';
 
 requireLogin();
 $coachId = getCurrentCoachId();
@@ -96,6 +97,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $insVis->execute([$newFileId, $aid]);
                 }
             }
+
+            pushContentNotify($pdo, 'coach_gallery', $newFileId);
 
             // Notifikace sportovcům
             if ($visibility === 'all_athletes') {

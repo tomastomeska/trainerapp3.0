@@ -223,7 +223,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ->execute([$newHash, $coachId]);
                     $_SESSION['coach_force_password_change'] = 0;
 
-                    flash('success', 'Heslo bylo úspěšně změněno.');
+                    if (rememberPasswordChanged($pdo, 'coach', (int)$coachId, $newHash)) {
+                        flash('success', 'Heslo bylo úspěšně změněno.');
+                    } else {
+                        flash('warning', 'Heslo bylo změněno, ale přihlášení na tomto zařízení se nepodařilo zapamatovat.');
+                    }
                     redirect(BASE_URL . '/profile.php');
                 }
             }
@@ -500,6 +504,7 @@ renderHeader('Můj profil', false, true);
 </div>
 
 <?php renderPushSettings(); ?>
+<?php renderRememberedDevices($pdo, 'coach', (int)$coachId); ?>
 
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-3">

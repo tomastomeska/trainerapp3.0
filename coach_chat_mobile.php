@@ -205,6 +205,7 @@ if ($target === '' && !$athlete) {
 <?php else: ?>
 <script>document.body.classList.add('dashboard-standalone-chat');</script>
 <?php endif; ?>
+<script src="<?= BASE_URL ?>/assets/js/pwa.js?v=3" data-push-csrf="<?= h(csrfToken()) ?>" defer></script>
 
 <?php if (!$chatTableExists && !$adminChatTableExists): ?>
 <div class="topbar"><span class="title">Chat</span></div>

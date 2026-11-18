@@ -85,6 +85,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submi
 
 $surveys = surveyFetchForUser($pdo, $surveyUserRole, $surveyUserId, true);
 $selectedSurvey = $surveyId > 0 ? surveyFetchById($pdo, $surveyId) : null;
+if ($selectedSurvey && (!in_array($selectedSurvey['status'], ['published', 'ended'], true)
+    || !surveyAudienceMatches((string)$selectedSurvey['audience'], $surveyUserRole))) {
+    $selectedSurvey = null;
+    $error = 'Toto šetření není dostupné.';
+}
 $selectedResponse = $selectedSurvey ? surveyFetchResponse($pdo, $surveyId, $surveyUserRole, $surveyUserId) : null;
 $selectedSurveyClosed = $selectedSurvey && ($selectedSurvey['status'] === 'ended' || ($selectedSurvey['expires_at'] !== null && strtotime((string)$selectedSurvey['expires_at']) < time()));
 $selectedSurveyRequiresSubmit = $selectedSurvey && (

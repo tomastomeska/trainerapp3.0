@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verifyCsrf((string)($_POST['csrf_t
 
 try {
     $pdo = getDB();
-    $trainingStmt = $pdo->prepare('SELECT id, athlete_id, sequence_number FROM online_trainings WHERE id = ? AND trainer_id = ? LIMIT 1');
+    $trainingStmt = $pdo->prepare('SELECT id, athlete_id, sequence_number, status, coach_note FROM online_trainings WHERE id = ? AND trainer_id = ? LIMIT 1');
     $trainingStmt->execute([$trainingId, $coachId]);
     $training = $trainingStmt->fetch();
     if (!$training) {
@@ -31,6 +31,11 @@ try {
     $storedNote = $verifyStmt->fetchColumn();
     if ((string)($storedNote ?? '') !== $note) {
         throw new RuntimeException('Poznámku se nepodařilo ověřit po uložení.');
+    }
+
+    if ($note !== '' && $note !== trim((string)($training['coach_note'] ?? ''))
+        && (string)$training['status'] !== 'created') {
+        pushOnlineTrainingNotify($pdo, $trainingId, 'note');
     }
 
     if ($note !== '') {

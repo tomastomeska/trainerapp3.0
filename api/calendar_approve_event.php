@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/payment_billing.php';
+require_once __DIR__ . '/../includes/push_calendar_notifications.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -120,7 +121,7 @@ if ($rescheduleSourceEventId <= 0 && (int)($event['athlete_id'] ?? 0) > 0 && (in
 
 if ($rescheduleSourceEventId > 0) {
     $sourceStmt = $pdo->prepare(
-        'SELECT id, coach_id, athlete_id, second_athlete_id, billing_issue_number, billing_transfer_reason
+        'SELECT id, coach_id, athlete_id, second_athlete_id, starts_at, location, billing_issue_number, billing_transfer_reason
          FROM coach_calendar_events
          WHERE id = ?
            AND coach_id = ?
@@ -237,6 +238,15 @@ if ($rescheduleSourceEventId > 0) {
         exit;
     }
 
+    pushCalendarNotify($pdo, 'coach_approved', $coachId, [
+        (int)($event['athlete_id'] ?? 0), (int)($event['second_athlete_id'] ?? 0),
+    ], $eventId, 'calendar-approval:' . $eventId, (string)$event['starts_at'], true, 0, (string)($event['location'] ?? ''));
+    pushCalendarNotify($pdo, 'coach_cancelled', $coachId, array_diff([
+        (int)($sourceEvent['athlete_id'] ?? 0), (int)($sourceEvent['second_athlete_id'] ?? 0),
+    ], [
+        (int)($event['athlete_id'] ?? 0), (int)($event['second_athlete_id'] ?? 0),
+    ]), $eventId, 'calendar-removed:' . $eventId, (string)$sourceEvent['starts_at'], false, 0, (string)($sourceEvent['location'] ?? ''));
+
     $syncAthleteIds = array_values(array_unique(array_filter([
         (int)($sourceEvent['athlete_id'] ?? 0),
         (int)($sourceEvent['second_athlete_id'] ?? 0),
@@ -332,6 +342,10 @@ try {
     echo json_encode(['success' => false, 'error' => 'Schválení se nepodařilo.'], JSON_UNESCAPED_UNICODE);
     exit;
 }
+
+pushCalendarNotify($pdo, 'coach_approved', $coachId, [
+    (int)($event['athlete_id'] ?? 0), (int)($event['second_athlete_id'] ?? 0),
+], $eventId, 'calendar-approval:' . $eventId, (string)$event['starts_at'], true, 0, (string)($event['location'] ?? ''));
 
 enqueueCoachGoogleCalendarSync($coachId, $eventId, 'upsert');
 enqueueCoachAppleCaldavSync($coachId, $eventId, 'upsert');

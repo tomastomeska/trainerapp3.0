@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/../../includes/payment_billing.php';
+require_once __DIR__ . '/../../includes/push_calendar_notifications.php';
 
 $coach = mobileRequireCoach();
 $pdo = getDB();
@@ -234,6 +235,7 @@ if ($action === 'create') {
                 paymentCreateAdditionalIssue($pdo, (int)$coach['id'], (int)$additionalAthleteId, $billingMonth, max(1, $issueNumber), $billingAssignment['session_rates'][(int)$additionalAthleteId] ?? $billingAssignment['session_rate'] ?? null);
             }
         }
+        pushCalendarNotify($pdo, 'coach_created', (int)$coach['id'], [(int)$athleteId], $newId, 'calendar-created:' . $newId, $startsAt, true, 0, $location);
         mobileJson(['success' => true, 'id' => $newId]);
     } catch (Throwable $e) {
         mobileJson(['success' => false, 'error' => 'Chyba vytvoření události: ' . $e->getMessage()], 500);
@@ -384,7 +386,7 @@ if ($action === 'approve') {
     try {
         $pdo->beginTransaction();
         if ($rescheduleSourceId > 0) {
-            $sourceStmt = $pdo->prepare('SELECT id, billing_month, billing_issue_number, billing_transfer_reason FROM coach_calendar_events WHERE id = ? AND coach_id = ? LIMIT 1');
+            $sourceStmt = $pdo->prepare('SELECT id, athlete_id, second_athlete_id, starts_at, location, billing_month, billing_issue_number, billing_transfer_reason FROM coach_calendar_events WHERE id = ? AND coach_id = ? LIMIT 1');
             $sourceStmt->execute([$rescheduleSourceId, $coach['id']]);
             $sourceEvent = $sourceStmt->fetch(PDO::FETCH_ASSOC);
             if (!$sourceEvent) {
@@ -459,6 +461,12 @@ if ($action === 'approve') {
         }
         mobileJson(['success' => false, 'error' => 'Schválení se nepodařilo.'], 500);
     }
+
+    $previousEvent = $rescheduleSourceId > 0 ? $sourceEvent : $event;
+    $oldParticipants = [(int)($previousEvent['athlete_id'] ?? 0), (int)($previousEvent['second_athlete_id'] ?? 0)];
+    $newParticipants = [$newAthlete, (int)($previousEvent['second_athlete_id'] ?? 0)];
+    pushCalendarNotify($pdo, 'coach_approved', (int)$coach['id'], $newParticipants, $eventId, 'calendar-approval:' . $eventId, $startSql, true, 0, $newLocation);
+    pushCalendarNotify($pdo, 'coach_cancelled', (int)$coach['id'], array_diff($oldParticipants, $newParticipants), $eventId, 'calendar-removed:' . $eventId, (string)$previousEvent['starts_at'], false, 0, (string)($previousEvent['location'] ?? ''));
 
     $notifyAthleteId = $newAthlete > 0 ? $newAthlete : (int)($event['athlete_id'] ?? 0);
     if ($notifyAthleteId > 0 && function_exists('createAthleteNotification')) {
@@ -713,6 +721,9 @@ function mobileCancelCoachEvent(PDO $pdo, int $coachId, int $eventId, string $re
         }
         throw $e;
     }
+
+    $pushKind = $approved || empty($event['requested_by_athlete_id']) ? 'coach_cancelled' : 'coach_rejected';
+    pushCalendarNotify($pdo, $pushKind, $coachId, $participantIds, $eventId, 'calendar-coach-delete:' . $eventId, $startsAt, false, 0, (string)($event['location'] ?? ''));
 
     if (function_exists('enqueueCoachGoogleCalendarSync')) {
         enqueueCoachGoogleCalendarSync($coachId, $eventId, 'delete');

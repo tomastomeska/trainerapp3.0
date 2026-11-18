@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/payment_billing.php';
+require_once __DIR__ . '/../includes/push_calendar_notifications.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -299,6 +300,7 @@ if ($isRequestChangeMode) {
         $endSql,
     ]);
     $newRequestEventId = (int)$pdo->lastInsertId();
+    pushCalendarNotify($pdo, 'athlete_request', (int)$athlete['coach_id'], [], $newRequestEventId, 'calendar-request:' . $newRequestEventId, $startSql, true, $athleteId, (string)$location);
 
     $athleteName = trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']);
     $timeLabel = $start->format('d.m.Y H:i');
@@ -459,6 +461,11 @@ if ($replacementCancellationId !== null
         }
 }
 
+pushCalendarNotify(
+    $pdo, $isEditMode ? 'athlete_request_changed' : 'athlete_request',
+    (int)$athlete['coach_id'], [], $newEventId,
+    $isEditMode ? '' : 'calendar-request:' . $newEventId, $startSql, true, $athleteId, (string)$location
+);
 
 $athleteName = trim((string)$athlete['first_name'] . ' ' . (string)$athlete['last_name']);
 $timeLabel = $start->format('d.m.Y H:i');

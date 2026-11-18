@@ -219,6 +219,7 @@ $targetName = $target === 'coach' ? ($coachName !== '' ? $coachName : 'Trenér')
 <?php endif; ?>
 
 <script src="<?= BASE_URL ?>/assets/js/push-subscriptions.js?v=2"></script>
+<script src="<?= BASE_URL ?>/assets/js/pwa.js?v=3" data-push-csrf="<?= h(csrfToken()) ?>" defer></script>
 <script>
 window.trainerAppSuppressCoachChatAlerts = true;
 (function () {
@@ -299,7 +300,7 @@ window.trainerAppSuppressCoachChatAlerts = true;
     }
 
     function pollNew() {
-        fetch(apiUrl + '?action=poll&since_id=' + lastId, { credentials: 'same-origin' })
+        fetch(apiUrl + '?action=poll&since_id=' + lastId + (document.hidden ? '&mark_read=0' : ''), { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (!data || !data.ok || !data.messages.length) { return; }

@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../includes/admin_auth.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/surveys.php';
+require_once __DIR__ . '/../includes/push_notifications.php';
 require_once __DIR__ . '/header.php';
 requireAdminLogin();
 
@@ -87,6 +88,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'publish' && $surveyId > 0) {
             $publishStmt = $pdo->prepare("UPDATE surveys SET status = 'published', published_at = COALESCE(published_at, NOW()) WHERE id = ? AND status = 'draft'");
             $publishStmt->execute([$surveyId]);
+            if ($publishStmt->rowCount() === 1) {
+                pushContentNotify($pdo, 'survey', $surveyId);
+            }
             $published = surveyFetchById($pdo, $surveyId);
             if ($published) {
                 try {
@@ -198,6 +202,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->commit();
 
                 if ($status === 'published') {
+                    pushContentNotify($pdo, 'survey', $newSurveyId);
                     try {
                         sendSurveyNotificationEmails($pdo, $newSurveyId, $title, $surveyType, $audience);
                         processEmailNotificationQueue(200, 'survey_notification');

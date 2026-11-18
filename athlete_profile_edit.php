@@ -105,6 +105,7 @@ renderAthleteHeader('Upravit můj profil', false, true);
             </div>
         </div>
         <div class="mt-4"><?php renderPushSettings(); ?></div>
+        <?php renderRememberedDevices($pdo, 'athlete', $athleteId); ?>
     </div>
 </div>
 

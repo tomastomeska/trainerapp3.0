@@ -35,6 +35,7 @@ try {
     $pdo->commit();
     $committed = true;
 
+    pushOnlineTrainingNotify($pdo, $trainingId, 'completed');
     $coachTraining = onlineTrainingLoadForCoach($pdo, $trainingId, (int)$training['trainer_id']);
     if ($coachTraining) onlineTrainingNotifyCompleted($pdo, $coachTraining);
     flash('success', 'Online trénink byl dokončen.');

@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/payment_billing.php';
+require_once __DIR__ . '/../includes/push_calendar_notifications.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -611,6 +612,11 @@ if ($eventId > 0) {
             exit;
         }
 
+        $previousParticipants = [(int)($sourceEvent['athlete_id'] ?? 0), (int)($sourceEvent['second_athlete_id'] ?? 0)];
+        $currentParticipants = [(int)($athleteId ?? 0), (int)($secondAthleteId ?? 0)];
+        pushCalendarNotify($pdo, 'coach_approved', $coachId, $currentParticipants, $eventId, 'calendar-approval:' . $eventId, $startSql, true, 0, (string)$location);
+        pushCalendarNotify($pdo, 'coach_cancelled', $coachId, array_diff($previousParticipants, $currentParticipants), $eventId, 'calendar-removed:' . $eventId, (string)$sourceEvent['starts_at'], false, 0, (string)($sourceEvent['location'] ?? ''));
+
         $syncAthleteIds = array_values(array_unique(array_filter([
             (int)($sourceEvent['athlete_id'] ?? 0),
             (int)($sourceEvent['second_athlete_id'] ?? 0),
@@ -804,6 +810,19 @@ if ($eventId > 0) {
         }
         echo json_encode(['success' => false, 'error' => $e->getMessage()]);
         exit;
+    }
+
+    $previousParticipants = [(int)($existingEvent['athlete_id'] ?? 0), (int)($existingEvent['second_athlete_id'] ?? 0)];
+    $currentParticipants = [(int)($athleteId ?? 0), (int)($secondAthleteId ?? 0)];
+    $participantsChanged = array_diff($previousParticipants, $currentParticipants) !== []
+        || array_diff($currentParticipants, $previousParticipants) !== [];
+    if ($isPendingRequest || $changed || $participantsChanged) {
+        pushCalendarNotify(
+            $pdo, $isPendingRequest ? 'coach_approved' : 'coach_changed',
+            $coachId, $currentParticipants, $eventId, $isPendingRequest ? 'calendar-approval:' . $eventId : '',
+            $startSql, true, 0, (string)$location, $shouldCreateRecurrenceFromUpdate
+        );
+        pushCalendarNotify($pdo, 'coach_cancelled', $coachId, array_diff($previousParticipants, $currentParticipants), $eventId, '', (string)$existingEvent['starts_at'], false, 0, (string)($existingEvent['location'] ?? ''));
     }
 
     if (!empty($existingEvent['athlete_id'])) {
@@ -1041,6 +1060,10 @@ try {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
     exit;
 }
+
+pushCalendarNotify($pdo, 'coach_created', $coachId, [
+    (int)($athleteId ?? 0), (int)($secondAthleteId ?? 0),
+], (int)$createdIds[0], 'calendar-created:' . (int)$createdIds[0], $startSql, true, 0, (string)$location, count($createdIds) > 1);
 
 foreach ($createdIds as $syncEventId) {
     enqueueCoachGoogleCalendarSync($coachId, (int)$syncEventId, 'upsert');

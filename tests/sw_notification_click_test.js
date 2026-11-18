@@ -15,7 +15,8 @@ async function click(clients, url) {
             openWindow: async (target) => { opened.push(target); }
         }
     };
-    vm.runInNewContext(fs.readFileSync('sw.js', 'utf8'), { self, URL, console });
+    const indexedDB = { open() { throw new Error('test storage failure'); } };
+    vm.runInNewContext(fs.readFileSync('sw.js', 'utf8'), { self, indexedDB, URL, console: { error() {}, warn() {} } });
     let task;
     handlers.notificationclick({
         notification: { data: { url }, close() {} },
@@ -31,7 +32,7 @@ async function click(clients, url) {
         url: 'https://example.com/current',
         navigate: async (url) => {
             assert.strictEqual(url, 'https://example.com/target');
-            return { focus: async () => { focused = true; } };
+            return { focus: async () => { focused = true; }, postMessage() {} };
         }
     };
     assert.deepStrictEqual(await click([client], '/target'), []);

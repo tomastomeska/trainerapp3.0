@@ -137,6 +137,12 @@ function pushSubscriptionDeviceName(mixed $value): string
 }
 
 try {
+    if ($action === 'get_unread_count') {
+        require_once __DIR__ . '/../includes/push_unread.php';
+        $count = pushUnreadChatCount($pdo, $isCoach ? 'coach' : 'athlete', (int)$ownerId);
+        pushSubscriptionRespond(200, ['success' => true, 'unread_count' => $count]);
+    }
+
     if ($action === 'get_public_key') {
         $stmt = $pdo->prepare('SELECT `value` FROM app_settings WHERE `key` = ? LIMIT 1');
         $stmt->execute(['push_vapid_keys']);
@@ -249,7 +255,7 @@ try {
     if ($action === 'set_preference') {
         $category = is_string($input['category'] ?? null) ? $input['category'] : '';
         $enabled = $input['enabled'] ?? null;
-        $categories = ['messages', 'calendar', 'online_training', 'athlete', 'payments'];
+        $categories = ['messages', 'calendar', 'online_training', 'athlete', 'payments', 'surveys', 'info_channel', 'gallery'];
         if (!in_array($category, $categories, true) || !in_array($enabled, [0, 1, false, true], true)) {
             pushSubscriptionRespond(400, ['success' => false, 'error' => 'invalid_preference']);
         }
@@ -276,7 +282,7 @@ try {
             'SELECT category, enabled FROM push_notification_settings WHERE ' . $ownerSql
         );
         $settingsStmt->execute([$ownerId]);
-        $preferences = array_fill_keys(['messages', 'calendar', 'online_training', 'athlete', 'payments'], true);
+        $preferences = array_fill_keys(['messages', 'calendar', 'online_training', 'athlete', 'payments', 'surveys', 'info_channel', 'gallery'], true);
         foreach ($settingsStmt->fetchAll() as $setting) {
             $preferences[(string)$setting['category']] = (bool)$setting['enabled'];
         }

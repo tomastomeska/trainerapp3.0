@@ -602,7 +602,7 @@ function renderFooter(): void {
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/mycoach-theme.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/app.js"></script>
-<script src="<?= BASE_URL ?>/assets/js/pwa.js" defer></script>
+<script src="<?= BASE_URL ?>/assets/js/pwa.js?v=3" data-push-csrf="<?= h(csrfToken()) ?>" defer></script>
 <?php renderSupportWidget('coach'); ?>
 </body>
 </html>

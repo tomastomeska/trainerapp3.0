@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../includes/admin_auth.php';
 require_once __DIR__ . '/header.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/push_notifications.php';
 
 requireAdminLogin();
 $pdo     = getDB();
@@ -259,6 +260,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($uploadedCount > 0) {
+            pushContentNotify($pdo, 'admin_gallery', (int)$uploadedIds[0]);
             $emailExcerpt = preg_replace('/\s+/u', ' ', $description) ?? $description;
             $emailExcerpt = mb_strimwidth(trim($emailExcerpt), 0, 300, '…', 'UTF-8');
             $notifyCoachIds = match ($visibility) {

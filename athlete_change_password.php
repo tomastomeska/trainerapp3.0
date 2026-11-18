@@ -34,7 +34,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $upd->execute([$hash, $athleteId]);
 
             $_SESSION['athlete_force_password_change'] = 0;
-            flash('success', 'Heslo bylo úspěšně změněno.');
+            if (rememberPasswordChanged($pdo, 'athlete', $athleteId, $hash)) {
+                flash('success', 'Heslo bylo úspěšně změněno.');
+            } else {
+                flash('warning', 'Heslo bylo změněno, ale přihlášení na tomto zařízení se nepodařilo zapamatovat.');
+            }
             redirect(BASE_URL . '/athlete_dashboard.php');
         }
     }

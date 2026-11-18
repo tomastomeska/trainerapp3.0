@@ -69,6 +69,11 @@ $delivery = [
     'p256dh_key' => $device['publicKey'],
     'auth_key' => rtrim(strtr(base64_encode(random_bytes(16)), '+/', '-_'), '='),
 ];
+$withCount = $delivery;
+$withCount['unread_count'] = 7;
+expectPush(json_decode(pushDeliveryPayload($withCount), true, 16, JSON_THROW_ON_ERROR)['unread_count'] === 7, 'Unread badge count missing from payload.');
+$withCount['unread_count'] = -1;
+expectPush(!isset(json_decode(pushDeliveryPayload($withCount), true, 16, JSON_THROW_ON_ERROR)['unread_count']), 'Invalid badge count was accepted.');
 $report = pushSendDelivery($sender, $delivery);
 expectPush($report->isSuccess() && $report->getResponse()->getStatusCode() === 201, 'Mock delivery failed.');
 expectPush(pushClassifyReport($report) === ['sent', 201, null], 'Acceptance classification failed.');

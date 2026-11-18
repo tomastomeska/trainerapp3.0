@@ -33,7 +33,7 @@ async function setup(options) {
     for (const id of ['push-settings', 'push-status', 'push-activate', 'push-disable-all', 'push-devices', 'push-categories']) {
         elements[id] = new Element(id);
     }
-    for (const category of ['messages', 'calendar', 'online_training', 'athlete', 'payments']) {
+    for (const category of ['messages', 'calendar', 'online_training', 'athlete', 'payments', 'surveys', 'info_channel', 'gallery']) {
         const input = new Element(category);
         input.dataset.pushCategory = category;
         elements['push-categories'].children.push(input);
@@ -41,6 +41,7 @@ async function setup(options) {
     const preferences = Object.fromEntries(elements['push-categories'].children.map((input) => [input.id, true]));
     let publicKeyCalls = 0;
     let preferenceLoads = 0;
+    const preferenceCalls = [];
     const api = {
         isSupported: () => options.supported,
         list: async () => {
@@ -57,8 +58,9 @@ async function setup(options) {
             if (options.keyError) throw new Error('key failed');
             return 'key';
         },
-        setPreference: async () => {
+        setPreference: async (category, enabled, csrf) => {
             if (options.preferenceError) throw new Error('save failed');
+            preferenceCalls.push([category, enabled, csrf]);
         }
     };
     const context = {
@@ -69,7 +71,7 @@ async function setup(options) {
     };
     vm.runInNewContext(source, context);
     await new Promise(setImmediate);
-    return { elements, publicKeyCalls: () => publicKeyCalls };
+    return { elements, publicKeyCalls: () => publicKeyCalls, preferenceCalls };
 }
 
 (async () => {
@@ -95,6 +97,15 @@ async function setup(options) {
     test = await setup({ supported: true, permission: 'granted', devices: [{ id: 1, is_current: 1 }] });
     assert.strictEqual(test.elements['push-activate'].disabled, false);
     assert.match(test.elements['push-status'].textContent, /registrov/);
+    for (const category of ['surveys', 'info_channel', 'gallery']) {
+        const categoryInput = test.elements['push-categories'].children.find((item) => item.id === category);
+        assert.strictEqual(categoryInput.checked, true);
+        categoryInput.checked = false;
+        await test.elements['push-categories'].handlers.change({ target: categoryInput });
+    }
+    assert.deepStrictEqual(test.preferenceCalls, [
+        ['surveys', false, 'csrf'], ['info_channel', false, 'csrf'], ['gallery', false, 'csrf'],
+    ]);
 
     test = await setup({ supported: true, listError: true });
     assert.strictEqual(test.elements['push-activate'].disabled, true);

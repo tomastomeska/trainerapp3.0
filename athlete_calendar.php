@@ -729,6 +729,12 @@ renderAthleteHeader('Můj kalendář', false, true);
     </li>
 </ul>
 
+<div class="alert alert-warning d-none" id="athleteCalendarRefreshStatus" role="status">
+    Kalendář se nepodařilo obnovit; zobrazené údaje mohou být neaktuální.
+    <span id="athleteCalendarRefreshError"></span>
+    <button type="button" class="btn btn-sm btn-outline-dark ms-2" id="athleteCalendarRefreshRetry">Zkusit znovu</button>
+</div>
+
 <div class="tab-content">
 <div class="tab-pane fade <?= $activeTab === 'week' ? 'show active' : '' ?>" id="athlete-week-pane" role="tabpanel" aria-labelledby="athlete-week-tab" tabindex="0">
 
@@ -1228,6 +1234,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const daypilotCalendarEl = document.getElementById('daypilotCalendar');
     const eventDetailModalEl = document.getElementById('eventDetailModal');
     const eventDetailModal = new bootstrap.Modal(eventDetailModalEl);
+    let eventDetailModalActive = false;
+    eventDetailModalEl.addEventListener('show.bs.modal', () => { eventDetailModalActive = true; });
+    eventDetailModalEl.addEventListener('hidden.bs.modal', () => { eventDetailModalActive = false; });
     const reserveModalEl = document.getElementById('reserveModal');
     const reserveModal = new bootstrap.Modal(reserveModalEl);
     const reserveLocationInput = document.getElementById('reserveLocation');
@@ -1366,11 +1375,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    const calendarUrlParams = new URLSearchParams(window.location.search);
+    const focusDateParam = (calendarUrlParams.get('focus_date') || '').trim();
+    let pendingFocusEventId = Number(calendarUrlParams.get('focus_event') || 0);
     let currentWeekStart = getMonday(new Date());
+    if (/^\d{4}-\d{2}-\d{2}$/.test(focusDateParam)) {
+        const focusDate = new Date(`${focusDateParam}T00:00:00`);
+        if (!Number.isNaN(focusDate.getTime()) && toDateKey(focusDate) === focusDateParam) {
+            currentWeekStart = getMonday(focusDate);
+        }
+    }
+    let weekDataRequestSeq = 0;
     let events = [];
     let locks = [];
     let dayPilotCalendar = null;
-    let hasInitialCalendarPositioned = false;
     let currentTimeSlotKey = '';
     let selectedEventForDetail = null;
     const reserveMakeupSuggestionCache = new Map();
@@ -1970,26 +1988,71 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function cancelMyEvent(eventId) {
-        const response = await fetch('<?= BASE_URL ?>/api/athlete_calendar_delete_event.php', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                csrf_token: csrfToken,
-                event_id: Number(eventId),
-            }),
+    function closeEventDetailModal() {
+        if (!eventDetailModalActive && !eventDetailModalEl.classList.contains('show')) {
+            return Promise.resolve();
+        }
+        return new Promise((resolve, reject) => {
+            const cleanup = () => {
+                clearTimeout(timeout);
+                eventDetailModalEl.removeEventListener('hidden.bs.modal', onHidden);
+                eventDetailModalEl.removeEventListener('shown.bs.modal', onShown);
+            };
+            const onHidden = () => {
+                cleanup();
+                resolve();
+            };
+            const onShown = () => eventDetailModal.hide();
+            const timeout = setTimeout(() => {
+                cleanup();
+                reject(new Error('Calendar detail modal did not close.'));
+            }, 5000);
+            eventDetailModalEl.addEventListener('hidden.bs.modal', onHidden);
+            eventDetailModalEl.addEventListener('shown.bs.modal', onShown);
+            eventDetailModal.hide();
         });
-        const payload = await response.json();
+    }
+
+    async function cancelMyEvent(eventId, onSuccess = null) {
+        let payload;
+        try {
+            const response = await fetch('<?= BASE_URL ?>/api/athlete_calendar_delete_event.php', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    csrf_token: csrfToken,
+                    event_id: Number(eventId),
+                }),
+            });
+            payload = await response.json();
+        } catch (error) {
+            console.error('Ověření zrušení termínu selhalo:', error);
+            alert('Nepodařilo se ověřit zrušení. Obnovte stránku a zkontrolujte, zda termín ještě existuje.');
+            return;
+        }
         if (!payload.success) {
             alert(payload.error || 'Termín se nepodařilo zrušit.');
             return;
+        }
+        if (onSuccess) {
+            try {
+                await onSuccess();
+            } catch (error) {
+                console.error('Zavření detailu po zrušení selhalo:', error);
+                alert('Termín byl zrušen, ale okno se nepodařilo zavřít. Zavřete jej prosím ručně.');
+            }
         }
         if (payload.message) {
             alert(payload.message);
         }
         invalidateReserveMakeupSuggestionCache();
-        await loadWeekData();
+        try {
+            await loadWeekData();
+        } catch (error) {
+            console.error('Obnovení kalendáře po zrušení selhalo:', error);
+            alert('Termín byl zrušen, ale kalendář se nepodařilo obnovit. Obnovte prosím stránku.');
+        }
     }
 
     function renderDayPilotCalendar() {
@@ -2077,15 +2140,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const now = new Date();
         currentTimeSlotKey = `${toDateKey(now)}-${now.getHours()}`;
         daypilotCalendarEl.style.setProperty('--trainer-current-time-offset', `${calendarCellHeight * now.getMinutes() / 60}px`);
-        if (
-            !hasInitialCalendarPositioned
-            && toDateKey(now) >= toDateKey(currentWeekStart)
-            && toDateKey(now) <= toDateKey(addDays(currentWeekStart, 6))
-        ) {
-            dayPilotCalendar.scrollToHour(Math.max(hourStart, now.getHours() - 1));
-            hasInitialCalendarPositioned = true;
-        }
-
         return true;
     }
 
@@ -2102,8 +2156,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const fallbackScript = document.createElement('script');
             fallbackScript.src = 'https://cdn.jsdelivr.net/npm/@daypilot/daypilot-lite-javascript@5.6.0/daypilot-javascript.min.js';
             fallbackScript.async = true;
-            fallbackScript.onload = () => resolve(Boolean(window.DayPilot && typeof window.DayPilot.Calendar === 'function'));
-            fallbackScript.onerror = () => resolve(false);
+            fallbackScript.onload = () => {
+                const loaded = Boolean(window.DayPilot && typeof window.DayPilot.Calendar === 'function');
+                if (!loaded) dayPilotLoadPromise = null;
+                resolve(loaded);
+            };
+            fallbackScript.onerror = () => {
+                dayPilotLoadPromise = null;
+                resolve(false);
+            };
             document.head.appendChild(fallbackScript);
         });
 
@@ -2111,47 +2172,65 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadWeekData() {
-        weekRangeLabel.textContent = getWeekRangeLabel();
+        const requestId = ++weekDataRequestSeq;
         const params = new URLSearchParams({ week_start: toDateKey(currentWeekStart) });
-        const response = await fetch(`<?= BASE_URL ?>/api/athlete_calendar_data.php?${params.toString()}`, {
-            credentials: 'same-origin',
-        });
-        const payload = await response.json();
+        try {
+            const response = await fetch(`<?= BASE_URL ?>/api/athlete_calendar_data.php?${params.toString()}`, {
+                credentials: 'same-origin',
+                cache: 'no-store',
+            });
+            const payload = await response.json();
 
-        if (!payload.success) {
-            alert(payload.error || 'Nepodařilo se načíst kalendář.');
-            return;
-        }
-
-        const currentMonthValue = `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
-        if (athleteWeekMonthJumpInput) {
-            athleteWeekMonthJumpInput.value = currentMonthValue;
-        }
-        syncAthleteWeekRangeSelectWithCurrentWeek();
-
-        events = payload.events || [];
-        locks = payload.locks || [];
-
-        if (!renderDayPilotCalendar()) {
-            const loaded = await ensureDayPilotLoaded();
-            if (loaded) {
-                if (!renderDayPilotCalendar()) {
-                    alert('Knihovnu kalendáře se nepodařilo inicializovat ani po opakovaném načtení.');
-                    return;
-                }
-            } else {
-                alert('Knihovnu kalendáře se nepodařilo načíst. Zkontrolujte prosím připojení nebo blokování CDN.');
-                return;
+            if (requestId !== weekDataRequestSeq) {
+                return false;
             }
-        }
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || 'Nepodařilo se načíst kalendář.');
+            }
 
-        if (!dayPilotCalendar) {
-            alert('Nepodařilo se inicializovat zobrazení kalendáře.');
-            return;
-        }
+            const currentMonthValue = `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
+            if (athleteWeekMonthJumpInput) {
+                athleteWeekMonthJumpInput.value = currentMonthValue;
+            }
+            syncAthleteWeekRangeSelectWithCurrentWeek();
 
-        await loadAthleteMonthList();
-        await loadAthleteTrainingTiles();
+            events = payload.events || [];
+            locks = payload.locks || [];
+
+            if (!renderDayPilotCalendar()) {
+                const loaded = await ensureDayPilotLoaded();
+                if (requestId !== weekDataRequestSeq) {
+                    return false;
+                }
+                if (!loaded) {
+                    throw new Error('Knihovnu kalendáře se nepodařilo načíst. Zkontrolujte připojení nebo blokování CDN.');
+                }
+                if (!renderDayPilotCalendar()) {
+                    throw new Error('Knihovnu kalendáře se nepodařilo inicializovat ani po opakovaném načtení.');
+                }
+            }
+
+            if (!dayPilotCalendar) {
+                throw new Error('Nepodařilo se inicializovat zobrazení kalendáře.');
+            }
+            weekRangeLabel.textContent = getWeekRangeLabel();
+            document.getElementById('athleteCalendarRefreshStatus').classList.add('d-none');
+
+            if (pendingFocusEventId > 0) {
+                const focusEvent = events.find((event) => Number(event.id || 0) === pendingFocusEventId);
+                if (focusEvent && !focusEvent.is_foreign) {
+                    openEventDetailModal(focusEvent);
+                }
+                pendingFocusEventId = 0;
+            }
+
+            await loadAthleteMonthList();
+            await loadAthleteTrainingTiles();
+            return requestId === weekDataRequestSeq;
+        } catch (error) {
+            if (requestId !== weekDataRequestSeq) return false;
+            throw error;
+        }
     }
 
     function shiftMonthValue(monthValue, offset) {
@@ -2249,7 +2328,7 @@ document.addEventListener('DOMContentLoaded', () => {
             athleteWeekMonthJumpInput.value = monthValue;
         }
         buildAthleteWeekRangeOptionsForMonth(monthValue);
-        loadWeekData();
+        requestWeekRefresh();
     }
 
     function jumpToAthleteWeekRangeInMonth(monthValue, weekStartKey) {
@@ -2271,7 +2350,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (athleteWeekRangeJumpSelect) {
             athleteWeekRangeJumpSelect.value = toDateKey(currentWeekStart);
         }
-        loadWeekData();
+        requestWeekRefresh();
     }
 
     function getStatusBadge(statusClass, statusLabel) {
@@ -2344,13 +2423,17 @@ document.addEventListener('DOMContentLoaded', () => {
             month: `${athleteTrainingYearFilter ? athleteTrainingYearFilter.value : new Date().getFullYear()}-${athleteTrainingMonth}`,
             status: athleteShowingCancelled ? 'cancelled' : (athleteTrainingStatusFilter ? athleteTrainingStatusFilter.value : 'approved'),
         });
-        const response = await fetch(`<?= BASE_URL ?>/api/athlete_calendar_training_list.php?${query.toString()}`, { credentials: 'same-origin' });
-        const payload = await response.json();
-        if (!payload.success) {
-            athleteTrainingTiles.innerHTML = `<div class="col-12 text-danger">${escapeHtml(payload.error || 'Načtení tréninků selhalo.')}</div>`;
-            return;
+        try {
+            const response = await fetch(`<?= BASE_URL ?>/api/athlete_calendar_training_list.php?${query.toString()}`, { credentials: 'same-origin', cache: 'no-store' });
+            const payload = await response.json();
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || 'Načtení tréninků selhalo.');
+            }
+            renderAthleteTrainingTiles(payload.items || []);
+        } catch (error) {
+            console.error('Načtení seznamu tréninků selhalo:', error);
+            athleteTrainingTiles.innerHTML = '<div class="col-12 text-danger">Načtení tréninků selhalo. Obnovte prosím stránku.</div>';
         }
-        renderAthleteTrainingTiles(payload.items || []);
     }
 
     athleteTrainingTiles.addEventListener('click', async (event) => {
@@ -2408,18 +2491,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const params = new URLSearchParams({ month: athleteMonthInput.value });
-        const response = await fetch(`<?= BASE_URL ?>/api/athlete_calendar_month_list.php?${params.toString()}`, {
-            credentials: 'same-origin',
-        });
-        const payload = await response.json();
-
-        if (!payload.success) {
-            athleteMonthListBody.innerHTML = '<tr><td colspan="5" class="text-danger">Načtení měsíčního seznamu selhalo.</td></tr>';
+        try {
+            const response = await fetch(`<?= BASE_URL ?>/api/athlete_calendar_month_list.php?${params.toString()}`, {
+                credentials: 'same-origin',
+                cache: 'no-store',
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || 'Načtení měsíčního seznamu selhalo.');
+            }
+            renderAthleteMonthList(payload.items || []);
+        } catch (error) {
+            console.error('Načtení měsíčního seznamu selhalo:', error);
+            athleteMonthListBody.innerHTML = '<tr><td colspan="5" class="text-danger">Načtení měsíčního seznamu selhalo. Obnovte prosím stránku.</td></tr>';
             athleteMonthListEmpty.classList.add('d-none');
-            return;
         }
-
-        renderAthleteMonthList(payload.items || []);
     }
 
     reserveLocationInput.addEventListener('change', () => {
@@ -2456,8 +2542,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            await cancelMyEvent(eventId);
-            eventDetailModal.hide();
+            await cancelMyEvent(eventId, closeEventDetailModal);
         } finally {
             finishCancel();
         }
@@ -2523,7 +2608,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         invalidateReserveMakeupSuggestionCache();
         reserveModal.hide();
-        await loadWeekData();
+        const refreshRequest = loadWeekData();
+        const refreshRequestId = weekDataRequestSeq;
+        try {
+            await refreshRequest;
+        } catch (error) {
+            if (refreshRequestId === weekDataRequestSeq) reportWeekRefreshError(error);
+        }
         } finally {
             finishSubmit();
         }
@@ -2531,17 +2622,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('prevWeekBtn').addEventListener('click', () => {
         currentWeekStart = addDays(currentWeekStart, -7);
-        loadWeekData();
+        requestWeekRefresh();
     });
 
     document.getElementById('nextWeekBtn').addEventListener('click', () => {
         currentWeekStart = addDays(currentWeekStart, 7);
-        loadWeekData();
+        requestWeekRefresh();
     });
 
     document.getElementById('todayWeekBtn').addEventListener('click', () => {
         currentWeekStart = getMonday(new Date());
-        loadWeekData();
+        requestWeekRefresh();
     });
 
     bindImmediateMonthPicker(athleteWeekMonthJumpInput, (monthValue) => {
@@ -2735,9 +2826,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
     setupCalendarUrlCopy('copyAthleteGoogleCalendarUrlBtn', 'athleteGoogleCalendarUrlField', 'copyAthleteGoogleCalendarUrlStatus');
 
+    function reportWeekRefreshError(error) {
+        console.error('Obnovení kalendáře sportovce selhalo:', error);
+        const detail = error && typeof error.message === 'string' ? error.message : '';
+        document.getElementById('athleteCalendarRefreshError').textContent = detail ? `Podrobnosti: ${detail.slice(0, 200)}` : '';
+        document.getElementById('athleteCalendarRefreshStatus').classList.remove('d-none');
+    }
+
+    function requestWeekRefresh(retryOnce = false) {
+        const request = loadWeekData();
+        const requestId = weekDataRequestSeq;
+        request.catch((error) => {
+            if (requestId !== weekDataRequestSeq) return;
+            reportWeekRefreshError(error);
+            if (retryOnce) {
+                window.setTimeout(() => {
+                    if (requestId === weekDataRequestSeq && document.visibilityState === 'visible') {
+                        requestWeekRefresh();
+                    }
+                }, 1200);
+            }
+        });
+    }
+
+    function refreshVisibleCalendar() {
+        if (document.visibilityState !== 'visible') return;
+        requestWeekRefresh(true);
+    }
+    document.getElementById('athleteCalendarRefreshRetry').addEventListener('click', () => requestWeekRefresh());
+    document.addEventListener('visibilitychange', refreshVisibleCalendar);
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'trainerapp-notification-click') refreshVisibleCalendar();
+        });
+    }
+
     populateReserveHourOptions();
     updateReserveLocationHint();
-    loadWeekData();
+    requestWeekRefresh(true);
 });
 </script>
 

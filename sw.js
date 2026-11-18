@@ -2,6 +2,59 @@
 
 const APP_ROOT = new URL('/', self.location.origin);
 const APP_ICON = new URL('/assets/pwa/icon-192.png', self.location.origin).href;
+const NAVIGATION_DB = 'trainerapp-push-navigation';
+const NAVIGATION_STORE = 'pending';
+
+function openNavigationDb() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(NAVIGATION_DB, 1);
+        request.onupgradeneeded = () => request.result.createObjectStore(NAVIGATION_STORE);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+        request.onblocked = () => reject(new Error('Notification navigation storage is blocked.'));
+    });
+}
+
+async function saveNotificationTarget(url) {
+    const db = await openNavigationDb();
+    try {
+        await new Promise((resolve, reject) => {
+            const transaction = db.transaction(NAVIGATION_STORE, 'readwrite');
+            transaction.objectStore(NAVIGATION_STORE).put({ url, expiresAt: Date.now() + 120000 }, 'target');
+            transaction.oncomplete = resolve;
+            transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = () => reject(transaction.error || new Error('Notification navigation storage aborted.'));
+        });
+    } finally {
+        db.close();
+    }
+}
+
+async function consumeNotificationTarget() {
+    const db = await openNavigationDb();
+    try {
+        return await new Promise((resolve, reject) => {
+            const transaction = db.transaction(NAVIGATION_STORE, 'readwrite');
+            const store = transaction.objectStore(NAVIGATION_STORE);
+            const request = store.get('target');
+            let target = null;
+            request.onsuccess = () => {
+                const value = request.result;
+                if (value) {
+                    store.delete('target');
+                    if (typeof value.url === 'string' && value.expiresAt > Date.now()) {
+                        target = getSafeTargetUrl(value.url).href;
+                    }
+                }
+            };
+            transaction.oncomplete = () => resolve(target);
+            transaction.onerror = () => reject(transaction.error);
+            transaction.onabort = () => reject(transaction.error || new Error('Notification navigation storage aborted.'));
+        });
+    } finally {
+        db.close();
+    }
+}
 
 self.addEventListener('install', (event) => {
     event.waitUntil(self.skipWaiting());
@@ -43,20 +96,38 @@ self.addEventListener('push', (event) => {
         renotify: false
     };
 
-    event.waitUntil(self.registration.showNotification(title, options));
+    const tasks = [self.registration.showNotification(title, options)];
+    if (Number.isSafeInteger(payload.unread_count) && payload.unread_count >= 0
+        && self.navigator && typeof self.navigator.setAppBadge === 'function') {
+        tasks.push(Promise.resolve().then(() => self.navigator.setAppBadge(payload.unread_count)).catch((error) => {
+            console.error('Application badge could not be updated.', error);
+        }));
+    }
+    event.waitUntil(Promise.all(tasks));
 });
 
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
 
     const targetUrl = getSafeTargetUrl(event.notification.data && event.notification.data.url);
-    event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clients) => {
+    event.waitUntil((async () => {
+        try {
+            await saveNotificationTarget(targetUrl.href);
+        } catch (error) {
+            console.error('Notification navigation target could not be saved.', error);
+        }
+        const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
         for (const client of clients) {
             if (new URL(client.url).origin === self.location.origin) {
                 try {
                     const windowClient = await client.navigate(targetUrl.href);
                     if (windowClient) {
                         await windowClient.focus();
+                        try {
+                            windowClient.postMessage({ type: 'trainerapp-notification-click' });
+                        } catch (error) {
+                            console.warn('Notification window could not be notified.', error);
+                        }
                         return;
                     }
                     console.warn('Notification navigation returned no window.');
@@ -66,7 +137,29 @@ self.addEventListener('notificationclick', (event) => {
             }
         }
 
-        return self.clients.openWindow(targetUrl.href);
+        const windowClient = await self.clients.openWindow(targetUrl.href);
+        if (windowClient) {
+            try {
+                windowClient.postMessage({ type: 'trainerapp-notification-click' });
+            } catch (error) {
+                console.warn('Notification window could not be notified.', error);
+            }
+        }
+    })());
+});
+
+self.addEventListener('message', (event) => {
+    if (!event.data || event.data.type !== 'trainerapp-consume-notification-target'
+        || !event.ports[0] || !event.source || typeof event.source.url !== 'string'
+        || new URL(event.source.url).origin !== self.location.origin) {
+        return;
+    }
+    const port = event.ports[0];
+    event.waitUntil(consumeNotificationTarget().then((url) => {
+        port.postMessage({ url });
+    }).catch((error) => {
+        console.error('Notification navigation target could not be read.', error);
+        port.postMessage({ error: 'navigation_storage_failed' });
     }));
 });
 

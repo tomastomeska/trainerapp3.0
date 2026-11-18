@@ -918,6 +918,11 @@ renderHeader('Kalendář', false, true);
     </li>
 </ul>
 
+<div class="alert alert-warning d-none" id="calendarRefreshStatus" role="status">
+    Kalendář se nepodařilo obnovit; zobrazené údaje mohou být neaktuální.
+    <button type="button" class="btn btn-sm btn-outline-dark ms-2" id="calendarRefreshRetry">Zkusit znovu</button>
+</div>
+
 <div class="tab-content">
 <div class="tab-pane fade <?= $activeTab === 'week' ? 'show active' : '' ?>" id="week-view-pane" role="tabpanel" aria-labelledby="week-view-tab" tabindex="0">
 
@@ -997,6 +1002,11 @@ renderHeader('Kalendář', false, true);
                 <div class="d-flex align-items-center gap-2">
                     <input type="month" class="form-control form-control-sm" id="monthListMonth" style="max-width: 180px;">
                 </div>
+            </div>
+
+            <div class="alert alert-warning d-none" id="monthListRefreshStatus" role="status">
+                Měsíční seznam se nepodařilo obnovit; zobrazené údaje mohou patřit jinému měsíci nebo být neaktuální.
+                <button type="button" class="btn btn-sm btn-outline-dark ms-2" id="monthListRefreshRetry">Zkusit znovu</button>
             </div>
 
             <div class="table-responsive">
@@ -1708,6 +1718,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let pendingFocusEventId = Number(urlParams.get('focus_event') || 0);
     let activeLockSeriesId = '';
     let weekDataRequestSeq = 0;
+    let monthListRequestSeq = 0;
     let trainingTilesRequestSeq = 0;
     let navigationMonthValue = '';
 
@@ -1854,7 +1865,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let events = [];
     let locks = [];
     let dayPilotCalendar = null;
-    let hasInitialCalendarPositioned = false;
     let currentTimeSlotKey = '';
     let activeEvent = null;
     let rescheduleOriginEventIds = new Set();
@@ -2596,15 +2606,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const now = new Date();
         currentTimeSlotKey = `${toDateKey(now)}-${now.getHours()}`;
         daypilotCalendarEl.style.setProperty('--trainer-current-time-offset', `${calendarCellHeight * now.getMinutes() / 60}px`);
-        if (
-            !hasInitialCalendarPositioned
-            && toDateKey(now) >= toDateKey(currentWeekStart)
-            && toDateKey(now) <= toDateKey(addDays(currentWeekStart, 6))
-        ) {
-            dayPilotCalendar.scrollToHour(Math.max(hourStart, now.getHours() - 1));
-            hasInitialCalendarPositioned = true;
-        }
-
         if (calendarGrid && calendarGrid.closest('.card')) {
             calendarGrid.closest('.card').classList.add('d-none');
         }
@@ -2832,21 +2833,22 @@ document.addEventListener('DOMContentLoaded', () => {
         return payload;
     }
 
-    async function loadWeekData() {
+    async function loadWeekData(automatic = false) {
         const requestId = ++weekDataRequestSeq;
         setCalendarNavBusy(true);
         const query = new URLSearchParams({ week_start: toDateKey(currentWeekStart) });
         try {
-            const payload = await fetchJson(`<?= BASE_URL ?>/api/calendar_data.php?${query.toString()}`);
+            const payload = await fetchJson(`<?= BASE_URL ?>/api/calendar_data.php?${query.toString()}`, { cache: 'no-store' });
 
             // Ignore stale responses from older clicks to avoid UI flicker/jumps.
             if (requestId !== weekDataRequestSeq) {
-                return;
+                return false;
             }
 
             if (!payload.success) {
+                if (automatic) throw new Error(payload.error || 'Nepodařilo se načíst kalendář.');
                 alert(payload.error || 'Nepodařilo se načíst kalendář');
-                return;
+                return false;
             }
 
             const currentMonthValue = `${currentWeekStart.getFullYear()}-${String(currentWeekStart.getMonth() + 1).padStart(2, '0')}`;
@@ -2863,7 +2865,17 @@ document.addEventListener('DOMContentLoaded', () => {
             locks = payload.locks || [];
             rebuildRescheduleOriginEventIds();
             renderCalendar();
+            document.getElementById('calendarRefreshStatus').classList.add('d-none');
+            if (pendingFocusEventId > 0) {
+                const focusEvent = events.find((event) => Number(event.id || 0) === pendingFocusEventId);
+                if (focusEvent) openEventModal(focusEvent);
+                pendingFocusEventId = 0;
+            }
             await loadMonthListData();
+            return requestId === weekDataRequestSeq;
+        } catch (error) {
+            if (requestId !== weekDataRequestSeq) return false;
+            throw error;
         } finally {
             if (requestId === weekDataRequestSeq) {
                 setCalendarNavBusy(false);
@@ -3088,15 +3100,19 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const requestId = ++monthListRequestSeq;
         const query = new URLSearchParams({ month: monthListMonthInput.value });
-        const payload = await fetchJson(`<?= BASE_URL ?>/api/calendar_month_list.php?${query.toString()}`);
-        if (!payload.success) {
-            monthListBody.innerHTML = '<tr><td colspan="7" class="text-danger">Načtení měsíčního seznamu selhalo.</td></tr>';
-            monthListEmpty.classList.add('d-none');
-            return;
+        try {
+            const payload = await fetchJson(`<?= BASE_URL ?>/api/calendar_month_list.php?${query.toString()}`, { cache: 'no-store' });
+            if (requestId !== monthListRequestSeq) return;
+            if (!payload.success) throw new Error(payload.error || 'Načtení měsíčního seznamu selhalo.');
+            renderMonthList(payload.items || []);
+            document.getElementById('monthListRefreshStatus').classList.add('d-none');
+        } catch (error) {
+            if (requestId !== monthListRequestSeq) return;
+            console.error('Načtení měsíčního seznamu selhalo:', error);
+            document.getElementById('monthListRefreshStatus').classList.remove('d-none');
         }
-
-        renderMonthList(payload.items || []);
     }
 
     function renderTrainingTiles(items) {
@@ -4074,16 +4090,27 @@ document.addEventListener('DOMContentLoaded', () => {
     updateEventLocationHint();
     updateModeUI();
 
+    function refreshVisibleCalendar() {
+        if (document.visibilityState !== 'visible') return;
+        const request = loadWeekData(true);
+        const requestId = weekDataRequestSeq;
+        request.catch((error) => {
+            if (requestId !== weekDataRequestSeq) return;
+            console.error('Obnovení kalendáře selhalo:', error);
+            document.getElementById('calendarRefreshStatus').classList.remove('d-none');
+        });
+    }
+    document.getElementById('calendarRefreshRetry').addEventListener('click', refreshVisibleCalendar);
+    document.getElementById('monthListRefreshRetry').addEventListener('click', loadMonthListData);
+    document.addEventListener('visibilitychange', refreshVisibleCalendar);
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'trainerapp-notification-click') refreshVisibleCalendar();
+        });
+    }
+
     (async () => {
         await Promise.all([loadWeekData(), loadTrainingTiles()]);
-
-        if (pendingFocusEventId > 0) {
-            const focusEvent = events.find((event) => Number(event.id || 0) === pendingFocusEventId);
-            if (focusEvent) {
-                openEventModal(focusEvent);
-            }
-            pendingFocusEventId = 0;
-        }
     })();
 });
 </script>

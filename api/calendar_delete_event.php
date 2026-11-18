@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/push_calendar_notifications.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -340,6 +341,23 @@ try {
     }
     echo json_encode(['success' => false, 'error' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
     exit;
+}
+
+$pushEventsByAthlete = [];
+foreach ($eventsToCancel as $cancelEvent) {
+    foreach ([(int)($cancelEvent['athlete_id'] ?? 0), (int)($cancelEvent['second_athlete_id'] ?? 0)] as $participantId) {
+        if ($participantId > 0 && !isset($pushEventsByAthlete[$participantId])) {
+            $pushEventsByAthlete[$participantId] = $cancelEvent;
+        }
+    }
+}
+$pushKind = (string)($event['approval_status'] ?? 'approved') === 'pending'
+    && !empty($event['requested_by_athlete_id']) ? 'coach_rejected' : 'coach_cancelled';
+foreach ($pushEventsByAthlete as $participantId => $cancelEvent) {
+    pushCalendarNotify(
+        $pdo, $pushKind, $coachId, [$participantId], $eventId, 'calendar-coach-delete:' . $eventId,
+        (string)($cancelEvent['starts_at'] ?? ''), false, 0, (string)($cancelEvent['location'] ?? ''), $deleteScope === 'future'
+    );
 }
 
 $deletedEventIds = [];

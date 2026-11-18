@@ -2,6 +2,7 @@
 // zpravy.php – seznam zpráv pro přihlášeného trenéra
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/push_chat_notifications.php';
 require_once __DIR__ . '/includes/header.php';
 
 requireLogin();
@@ -94,6 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect(BASE_URL . '/zpravy.php?tab=inbox');
         }
 
+        pushNotifyAthleteBroadcast($pdo, 'coach', $messageId, $athleteIds);
         flash('success', 'Hromadná zpráva byla odeslána ' . $sentCount . ' sportovcům.');
         redirect(BASE_URL . '/zpravy.php?tab=sent_athletes');
     }

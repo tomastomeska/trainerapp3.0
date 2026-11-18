@@ -152,6 +152,8 @@ renderHeader('Galerie', false, true);
     </div>
 </div>
 
+<div class="alert alert-warning d-none" id="adminGalleryFocusStatus" role="status">Tento příspěvek již není dostupný.</div>
+
 <div class="alert alert-light border mb-4">
     <i class="fas fa-info-circle me-2 text-muted"></i>
     Soubory nahravate vzdy do sve galerie. U kazdeho souboru pak nastavite, komu se zobrazi.
@@ -167,7 +169,7 @@ renderHeader('Galerie', false, true);
     $postTitle = trim((string)($file['title'] ?? '')) ?: (string)$file['original_name'];
     ?>
     <div class="col-6 col-md-4 col-lg-3 col-xl-2">
-        <button type="button" class="btn p-0 border-0 bg-transparent text-start w-100 h-100"
+        <button type="button" class="btn p-0 border-0 bg-transparent text-start w-100 h-100" data-admin-gallery-id="<?= (int)$file['id'] ?>"
                 onclick='openAdminGalleryPost(<?= json_encode($file['file_type'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($fileUrl, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode($postTitle, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode((string)($file['description'] ?? ''), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>, <?= json_encode(date('d.m.Y H:i', strtotime($file['created_at'])), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)'>
             <div class="card border-0 shadow-sm h-100 gallery-folder-card overflow-hidden">
                 <?php if ($file['file_type'] === 'image'): ?>
@@ -242,6 +244,14 @@ function openAdminGalleryPost(type, src, name, description, createdAt) {
 
     bootstrap.Modal.getOrCreateInstance(document.getElementById('adminGalleryPostModal')).show();
 }
+
+document.addEventListener('DOMContentLoaded', function () {
+    const id = new URLSearchParams(window.location.search).get('admin_file');
+    if (!/^[1-9]\d*$/.test(id || '')) return;
+    const button = document.querySelector(`[data-admin-gallery-id="${id}"]`);
+    if (button) button.click();
+    else document.getElementById('adminGalleryFocusStatus').classList.remove('d-none');
+});
 </script>
 
 <h5 class="fw-bold text-muted mb-3"><i class="fas fa-user-shield me-2"></i>Moje galerie</h5>
