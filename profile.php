@@ -10,6 +10,17 @@ requireLogin();
 
 $coachId = getCurrentCoachId();
 $pdo     = getDB();
+$profileOrderCatalog = coachProfileOrderCatalog();
+$profileOrderLoadError = null;
+try {
+    coachProfileOrderEnsureSchema($pdo);
+    $profileOrder = coachProfileOrderLoad($pdo, (int)$coachId);
+} catch (PDOException | UnexpectedValueException | InvalidArgumentException $e) {
+    error_log('Coach profile order load failed: ' . $e->getMessage());
+    $profileOrder = array_keys($profileOrderCatalog);
+    $profileOrderLoadError = 'Pořadí karet se nepodařilo načíst. Karty se zobrazí ve výchozím pořadí.';
+}
+$profileOrderPositions = array_flip($profileOrder);
 paymentAccessEnsureSchema($pdo);
 $coachPaymentAccessStmt = $pdo->prepare('SELECT payment_access_default FROM coaches WHERE id = ? LIMIT 1');
 $coachPaymentAccessStmt->execute([$coachId]);
@@ -117,6 +128,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($mustChangePassword && $action !== 'change_password') {
             $error = 'Při prvním přihlášení je nutné nejdříve změnit heslo.';
+        }
+
+        if ($error === null && $action === 'save_profile_order') {
+            $items = $_POST['items'] ?? null;
+            if (!is_array($items)) {
+                $error = 'Neplatné pořadí profilových karet.';
+            } else {
+                try {
+                    coachProfileOrderSave($pdo, (int)$coachId, $items);
+                    flash('success', 'Pořadí karet profilu bylo uloženo.');
+                    redirect(BASE_URL . '/profile.php');
+                } catch (InvalidArgumentException $e) {
+                    $error = 'Pořadí karet profilu není platné. Upravte ho znovu a uložte.';
+                } catch (PDOException | JsonException $e) {
+                    error_log('Coach profile order save failed: ' . $e->getMessage());
+                    $error = 'Pořadí karet se nepodařilo uložit. Zkuste to znovu.';
+                }
+            }
         }
 
         if ($error === null && $action === 'set_payment_access_all') {
@@ -497,19 +526,185 @@ if ($activeAgreement !== null) {
 
 renderHeader('Můj profil', false, true);
 ?>
-<div class="card border-warning shadow-sm mb-4"><div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-2"><div><strong>Vstupní dotazník</strong><div class="text-muted small">Vlastní otázky pro nové sportovce.</div></div><a href="<?= BASE_URL ?>/intake_settings.php" class="btn btn-outline-dark">Nastavit otázky</a></div></div>
+<style>
+    #coach-profile-content .card {
+        border: 1px solid #e5e7eb !important;
+        border-radius: 14px;
+        overflow: hidden;
+    }
 
-<div class="d-flex align-items-center mb-4 gap-3">
+    #coach-profile-content .card.mb-4 {
+        margin-bottom: .75rem !important;
+    }
+
+    #coach-profile-content .card.mt-4 {
+        margin-top: .75rem !important;
+    }
+
+    #coach-profile-sections {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .75rem;
+        align-items: start;
+    }
+
+    .coach-profile-section {
+        min-width: 0;
+    }
+
+    .coach-profile-section--wide {
+        grid-column: 1 / -1;
+    }
+
+    #coach-profile-sections .coach-profile-section > .card {
+        height: 100%;
+        margin: 0 !important;
+    }
+
+    #coach-profile-content .card-header.bg-dark {
+        background-color: #f8fafc !important;
+        color: #1f2937 !important;
+        border-bottom: 1px solid #e5e7eb;
+        border-left: 3px solid #e7b938;
+    }
+
+    #coach-profile-content .coach-profile-delete-header {
+        background: #fff1f2;
+        border-bottom: 1px solid #fecdd3;
+        border-left: 3px solid #dc3545;
+    }
+
+    .coach-profile-card-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .75rem;
+        width: 100%;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        text-decoration: none;
+    }
+
+    #coach-profile-content .coach-profile-card-toggle {
+        padding: .75rem 1rem !important;
+        color: #1f2937 !important;
+        font-size: .94rem;
+    }
+
+    #coach-profile-content .coach-profile-card-toggle:hover,
+    #coach-profile-content .coach-profile-card-toggle:focus-visible {
+        background: #fff7e2;
+    }
+
+    #coach-profile-content .coach-profile-card-toggle .text-white-50 {
+        color: #6b7280 !important;
+    }
+
+    #coach-profile-content .coach-profile-delete-header .coach-profile-card-toggle {
+        color: #b42318 !important;
+    }
+
+    #coach-profile-content .coach-profile-delete-header .coach-profile-card-toggle:hover,
+    #coach-profile-content .coach-profile-delete-header .coach-profile-card-toggle:focus-visible {
+        background: #ffe4e6;
+    }
+
+    .coach-profile-card-toggle .fa-chevron-down {
+        transition: transform .2s ease;
+    }
+
+    .coach-profile-card-toggle[aria-expanded="true"] .fa-chevron-down {
+        transform: rotate(180deg);
+    }
+
+    @media (max-width: 767.98px) {
+        #coach-profile-sections {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+<main id="coach-profile-content">
+<div class="d-flex align-items-center mb-3 gap-3">
     <h2 class="mb-0"><i class="fas fa-user-circle me-2 text-warning"></i>Můj profil</h2>
 </div>
 
-<?php renderPushSettings(); ?>
-<?php renderRememberedDevices($pdo, 'coach', (int)$coachId); ?>
+<?php if ($error): ?>
+<div class="alert alert-danger"><?= h($error) ?></div>
+<?php endif; ?>
+<?php if ($profileOrderLoadError !== null): ?>
+<div class="alert alert-warning"><?= h($profileOrderLoadError) ?></div>
+<?php endif; ?>
 
+<div class="mb-3">
+    <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#coachProfileOrderEditor" aria-expanded="false" aria-controls="coachProfileOrderEditor">
+        <i class="fas fa-arrows-up-down me-1"></i>Upravit pořadí karet
+    </button>
+    <div class="collapse mt-2" id="coachProfileOrderEditor">
+        <form method="post" class="card border-0 shadow-sm">
+            <?= csrfField() ?>
+            <input type="hidden" name="action" value="save_profile_order">
+            <div class="card-body">
+                <p class="small text-muted">Pořadí upravte šipkami a uložte. Nastavení zůstane uložené i po odhlášení.</p>
+                <ol class="list-group list-group-numbered mb-3" id="coachProfileOrderList">
+                    <?php foreach ($profileOrder as $sectionKey): ?>
+                    <li class="list-group-item d-flex align-items-center gap-2" data-profile-order-item>
+                        <span class="flex-grow-1"><?= h($profileOrderCatalog[$sectionKey]) ?></span>
+                        <input type="hidden" name="items[]" value="<?= h($sectionKey) ?>">
+                        <button class="btn btn-sm btn-outline-secondary" type="button" data-order-move="up" aria-label="Posunout <?= h($profileOrderCatalog[$sectionKey]) ?> nahoru">
+                            <i class="fas fa-arrow-up" aria-hidden="true"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" type="button" data-order-move="down" aria-label="Posunout <?= h($profileOrderCatalog[$sectionKey]) ?> dolů">
+                            <i class="fas fa-arrow-down" aria-hidden="true"></i>
+                        </button>
+                    </li>
+                    <?php endforeach; ?>
+                </ol>
+                <button type="submit" class="btn btn-warning fw-bold">
+                    <i class="fas fa-save me-1"></i>Uložit pořadí
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="coach-profile-sections">
+<section class="coach-profile-section coach-profile-section--wide" data-profile-section="intake" style="order: <?= (int)$profileOrderPositions['intake'] ?>">
 <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-dark text-white p-0">
+        <button class="coach-profile-card-toggle btn text-white text-start w-100 fw-bold p-3" type="button" data-bs-toggle="collapse" data-bs-target="#coachProfileIntakeSettings" aria-expanded="false" aria-controls="coachProfileIntakeSettings">
+            <span><i class="fas fa-square-poll-vertical me-2"></i>Vstupní dotazník</span>
+            <i class="fas fa-chevron-down" aria-hidden="true"></i>
+        </button>
+    </div>
+    <div class="collapse" id="coachProfileIntakeSettings">
+        <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div class="text-muted small">Vlastní otázky pro nové sportovce.</div>
+            <a href="<?= BASE_URL ?>/intake_settings.php" class="btn btn-outline-dark">Nastavit otázky</a>
+        </div>
+    </div>
+</div>
+</section>
+
+<section class="coach-profile-section coach-profile-section--wide" data-profile-section="notifications" style="order: <?= (int)$profileOrderPositions['notifications'] ?>">
+<?php renderPushSettings(true); ?>
+</section>
+<section class="coach-profile-section coach-profile-section--wide" data-profile-section="devices" style="order: <?= (int)$profileOrderPositions['devices'] ?>">
+<?php renderRememberedDevices($pdo, 'coach', (int)$coachId, true); ?>
+</section>
+
+<section class="coach-profile-section coach-profile-section--wide" data-profile-section="payments" style="order: <?= (int)$profileOrderPositions['payments'] ?>">
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-dark text-white p-0">
+        <button class="coach-profile-card-toggle btn text-white text-start w-100 fw-bold p-3" type="button" data-bs-toggle="collapse" data-bs-target="#coachProfilePayments" aria-expanded="false" aria-controls="coachProfilePayments">
+            <span><i class="fas fa-wallet me-2"></i>Platby za tréninky</span>
+            <i class="fas fa-chevron-down" aria-hidden="true"></i>
+        </button>
+    </div>
+    <div class="collapse" id="coachProfilePayments">
     <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-3">
         <div>
-            <div class="fw-bold"><i class="fas fa-wallet me-2 text-warning"></i>Platby za tréninky</div>
             <div class="small text-muted">
                 Výchozí stav pro nové sportovce:
                 <strong><?= $coachPaymentsEnabled ? 'zapnuto' : 'vypnuto' ?></strong>.
@@ -526,131 +721,40 @@ renderHeader('Můj profil', false, true);
             </button>
         </form>
     </div>
-</div>
-
-<div class="dashboard-quick-tiles mb-3">
-    <a href="<?= BASE_URL ?>/zpravy.php" class="quick-tile quick-tile-danger">
-        <span class="quick-tile__label"><i class="fas fa-envelope me-1"></i>Zprávy</span>
-        <span class="quick-tile__value"><?= (int)$unreadInboxCount ?></span>
-    </a>
-    <a href="<?= BASE_URL ?>/meal_plans.php" class="quick-tile quick-tile-success">
-        <span class="quick-tile__label"><i class="fas fa-utensils me-1"></i>Jídelníčky</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a href="<?= BASE_URL ?>/graphs.php" class="quick-tile quick-tile-info">
-        <span class="quick-tile__label"><i class="fas fa-chart-line me-1"></i>Grafy</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a href="<?= BASE_URL ?>/calendar.php" class="quick-tile quick-tile-warning">
-        <span class="quick-tile__label"><i class="fas fa-calendar-alt me-1"></i>Kalendář</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a href="<?= BASE_URL ?>/change_password.php" class="quick-tile quick-tile-muted">
-        <span class="quick-tile__label"><i class="fas fa-key me-1"></i>Heslo</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a href="<?= BASE_URL ?>/gallery.php" class="quick-tile quick-tile-info">
-        <span class="quick-tile__label"><i class="fas fa-images me-1"></i>Galerie</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a href="<?= BASE_URL ?>/videos.php" class="quick-tile quick-tile-danger">
-        <span class="quick-tile__label"><i class="fas fa-video me-1"></i>Videa</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <?php if ($coachSpecialTrainingEnabled): ?>
-    <a href="<?= BASE_URL ?>/special_training.php" class="quick-tile quick-tile-info">
-        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-flag-checkered me-1"></i>Events</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <?php else: ?>
-    <div class="quick-tile quick-tile-muted">
-        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-lock me-1"></i>Events <span class="badge rounded-pill bg-secondary">Uzamčeno</span></span>
-        <span class="quick-tile__value"><i class="fas fa-ban"></i></span>
-    </div>
-    <?php endif; ?>
-    <?php if ($mycoachAppUserCanAccess): ?>
-    <a href="<?= BASE_URL ?>/mycoach_app.php" class="quick-tile quick-tile-warning">
-    <?php else: ?>
-    <a href="#" class="quick-tile quick-tile-warning" data-bs-toggle="modal" data-bs-target="#modalMyCoachComingSoon">
-    <?php endif; ?>
-        <span class="quick-tile__label d-flex align-items-center flex-wrap gap-1"><i class="fas fa-brain me-1"></i>MyCoach <span class="badge rounded-pill <?= $mycoachAppUserCanAccess ? 'bg-success' : 'bg-warning text-dark' ?>"><?= $mycoachAppUserCanAccess ? 'Pro' : 'Brzy' ?></span></span>
-        <span class="quick-tile__value"><i class="fas fa-<?= $mycoachAppUserCanAccess ? 'star' : 'rocket' ?>"></i></span>
-    </a>
-    <?php $coachSurveyPending = surveySchemaAvailable($pdo) && count(array_filter(surveyFetchForUser($pdo, 'coach', (int)$coachId), static fn(array $survey): bool => empty($survey['response_id']))) > 0; ?>
-    <a href="<?= BASE_URL ?>/surveys.php" class="quick-tile quick-tile-info <?= $coachSurveyPending ? 'survey-pending' : '' ?>">
-        <span class="quick-tile__label"><i class="fas fa-square-poll-vertical me-1"></i>Ankety</span>
-        <span class="quick-tile__value"><?= $coachSurveyPending ? '<span class="badge rounded-pill bg-danger">!</span>' : '<i class="fas fa-chevron-right"></i>' ?></span>
-    </a>
-    <a href="<?= BASE_URL ?>/coach_manual.php" class="quick-tile quick-tile-success">
-        <span class="quick-tile__label"><i class="fas fa-circle-question me-1"></i>Návod</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-    <a href="<?= BASE_URL ?>/coach_terms.php" class="quick-tile quick-tile-warning">
-        <span class="quick-tile__label"><i class="fas fa-file-contract me-1"></i>Podmínky</span>
-        <span class="quick-tile__value"><i class="fas fa-chevron-right"></i></span>
-    </a>
-</div>
-
-<?php if ($error): ?>
-<div class="alert alert-danger"><?= h($error) ?></div>
-<?php endif; ?>
-
-<div class="mb-4">
-    <button class="btn btn-outline-danger btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#coachAccountDeletionForm" aria-expanded="false" aria-controls="coachAccountDeletionForm">
-        <i class="fas fa-user-slash me-1"></i>Požádat o smazání účtu
-    </button>
-    <div class="collapse mt-2" id="coachAccountDeletionForm">
-        <div class="border border-danger rounded p-3">
-            <p class="small text-muted mb-3">
-                Systém odstraní profil, přístupová data a související záznamy v rozsahu aplikace. Zákonné účetní a evidenční záznamy mohou být uchovány podle právních povinností.
-            </p>
-            <form method="post" onsubmit="return confirm('Opravdu chcete požádat o smazání svého účtu a přidružených dat? Tato akce je nevratná.');">
-                <?= csrfField() ?>
-                <input type="hidden" name="action" value="request_account_deletion">
-                <div class="d-flex gap-2 flex-wrap align-items-start">
-                    <textarea name="delete_reason" class="form-control" rows="2" maxlength="1000" placeholder="Volitelný důvod žádosti"></textarea>
-                    <button type="submit" class="btn btn-outline-danger">
-                        <i class="fas fa-user-slash me-1"></i>Odeslat žádost
-                    </button>
-                </div>
-            </form>
-        </div>
     </div>
 </div>
+</section>
 
-<div class="row g-3 mb-4">
-    <div class="col-sm-6 col-xl-3">
-        <div class="card border-0 shadow-sm text-center py-3">
-            <div class="display-6 fw-bold text-warning"><?= $stats['athletes'] ?></div>
-            <div class="text-muted">Sportovců</div>
-        </div>
+<section class="coach-profile-section coach-profile-section--wide" data-profile-section="stats" style="order: <?= (int)$profileOrderPositions['stats'] ?>">
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-dark text-white p-0">
+        <button class="coach-profile-card-toggle btn text-white text-start w-100 fw-bold p-3" type="button" data-bs-toggle="collapse" data-bs-target="#coachProfileStats" aria-expanded="false" aria-controls="coachProfileStats">
+            <span><i class="fas fa-chart-bar me-2"></i>Statistiky</span>
+            <i class="fas fa-chevron-down" aria-hidden="true"></i>
+        </button>
     </div>
-    <div class="col-sm-6 col-xl-3">
-        <div class="card border-0 shadow-sm text-center py-3">
-            <div class="display-6 fw-bold text-warning"><?= $stats['sessions'] ?></div>
-            <div class="text-muted">Dokončených tréninků</div>
-        </div>
-    </div>
-    <div class="col-sm-6 col-xl-3">
-        <div class="card border-0 shadow-sm text-center py-3">
-            <div class="display-6 fw-bold text-warning"><?= $stats['exercises'] ?></div>
-            <div class="text-muted">Cviků</div>
-        </div>
-    </div>
-    <div class="col-sm-6 col-xl-3">
-        <div class="card border-0 shadow-sm text-center py-3">
-            <div class="display-6 fw-bold text-warning"><?= $stats['sets'] ?></div>
-            <div class="text-muted">Sad</div>
-        </div>
-    </div>
-</div>
-
-<div class="row g-4">
-    <div class="col-lg-6">
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header bg-dark text-white">
-                <i class="fas fa-id-card me-2"></i>Základní údaje
+    <div class="collapse" id="coachProfileStats">
+        <div class="card-body">
+            <div class="row g-2">
+                <div class="col-6 col-xl-3"><div class="rounded-3 bg-light p-3 text-center"><div class="fs-4 fw-bold text-warning"><?= $stats['athletes'] ?></div><div class="small text-muted">Sportovců</div></div></div>
+                <div class="col-6 col-xl-3"><div class="rounded-3 bg-light p-3 text-center"><div class="fs-4 fw-bold text-warning"><?= $stats['sessions'] ?></div><div class="small text-muted">Dokončených tréninků</div></div></div>
+                <div class="col-6 col-xl-3"><div class="rounded-3 bg-light p-3 text-center"><div class="fs-4 fw-bold text-warning"><?= $stats['exercises'] ?></div><div class="small text-muted">Cviků</div></div></div>
+                <div class="col-6 col-xl-3"><div class="rounded-3 bg-light p-3 text-center"><div class="fs-4 fw-bold text-warning"><?= $stats['sets'] ?></div><div class="small text-muted">Sad</div></div></div>
             </div>
+        </div>
+    </div>
+</div>
+        </section>
+
+<section class="coach-profile-section" data-profile-section="basic_data" style="order: <?= (int)$profileOrderPositions['basic_data'] ?>">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-dark text-white p-0">
+                <button class="coach-profile-card-toggle btn text-white text-start w-100 fw-bold p-3" type="button" data-bs-toggle="collapse" data-bs-target="#coachProfileBasicData" aria-expanded="false" aria-controls="coachProfileBasicData">
+                    <span><i class="fas fa-id-card me-2"></i>Základní údaje</span>
+                    <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="collapse" id="coachProfileBasicData">
             <div class="card-body">
                 <form method="post" enctype="multipart/form-data" novalidate>
                     <?= csrfField() ?>
@@ -682,12 +786,19 @@ renderHeader('Můj profil', false, true);
                     </button>
                 </form>
             </div>
+            </div>
         </div>
 
+        </section>
+        <section class="coach-profile-section" data-profile-section="agreement" style="order: <?= (int)$profileOrderPositions['agreement'] ?>">
         <div class="card border-0 shadow-sm">
-            <div class="card-header bg-dark text-white">
-                <i class="fas fa-file-signature me-2"></i>Dohoda s trenérem
+            <div class="card-header bg-dark text-white p-0">
+                <button class="coach-profile-card-toggle btn text-white text-start w-100 fw-bold p-3" type="button" data-bs-toggle="collapse" data-bs-target="#coachProfileAgreement" aria-expanded="false" aria-controls="coachProfileAgreement">
+                    <span><i class="fas fa-file-signature me-2"></i>Dohoda s trenérem</span>
+                    <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                </button>
             </div>
+            <div class="collapse" id="coachProfileAgreement">
             <div class="card-body">
                 <form method="post" enctype="multipart/form-data" novalidate>
                     <?= csrfField() ?>
@@ -736,14 +847,19 @@ renderHeader('Můj profil', false, true);
                     </button>
                 </form>
             </div>
-        </div>
-    </div>
-
-    <div class="col-lg-6">
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header bg-dark text-white">
-                <i class="fas fa-key me-2"></i>Změna hesla
             </div>
+        </div>
+        </section>
+
+        <section class="coach-profile-section" data-profile-section="password" style="order: <?= (int)$profileOrderPositions['password'] ?>">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-dark text-white p-0">
+                <button class="coach-profile-card-toggle btn text-white text-start w-100 fw-bold p-3" type="button" data-bs-toggle="collapse" data-bs-target="#coachProfilePassword" aria-expanded="false" aria-controls="coachProfilePassword">
+                    <span><i class="fas fa-key me-2"></i>Změna hesla</span>
+                    <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="collapse" id="coachProfilePassword">
             <div class="card-body">
                 <form method="post" novalidate>
                     <?= csrfField() ?>
@@ -769,12 +885,19 @@ renderHeader('Můj profil', false, true);
                     </button>
                 </form>
             </div>
+            </div>
         </div>
 
+        </section>
+        <section class="coach-profile-section" data-profile-section="latest_athletes" style="order: <?= (int)$profileOrderPositions['latest_athletes'] ?>">
         <div class="card border-0 shadow-sm">
-            <div class="card-header bg-dark text-white">
-                <i class="fas fa-users me-2"></i>Poslední přidaní sportovci
+            <div class="card-header bg-dark text-white p-0">
+                <button class="coach-profile-card-toggle btn text-white text-start w-100 fw-bold p-3" type="button" data-bs-toggle="collapse" data-bs-target="#coachProfileLatestAthletes" aria-expanded="false" aria-controls="coachProfileLatestAthletes">
+                    <span><i class="fas fa-users me-2"></i>Poslední přidaní sportovci</span>
+                    <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                </button>
             </div>
+            <div class="collapse" id="coachProfileLatestAthletes">
             <div class="card-body p-0">
                 <?php if (empty($latestAthletes)): ?>
                 <div class="p-3 text-muted">Zatím žádní sportovci.</div>
@@ -789,15 +912,24 @@ renderHeader('Můj profil', false, true);
                 </ul>
                 <?php endif; ?>
             </div>
+            </div>
         </div>
 
+        </section>
+        <section class="coach-profile-section" data-profile-section="agreement_responses" style="order: <?= (int)$profileOrderPositions['agreement_responses'] ?>">
         <div class="card border-0 shadow-sm mt-4">
-            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <span><i class="fas fa-clipboard-check me-2"></i>Reakce sportovců na dohodu</span>
-                <?php if ($activeAgreement): ?>
-                <small class="text-white-50">Aktivní verze v<?= (int)$activeAgreement['version'] ?> od <?= formatDateTime((string)$activeAgreement['created_at']) ?></small>
-                <?php endif; ?>
+            <div class="card-header bg-dark text-white p-0">
+                <button class="coach-profile-card-toggle btn text-white text-start w-100 fw-bold p-3" type="button" data-bs-toggle="collapse" data-bs-target="#coachProfileAgreementResponses" aria-expanded="false" aria-controls="coachProfileAgreementResponses">
+                    <span class="d-flex align-items-center flex-wrap gap-2">
+                        <span><i class="fas fa-clipboard-check me-2"></i>Reakce sportovců na dohodu</span>
+                        <?php if ($activeAgreement): ?>
+                        <small class="text-white-50">Aktivní verze v<?= (int)$activeAgreement['version'] ?> od <?= formatDateTime((string)$activeAgreement['created_at']) ?></small>
+                        <?php endif; ?>
+                    </span>
+                    <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                </button>
             </div>
+            <div class="collapse" id="coachProfileAgreementResponses">
             <div class="card-body p-0">
                 <?php if (!$activeAgreement): ?>
                 <div class="p-3 text-muted">Zatím nemáte vytvořenou aktivní dohodu.</div>
@@ -855,9 +987,39 @@ renderHeader('Můj profil', false, true);
                 </div>
                 <?php endif; ?>
             </div>
+            </div>
+        </div>
+        </section>
+<section class="coach-profile-section coach-profile-section--wide" data-profile-section="account_deletion" style="order: <?= (int)$profileOrderPositions['account_deletion'] ?>">
+    <div class="card border-0 shadow-sm">
+        <div class="card-header coach-profile-delete-header p-0">
+            <button class="coach-profile-card-toggle btn text-start w-100 fw-bold p-3" type="button" data-bs-toggle="collapse" data-bs-target="#coachAccountDeletionForm" aria-expanded="false" aria-controls="coachAccountDeletionForm">
+                <span><i class="fas fa-user-slash me-2"></i>Požádat o smazání účtu</span>
+                <i class="fas fa-chevron-down" aria-hidden="true"></i>
+            </button>
+        </div>
+        <div class="collapse" id="coachAccountDeletionForm">
+            <div class="card-body">
+                <p class="small text-muted mb-3">
+                    Systém odstraní profil, přístupová data a související záznamy v rozsahu aplikace. Zákonné účetní a evidenční záznamy mohou být uchovány podle právních povinností.
+                </p>
+                <form method="post" onsubmit="return confirm('Opravdu chcete požádat o smazání svého účtu a přidružených dat? Tato akce je nevratná.');">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="action" value="request_account_deletion">
+                    <div class="mb-3">
+                        <label for="coachAccountDeletionReason" class="form-label">Volitelný důvod žádosti</label>
+                        <textarea id="coachAccountDeletionReason" name="delete_reason" class="form-control" rows="2" maxlength="1000"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-danger fw-bold">
+                        <i class="fas fa-user-slash me-1"></i>Odeslat žádost
+                    </button>
+                </form>
+            </div>
         </div>
     </div>
+</section>
 </div>
+</main>
 
 <?php renderFooter(); ?>
 
@@ -885,6 +1047,37 @@ document.addEventListener('DOMContentLoaded', function () {
                 syncAgreementHtml();
             });
         });
+    }
+
+    const orderList = document.getElementById('coachProfileOrderList');
+    if (orderList) {
+        const updateOrderButtons = function () {
+            const items = Array.from(orderList.querySelectorAll('[data-profile-order-item]'));
+            items.forEach((item, index) => {
+                item.querySelector('[data-order-move="up"]').disabled = index === 0;
+                item.querySelector('[data-order-move="down"]').disabled = index === items.length - 1;
+            });
+        };
+
+        orderList.addEventListener('click', function (event) {
+            if (!(event.target instanceof Element)) {
+                return;
+            }
+            const button = event.target.closest('[data-order-move]');
+            const item = button?.closest('[data-profile-order-item]');
+            if (!button || !item) {
+                return;
+            }
+
+            if (button.dataset.orderMove === 'up' && item.previousElementSibling) {
+                orderList.insertBefore(item, item.previousElementSibling);
+            } else if (button.dataset.orderMove === 'down' && item.nextElementSibling) {
+                orderList.insertBefore(item.nextElementSibling, item);
+            }
+            updateOrderButtons();
+        });
+
+        updateOrderButtons();
     }
 
 });

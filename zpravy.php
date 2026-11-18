@@ -2,12 +2,15 @@
 // zpravy.php – seznam zpráv pro přihlášeného trenéra
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/chat_attachments.php';
+require_once __DIR__ . '/includes/chat_message_deletions.php';
 require_once __DIR__ . '/includes/push_chat_notifications.php';
 require_once __DIR__ . '/includes/header.php';
 
 requireLogin();
 $coachId = getCurrentCoachId();
 $pdo     = getDB();
+ensureChatMessageDeletionTable($pdo);
 
 // Zpracování přesunu do archivu / smazání / obnovení / trvalé smazání
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -19,20 +22,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'send_chat_to_admin') {
         $chatBody = mb_substr(trim((string)($_POST['chat_body'] ?? '')), 0, 4000, 'UTF-8');
-        if ($chatBody === '') {
-            flash('danger', 'Zadejte prosím text zprávy.');
+        $attachment = receiveChatAttachment($_FILES);
+        if ($attachment['error'] !== null) {
+            flash('danger', $attachment['error']);
+            redirect(BASE_URL . '/zpravy.php?tab=admin_chat');
+        }
+        if ($chatBody === '' && $attachment['path'] === null) {
+            flash('danger', 'Zadejte zprávu nebo přidejte přílohu.');
             redirect(BASE_URL . '/zpravy.php?tab=admin_chat');
         }
 
         try {
             $pdo->prepare(
-                "INSERT INTO admin_coach_chat_messages (coach_id, sender, body, coach_read_at) VALUES (?, 'coach', ?, NOW())"
-            )->execute([$coachId, $chatBody]);
+                "INSERT INTO admin_coach_chat_messages (coach_id, sender, body, attachment_path, attachment_name, coach_read_at) VALUES (?, 'coach', ?, ?, ?, NOW())"
+            )->execute([$coachId, $chatBody, $attachment['path'], $attachment['name']]);
             $chatMessageId = (int)$pdo->lastInsertId();
 
             $coach = getCurrentCoach();
             $coachName = trim((string)($coach['name'] ?? '')) !== '' ? (string)$coach['name'] : trim((string)($coach['username'] ?? 'trenér'));
-            notifyAdminAboutNewCoachChatMessage($coachId, $chatMessageId, $coachName, $chatBody);
+            notifyAdminAboutNewCoachChatMessage($coachId, $chatMessageId, $coachName, chatNotificationText($chatBody, $attachment['name']));
 
             flash('success', 'Zpráva byla odeslána administrátorovi.');
         } catch (Throwable $e) {
@@ -173,9 +181,7 @@ if ($adminChatTableExists) {
         $pdo->prepare("UPDATE admin_coach_chat_messages SET coach_read_at = NOW() WHERE coach_id = ? AND sender = 'admin' AND coach_read_at IS NULL")
             ->execute([$coachId]);
     }
-    $adminChatStmt = $pdo->prepare('SELECT * FROM admin_coach_chat_messages WHERE coach_id = ? ORDER BY created_at ASC, id ASC');
-    $adminChatStmt->execute([$coachId]);
-    $adminChatMessages = $adminChatStmt->fetchAll();
+    $adminChatMessages = fetchChatMessagesForUser($pdo, 'admin_coach_chat_messages', ['coach_id' => $coachId], 'coach', $coachId);
 
     $adminChatUnreadStmt = $pdo->prepare("SELECT COUNT(*) FROM admin_coach_chat_messages WHERE coach_id = ? AND sender = 'admin' AND coach_read_at IS NULL");
     $adminChatUnreadStmt->execute([$coachId]);
@@ -351,12 +357,12 @@ renderHeader('Zprávy', false, true);
 <div class="row justify-content-center">
     <div class="col-lg-9">
         <div class="card border-0 shadow-sm">
-            <div class="card-body" style="max-height:60vh; overflow-y:auto" id="adminChatScroll">
+            <div class="card-body" style="max-height:60vh; overflow-y:auto" id="adminChatScroll" data-chat-delete-api="<?= h(BASE_URL . '/api/coach_chat_admin.php?action=delete') ?>" data-chat-delete-csrf="<?= h(csrfToken()) ?>">
                 <?php if (empty($adminChatMessages)): ?>
                 <div class="text-muted text-center py-4">Zatím žádné zprávy. Napšte administrátorovi svůj dotaz.</div>
                 <?php else: foreach ($adminChatMessages as $m): $isCoachMsg = $m['sender'] === 'coach'; ?>
-                <div class="d-flex mb-3 <?= $isCoachMsg ? 'justify-content-end' : 'justify-content-start' ?>">
-                    <div class="p-2 px-3 rounded-3 <?= $isCoachMsg ? 'bg-primary text-white' : 'bg-light border' ?>" style="max-width:75%">
+                <div class="d-flex mb-3 <?= $isCoachMsg ? 'justify-content-end' : 'justify-content-start' ?>" data-message-id="<?= (int)$m['id'] ?>">
+                    <div class="p-2 px-3 rounded-3 <?= $isCoachMsg ? 'bg-primary text-white' : 'bg-light border' ?>" style="max-width:75%;position:relative;padding-right:2.5rem">
                         <div style="white-space:pre-wrap"><?= h((string)$m['body']) ?></div>
                         <?php if (!empty($m['attachment_name'])): ?>
                         <div class="mt-1">
@@ -368,19 +374,24 @@ renderHeader('Zprávy', false, true);
                         <div class="small mt-1 <?= $isCoachMsg ? 'text-white-50' : 'text-muted' ?>">
                             <?= $isCoachMsg ? 'Vy' : 'Administrátor' ?> · <?= date('d.m.Y H:i', strtotime((string)$m['created_at'])) ?>
                         </div>
+                        <button type="button" class="chat-message-more" data-chat-message-menu-toggle aria-label="Možnosti zprávy" title="Možnosti zprávy"><i class="fas fa-ellipsis-v" aria-hidden="true"></i></button>
+                        <div class="chat-message-menu" data-chat-message-menu hidden>
+                            <button type="button" data-chat-delete-scope="me">Odstranit pro mě</button>
+                            <?php if ($isCoachMsg && empty($m['deleted_for_everyone'])): ?><button type="button" data-chat-delete-scope="everyone">Odstranit pro všechny</button><?php endif; ?>
+                        </div>
                     </div>
                 </div>
                 <?php endforeach; endif; ?>
             </div>
             <div class="card-footer">
-                <form method="post">
+                <form method="post" enctype="multipart/form-data" data-chat-composer>
                     <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
                     <input type="hidden" name="action" value="send_chat_to_admin">
                     <div class="mb-2">
-                        <textarea name="chat_body" class="form-control" rows="3" maxlength="4000" placeholder="Napšte zprávu administrátorovi..." required></textarea>
+                        <textarea name="chat_body" data-chat-input class="form-control" rows="3" maxlength="4000" placeholder="Napište zprávu administrátorovi..."></textarea>
                     </div>
                     <div class="d-flex justify-content-end">
-                        <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane me-1"></i>Odeslat</button>
+                        <button type="submit" data-chat-send class="btn btn-primary"><i class="fas fa-paper-plane me-1"></i>Odeslat</button>
                     </div>
                 </form>
             </div>

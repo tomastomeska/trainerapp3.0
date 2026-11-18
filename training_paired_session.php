@@ -213,12 +213,24 @@ renderHeader('Párový trénink', false, true);
                id="exercise-card-<?= $key ?>"
                data-exercise-id="<?= $eid ?>"
                draggable="true">
-            <div class="card-header d-flex align-items-center bg-dark text-white py-2 gap-2">
-                <span class="badge bg-warning text-dark"><?= $ex['exercise_order'] ?></span>
-                <span class="fw-bold"><?= h($ex['exercise_name']) ?></span>
-                <div class="ms-auto d-flex align-items-center gap-2 flex-wrap">
+            <div class="card-header exercise-session-card-header bg-dark text-white py-2">
+                <div class="exercise-session-card-heading">
+                    <span class="badge bg-warning text-dark"><?= $ex['exercise_order'] ?></span>
+                    <span class="fw-bold exercise-session-card-name"><?= h($ex['exercise_name']) ?></span>
+                    <?php if ($sportType !== 'standard'): ?>
+                    <span class="badge bg-info text-dark small"><?= h($typeLabels[$sportType] ?? 'Speciální sport') ?></span>
+                    <?php endif; ?>
+                    <span class="badge bg-secondary small" id="series-count-<?= $key ?>">
+                        <?php if ($sportType === 'standard'): ?>
+                        <?= count($series) ?> séri<?= count($series) === 1 ? 'e' : 'í' ?>
+                        <?php else: ?>
+                        speciální
+                        <?php endif; ?>
+                    </span>
+                </div>
+                <div class="exercise-session-card-controls<?= !empty($availableExercises) ? ' has-replacement' : '' ?>">
                     <?php if (!empty($availableExercises)): ?>
-                    <select id="replace-exercise-select-<?= $key ?>" class="form-select form-select-sm" style="min-width:180px">
+                    <select id="replace-exercise-select-<?= $key ?>" class="form-select form-select-sm">
                         <option value="">Nahradit...</option>
                         <?php foreach ($availableExercises as $availableExercise): ?>
                         <?php if ((int)$availableExercise['id'] === $eid) { continue; } ?>
@@ -237,22 +249,12 @@ renderHeader('Párový trénink', false, true);
                         <i class="fas fa-trash me-1"></i>Odebrat
                     </button>
                 </div>
-                <?php if ($sportType !== 'standard'): ?>
-                <span class="badge bg-info text-dark ms-1 small"><?= h($typeLabels[$sportType] ?? 'Speciální sport') ?></span>
-                <?php endif; ?>
-                <span class="badge bg-secondary small" id="series-count-<?= $key ?>">
-                    <?php if ($sportType === 'standard'): ?>
-                    <?= count($series) ?> séri<?= count($series) === 1 ? 'e' : 'í' ?>
-                    <?php else: ?>
-                    speciální
-                    <?php endif; ?>
-                </span>
             </div>
             <div class="card-body p-0">
                 <?php if ($sportType === 'standard'): ?>
                 <!-- Tabulka sérií -->
                 <div class="table-responsive">
-                    <table class="table table-sm table-bordered mb-0 align-middle text-center"
+                    <table class="table table-sm table-bordered mb-0 align-middle text-center series-records-table no-mobile-stack"
                            id="series-table-<?= $key ?>">
                         <thead class="table-light">
                             <tr>
@@ -291,25 +293,41 @@ renderHeader('Párový trénink', false, true);
                 <?php if ($lastComp): ?>
                 <div class="px-2 pt-2">
                     <div class="previous-exercise-session">
-                        <div class="previous-exercise-session__head">
-                            <div class="previous-exercise-session__title small">
-                                <i class="fas fa-history me-1"></i>Poslední trénink tohoto cviku
-                            </div>
-                            <div class="small text-muted">
-                                <?= formatDate($lastComp['session']['completed_at']) ?>
-                                | <?= h($lastComp['session']['set_name']) ?>
-                            </div>
-                        </div>
-                        <div class="d-flex flex-wrap gap-1 mt-1">
+                        <?php $lastCompSeriesCount = count($lastComp['series']); ?>
+                        <button class="previous-exercise-session__toggle collapsed" type="button"
+                                data-bs-toggle="collapse"
+                                data-bs-target="#previous-exercise-session-<?= h($key) ?>"
+                                aria-expanded="false"
+                                aria-controls="previous-exercise-session-<?= h($key) ?>">
+                            <span class="previous-exercise-session__toggle-main">
+                                <span class="previous-exercise-session__toggle-title">
+                                    <i class="fas fa-history me-1"></i>Poslední trénink cviku
+                                </span>
+                                <span class="previous-exercise-session__toggle-meta">
+                                    <?= formatDate($lastComp['session']['completed_at']) ?>
+                                    | <?= h($lastComp['session']['set_name']) ?>
+                                </span>
+                            </span>
+                            <span class="previous-exercise-session__toggle-side">
+                                <span class="badge bg-light text-dark border">
+                                    <?= $lastCompSeriesCount ?> <?= $lastCompSeriesCount === 1 ? 'série' : ($lastCompSeriesCount < 5 ? 'série' : 'sérií') ?>
+                                </span>
+                                <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                            </span>
+                        </button>
+                        <div class="collapse" id="previous-exercise-session-<?= h($key) ?>">
+                        <div class="previous-exercise-session__series-list mt-2">
                             <?php foreach ($lastComp['series'] as $prev): ?>
-                            <span class="badge bg-light text-dark border">
-                                <?= $prev['series_order'] ?>. <?= number_format((float)$prev['weight'], 1, ',', '') ?> kg
-                                × <?= (int)$prev['reps'] ?>
+                            <span class="previous-exercise-session__series">
+                                <strong>#<?= (int)$prev['series_order'] ?></strong>
+                                <span><?= number_format((float)$prev['weight'], 1, ',', '') ?> kg</span>
+                                <span>× <?= (int)$prev['reps'] ?></span>
                                 <?php if ((int)$prev['assistance_reps'] > 0): ?>
-                                <span class="text-warning">(+<?= (int)$prev['assistance_reps'] ?>)</span>
+                                <span class="previous-exercise-session__assistance">+<?= (int)$prev['assistance_reps'] ?> dop.</span>
                                 <?php endif; ?>
                             </span>
                             <?php endforeach; ?>
+                        </div>
                         </div>
                     </div>
                 </div>

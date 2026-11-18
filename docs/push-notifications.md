@@ -9,7 +9,9 @@ database exports into the repository.
 The PWA manifest and Service Worker are served from the application root.
 The deployment includes `manifest.webmanifest`, `sw.js`,
 `assets/js/pwa.js`, the three files linking those resources, and
-`assets/pwa/icon-{180,192,512}.png`. Confirm that the manifest, worker, and
+`assets/pwa/icon-{180,192,512}.png` plus `assets/pwa/icon-512-maskable.png`.
+Replace these icons only with optimized, square PNG files of their declared
+dimensions. Confirm that the manifest, worker, and
 icons return successfully over HTTPS and that the browser reports the worker
 as activated for the application origin.
 

@@ -446,6 +446,135 @@ renderAthleteHeader('Můj kalendář', false, true);
     display: none;
 }
 
+.calendar-toolbar-card {
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+}
+
+.calendar-toolbar-card > .card-header {
+    padding: .8rem 1rem;
+    border: 0;
+    background: #212529;
+    color: #fff;
+}
+
+.calendar-toolbar-card > .card-header h2 {
+    font-size: 1.05rem;
+    font-weight: 800;
+}
+
+.calendar-toolbar-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    width: 100%;
+    gap: .75rem;
+}
+
+.calendar-week-navigation,
+.calendar-date-navigation {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: .5rem;
+}
+
+.calendar-week-navigation .calendar-toolbar-button {
+    flex: 1 1 0;
+    width: 100%;
+    min-width: 0;
+}
+
+.calendar-toolbar-button {
+    min-height: 38px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: linear-gradient(145deg, #fff 0%, #f8fafc 100%);
+    color: #273449;
+    font-weight: 600;
+    white-space: nowrap;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, .045);
+    transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.calendar-toolbar-button:hover,
+.calendar-toolbar-button:focus-visible {
+    border-color: #e8c34f;
+    background: #fffaf0;
+    color: #1f2937;
+    box-shadow: 0 7px 16px rgba(120, 90, 0, .11);
+    transform: translateY(-1px);
+}
+
+.calendar-toolbar-button:focus-visible {
+    outline: 3px solid rgba(232, 195, 79, .55);
+    outline-offset: 2px;
+}
+
+.calendar-toolbar-button--today {
+    border-color: #efd477;
+    background: #fff3c9;
+    color: #765900;
+}
+
+.calendar-date-navigation .form-control,
+.calendar-date-navigation .form-select {
+    min-height: 38px;
+    border-color: #e2e8f0;
+    border-radius: 10px;
+}
+
+.calendar-print-controls {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: .65rem;
+}
+
+.calendar-print-range {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+}
+
+.calendar-print-range .form-select,
+.calendar-print-date-field .form-control {
+    min-height: 38px;
+    border-radius: 10px;
+}
+
+.calendar-print-range .form-select {
+    width: 190px;
+}
+
+.calendar-print-date-field {
+    flex: 1 1 130px;
+    min-width: 0;
+}
+
+.calendar-toolbar-button--print {
+    border-color: #efd477;
+    background: linear-gradient(145deg, #fff3c9 0%, #ffedab 100%);
+    color: #765900;
+}
+
+.calendar-nav-compact {
+    display: none;
+}
+
+#athleteCalendarTabs .nav-link {
+    color: #273449;
+}
+
+#athleteCalendarTabs .nav-link.active {
+    border-color: #efd477 #efd477 #fff;
+    background: #fff3c9;
+    color: #765900;
+    font-weight: 700;
+}
+
 #athleteTrainingYearFilter {
     width: 82px;
 }
@@ -468,6 +597,123 @@ renderAthleteHeader('Můj kalendář', false, true);
         display: block;
     }
 }
+
+@media (max-width: 575.98px) {
+    .athlete-compact-topbar {
+        padding: .55rem .65rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        background: #fff;
+    }
+
+    .athlete-compact-topbar > .fw-bold {
+        font-size: 1rem !important;
+        white-space: nowrap;
+    }
+
+    .calendar-toolbar-card > .card-body {
+        padding: .75rem;
+    }
+
+    .calendar-toolbar-controls {
+        display: grid;
+        width: 100%;
+        gap: .65rem;
+    }
+
+    .calendar-week-navigation {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        width: 100%;
+        min-width: 100%;
+        gap: .4rem;
+    }
+
+    .calendar-week-navigation .calendar-toolbar-button {
+        width: 100%;
+        min-width: 0;
+        padding: .4rem .25rem;
+        font-size: .78rem;
+    }
+
+    .calendar-nav-full {
+        display: none;
+    }
+
+    .calendar-nav-compact {
+        display: inline;
+    }
+
+    .calendar-date-navigation {
+        display: grid;
+        grid-template-columns: minmax(0, 1.3fr) minmax(0, .8fr);
+        width: 100%;
+        gap: .45rem;
+    }
+
+    .calendar-print-controls {
+        display: grid;
+        gap: .65rem;
+    }
+
+    .calendar-print-range .form-select {
+        width: 100%;
+        max-width: none !important;
+    }
+
+    .calendar-print-controls > .calendar-toolbar-button {
+        width: 100%;
+    }
+
+    .calendar-print-date-field .form-control {
+        width: 100%;
+    }
+
+    #athleteWeekMonthJumpInput,
+    #athleteWeekRangeJumpSelect {
+        width: 100%;
+        max-width: none !important;
+        min-width: 0;
+        font-size: .82rem;
+    }
+
+    #athleteCalendarTabs {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .4rem;
+        border-bottom: 0;
+    }
+
+    #athleteCalendarTabs .nav-item:last-child {
+        grid-column: 1 / -1;
+    }
+
+    #athleteCalendarTabs .nav-link {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: .25rem;
+        width: 100%;
+        min-height: 40px;
+        padding: .4rem .5rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background: linear-gradient(145deg, #fff 0%, #f8fafc 100%);
+        font-size: .82rem;
+        white-space: nowrap;
+    }
+
+    #athleteCalendarTabs .nav-link.active {
+        border-color: #efd477;
+        background: #fff3c9;
+    }
+
+    #athleteCalendarTabs .nav-link.disabled {
+        background: #f1f5f9;
+        color: #94a3b8;
+    }
+}
+
 .training-month-filter[hidden],
 .training-month-select[hidden] {
     display: none !important;
@@ -684,32 +930,40 @@ renderAthleteHeader('Můj kalendář', false, true);
 }
 </style>
 
-<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-    <h2 class="mb-0"><i class="fas fa-calendar-alt me-2 text-warning"></i>Kalendář</h2>
-    <div class="d-flex gap-2 flex-wrap">
-        <button class="btn btn-outline-secondary btn-sm" id="prevWeekBtn">
-            <i class="fas fa-chevron-left me-1"></i>Předchozí týden
-        </button>
-        <button class="btn btn-outline-dark btn-sm" id="todayWeekBtn">Tento týden</button>
-        <button class="btn btn-outline-secondary btn-sm" id="nextWeekBtn">
-            Další týden<i class="fas fa-chevron-right ms-1"></i>
-        </button>
-        <input type="month" class="form-control form-control-sm" id="athleteWeekMonthJumpInput" style="max-width: 170px;">
-        <select class="form-select form-select-sm" id="athleteWeekRangeJumpSelect" style="max-width: 120px;" title="Skok na týden v měsíci">
-            <option value="">Týden</option>
-        </select>
+<section class="card shadow-sm mb-3 calendar-toolbar-card">
+    <div class="card-header">
+        <h2 class="mb-0"><i class="fas fa-calendar-alt me-2 text-warning"></i>Kalendář</h2>
     </div>
-</div>
+    <div class="card-body">
+        <div class="calendar-toolbar-controls">
+            <div class="calendar-week-navigation">
+                <button class="btn btn-sm calendar-toolbar-button" id="prevWeekBtn">
+                    <i class="fas fa-chevron-left me-1" aria-hidden="true"></i><span class="calendar-nav-full">Předchozí týden</span><span class="calendar-nav-compact">Předchozí</span>
+                </button>
+                <button class="btn btn-sm calendar-toolbar-button calendar-toolbar-button--today" id="todayWeekBtn">Tento týden</button>
+                <button class="btn btn-sm calendar-toolbar-button" id="nextWeekBtn">
+                    <span class="calendar-nav-full">Další týden</span><span class="calendar-nav-compact">Další</span><i class="fas fa-chevron-right ms-1" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="calendar-date-navigation">
+                <input type="month" class="form-control form-control-sm" id="athleteWeekMonthJumpInput" style="max-width: 170px;">
+                <select class="form-select form-select-sm" id="athleteWeekRangeJumpSelect" style="max-width: 120px;" title="Skok na týden v měsíci">
+                    <option value="">Týden</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</section>
 
 <ul class="nav nav-tabs mb-3" id="athleteCalendarTabs" role="tablist">
     <li class="nav-item" role="presentation">
         <button class="nav-link <?= $activeTab === 'week' ? 'active' : '' ?>" id="athlete-week-tab" data-bs-toggle="tab" data-bs-target="#athlete-week-pane" type="button" role="tab" aria-controls="athlete-week-pane" aria-selected="<?= $activeTab === 'week' ? 'true' : 'false' ?>">
-            Týdenní kalendář
+            <span class="d-none d-sm-inline">Týdenní kalendář</span><span class="d-sm-none">Týden</span>
         </button>
     </li>
     <li class="nav-item" role="presentation">
         <button class="nav-link <?= $activeTab === 'month' ? 'active' : '' ?>" id="athlete-month-tab" data-bs-toggle="tab" data-bs-target="#athlete-month-pane" type="button" role="tab" aria-controls="athlete-month-pane" aria-selected="<?= $activeTab === 'month' ? 'true' : 'false' ?>">
-            Měsíční seznam
+            <span class="d-none d-sm-inline">Měsíční seznam</span><span class="d-sm-none">Měsíc</span>
         </button>
     </li>
     <li class="nav-item" role="presentation">
@@ -719,12 +973,12 @@ renderAthleteHeader('Můj kalendář', false, true);
     </li>
     <li class="nav-item" role="presentation">
         <button class="nav-link <?= $activeTab === 'apple' ? 'active' : '' ?>" id="athlete-apple-tab" data-bs-toggle="tab" data-bs-target="#athlete-apple-pane" type="button" role="tab" aria-controls="athlete-apple-pane" aria-selected="<?= $activeTab === 'apple' ? 'true' : 'false' ?>">
-            Apple Kalendář <span class="badge rounded-pill text-bg-warning ms-1 align-middle">Beta</span>
+            <span class="d-none d-sm-inline">Apple Kalendář</span><span class="d-sm-none">Apple</span> <span class="badge rounded-pill text-bg-warning ms-1 align-middle">Beta</span>
         </button>
     </li>
     <li class="nav-item" role="presentation">
         <button class="nav-link disabled" id="athlete-google-tab" type="button" role="tab" aria-controls="athlete-google-pane" aria-selected="false" aria-disabled="true" tabindex="-1" title="Ve vývoji">
-            Google Kalendář <span class="badge rounded-pill text-bg-secondary ms-1 align-middle">Ve vývoji</span>
+            <span class="d-none d-sm-inline">Google Kalendář</span><span class="d-sm-none">Google</span> <span class="badge rounded-pill text-bg-secondary ms-1 align-middle">Ve vývoji</span>
         </button>
     </li>
 </ul>
@@ -755,31 +1009,36 @@ renderAthleteHeader('Můj kalendář', false, true);
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-3">
-    <div class="card-body py-2">
-        <div class="d-flex flex-wrap align-items-end gap-2">
-            <label class="small fw-semibold" for="athletePrintRangeMode">Tisk událostí</label>
-            <select class="form-select form-select-sm" id="athletePrintRangeMode" style="max-width: 190px;">
-                <option value="week">Aktuální týden</option>
-                <option value="month">Aktuální měsíc</option>
-                <option value="custom">Vlastní rozsah</option>
-            </select>
+<section class="card shadow-sm mb-3 calendar-toolbar-card">
+    <div class="card-header">
+        <h2 class="mb-0"><i class="fas fa-print me-2 text-warning"></i>Tisk událostí</h2>
+    </div>
+    <div class="card-body">
+        <div class="calendar-print-controls">
+            <div class="calendar-print-range">
+                <label class="small fw-semibold" for="athletePrintRangeMode">Období</label>
+                <select class="form-select form-select-sm" id="athletePrintRangeMode" style="max-width: 190px;">
+                    <option value="week">Aktuální týden</option>
+                    <option value="month">Aktuální měsíc</option>
+                    <option value="custom">Vlastní rozsah</option>
+                </select>
+            </div>
             <div class="d-none flex-wrap gap-2" id="athletePrintCustomDates">
-                <div>
+                <div class="calendar-print-date-field">
                     <label class="form-label small mb-1" for="athletePrintStartDate">Od</label>
                     <input type="date" class="form-control form-control-sm" id="athletePrintStartDate">
                 </div>
-                <div>
+                <div class="calendar-print-date-field">
                     <label class="form-label small mb-1" for="athletePrintEndDate">Do</label>
                     <input type="date" class="form-control form-control-sm" id="athletePrintEndDate">
                 </div>
             </div>
-            <button type="button" class="btn btn-sm btn-outline-primary" id="athletePrintEventsBtn">
+            <button type="button" class="btn calendar-toolbar-button calendar-toolbar-button--print" id="athletePrintEventsBtn">
                 <i class="fas fa-print me-1"></i>Načíst a vytisknout
             </button>
         </div>
     </div>
-</div>
+</section>
 <section class="calendar-print-sheet" id="athleteCalendarPrintSheet" aria-hidden="true"></section>
 
 <div class="card border-0 shadow-sm" id="daypilotCard">

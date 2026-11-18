@@ -432,13 +432,215 @@ $athleteDisplayName = trim((string)$athlete['first_name'] . ' ' . (string)$athle
 renderHeader(h($athleteDisplayName), true, true);
 ?>
 
+<style>
+    #athlete-detail-card-list {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: .75rem;
+        align-items: start;
+    }
+
+    #athlete-detail-card-list .athlete-detail-order-group {
+        display: contents;
+    }
+
+    #athlete-detail-card-list .athlete-detail-order-group > [class*="col-"] {
+        display: contents;
+    }
+
+    #athlete-detail-card-list .athlete-detail-order-card {
+        grid-column: 1 / -1;
+        width: 100%;
+        min-width: 0;
+        margin: 0 !important;
+    }
+
+    #athlete-detail-card-list .athlete-detail-order-card--half {
+        grid-column: 1 / -1;
+    }
+
+    #athlete-detail-card-list .athlete-detail-order-card--weight {
+        grid-column: 1 / -1;
+    }
+
+    #athlete-detail-card-list .athlete-detail-order-card--chart {
+        grid-column: 1 / -1;
+    }
+
+    #athlete-detail-page .btn:not(.btn-close) {
+        min-height: 38px;
+        padding: .4rem .8rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background: linear-gradient(145deg, #fff 0%, #f8fafc 100%);
+        color: #273449;
+        font-weight: 600;
+        box-shadow: 0 2px 6px rgba(15, 23, 42, .045);
+        transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+    }
+
+    #athlete-detail-page .btn:not(.btn-close):hover,
+    #athlete-detail-page .btn:not(.btn-close):focus-visible {
+        border-color: #e8c34f;
+        background: #fffaf0;
+        color: #1f2937;
+        box-shadow: 0 7px 16px rgba(120, 90, 0, .11);
+        transform: translateY(-1px);
+    }
+
+    #athlete-detail-page .btn:not(.btn-close):focus-visible {
+        outline: 3px solid rgba(232, 195, 79, .55);
+        outline-offset: 2px;
+    }
+
+    #athlete-detail-page .btn:not(.btn-close):disabled,
+    #athlete-detail-page .btn:not(.btn-close).disabled {
+        border-color: #e2e8f0;
+        background: #f1f5f9;
+        color: #94a3b8;
+        box-shadow: none;
+        transform: none;
+    }
+
+    #athlete-detail-page .btn:not(.btn-close) i {
+        color: #b78100;
+    }
+
+    #athlete-detail-page .card-header.athlete-detail-card-header {
+        background: transparent;
+        color: #273449;
+        border: 0;
+    }
+
+    #athlete-detail-page .athlete-detail-card-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .75rem;
+        width: 100%;
+        min-height: 46px;
+        padding: .45rem .8rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background: linear-gradient(145deg, #fff 0%, #f8fafc 100%);
+        color: #273449;
+        font-weight: 600;
+        text-align: left;
+        box-shadow: 0 2px 6px rgba(15, 23, 42, .045);
+        transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+    }
+
+    #athlete-detail-page #start-training .athlete-detail-card-toggle {
+        border-color: #f0d2a7;
+        background: #fff4e5;
+    }
+
+    #athlete-detail-page #start-training .athlete-detail-card-toggle:hover,
+    #athlete-detail-page #start-training .athlete-detail-card-toggle:focus-visible {
+        border-color: #e8c34f;
+        background: #fffaf0;
+    }
+
+    #athlete-detail-page .athlete-detail-card-toggle:hover,
+    #athlete-detail-page .athlete-detail-card-toggle:focus-visible {
+        border-color: #e8c34f;
+        background: #fffaf0;
+        color: #1f2937;
+        box-shadow: 0 7px 16px rgba(120, 90, 0, .11);
+        transform: translateY(-1px);
+    }
+
+    #athlete-detail-page .athlete-detail-card-toggle:focus-visible {
+        outline: 3px solid rgba(232, 195, 79, .55);
+        outline-offset: 2px;
+    }
+
+    #athlete-detail-page .athlete-detail-card-toggle > span > i {
+        color: #b78100;
+    }
+
+    #athlete-detail-page .card-header > .athlete-detail-card-toggle:not(:only-child) {
+        width: auto;
+        flex: 1 1 auto;
+    }
+
+    #athlete-detail-page .athlete-detail-card-toggle .fa-chevron-down {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border: 1px solid #efd477;
+        border-radius: 50%;
+        background: #fff3c9;
+        color: #765900;
+        line-height: 1;
+        transition: transform .2s ease;
+    }
+
+    #athlete-detail-page .athlete-detail-card-toggle[aria-expanded="true"] .fa-chevron-down {
+        transform: rotate(180deg);
+    }
+
+    .athlete-detail-card-header-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .5rem;
+        padding: .5rem .75rem;
+    }
+
+    @media (min-width: 768px) {
+        #athlete-detail-page .page-header {
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        #athlete-detail-page .page-header > .athlete-detail-actions {
+            flex: 1 1 100%;
+            flex-direction: row;
+            flex-wrap: wrap;
+            align-items: center;
+            width: 100%;
+            margin-left: 0 !important;
+        }
+
+        #athlete-detail-page .athlete-detail-actions > a,
+        #athlete-detail-page .athlete-detail-actions > form,
+        #athlete-detail-page .athlete-detail-actions > form > .btn {
+            width: auto;
+        }
+
+        #athlete-detail-page .athlete-detail-actions > a,
+        #athlete-detail-page .athlete-detail-actions > form > .btn {
+            text-align: center;
+        }
+
+        #athlete-detail-page .athlete-detail-actions > form {
+            display: inline-flex !important;
+        }
+    }
+
+    @media (max-width: 575.98px) {
+        .athlete-detail-card-header-actions {
+            width: 100%;
+            padding-top: 0;
+        }
+
+        .athlete-detail-card-header-actions .btn {
+            flex: 1 1 auto;
+        }
+    }
+</style>
+
+<div id="athlete-detail-page">
 <div class="d-flex align-items-center mb-4 gap-3 page-header">
     <a href="<?= BASE_URL ?>/dashboard.php" class="btn btn-outline-secondary btn-sm">
         <i class="fas fa-arrow-left"></i>
     </a>
     <h2 class="mb-0 fw-bold"><?= h($athleteDisplayName) ?></h2>
     <?php if (!empty($athlete['online_only'])): ?><span class="badge bg-warning text-dark">Pouze ONLINE</span><?php endif; ?>
-    <div class="ms-auto d-flex gap-2 flex-wrap">
+    <div class="ms-auto d-flex gap-2 flex-wrap athlete-detail-actions">
         <a href="<?= BASE_URL ?>/training_manual_add.php?athlete_id=<?= $athleteId ?>"
            class="btn btn-outline-warning btn-sm">
             <i class="fas fa-calendar-plus me-1"></i>Přidat minulý trénink
@@ -471,30 +673,142 @@ renderHeader(h($athleteDisplayName), true, true);
            class="btn btn-outline-secondary btn-sm">
             <i class="fas fa-edit me-1"></i>Upravit
         </a>
-        <form method="post" action="<?= BASE_URL ?>/athlete_delete.php" class="d-inline"
+        <form method="post" action="<?= BASE_URL ?>/athlete_delete.php" class="d-inline athlete-detail-action-delete-form"
               onsubmit="return confirm('Opravdu smazat tohoto sportovce? Smažou se i všechny tréninky!')">
             <?= csrfField() ?>
             <input type="hidden" name="athlete_id" value="<?= $athleteId ?>">
-            <button type="submit" class="btn btn-outline-danger btn-sm">
-                <i class="fas fa-trash"></i>
+            <button type="submit" class="btn btn-outline-danger btn-sm athlete-detail-action-delete">
+                <i class="fas fa-trash me-1"></i>Smazat sportovce
             </button>
         </form>
     </div>
 </div>
 
-<div class="card shadow-sm mb-4"><div class="card-body d-flex justify-content-between align-items-center gap-2"><strong>Vstupní dotazník</strong><a class="btn btn-outline-dark btn-sm" href="<?= BASE_URL ?>/intake_questionnaire.php?athlete_id=<?= $athleteId ?>">Zobrazit nebo vyplnit</a></div></div>
+<div id="athlete-detail-card-list">
+<div class="card border-0 shadow-sm mb-4 athlete-detail-order-card" id="start-training" style="order: 1">
+    <div class="card-header athlete-detail-card-header p-0">
+        <button class="athlete-detail-card-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#athleteDetailStartTraining" aria-expanded="false" aria-controls="athleteDetailStartTraining">
+            <span><i class="fas fa-play me-2"></i>Spustit nový trénink</span>
+            <i class="fas fa-chevron-down" aria-hidden="true"></i>
+        </button>
+    </div>
+    <div class="collapse" id="athleteDetailStartTraining">
+        <div class="card-body">
+            <?php
+            $healthAlertClass = $healthStatus['state'] === 'ok'
+                ? 'alert-success'
+                : ($healthStatus['state'] === 'warning' ? 'alert-warning' : 'alert-danger');
+            ?>
+            <div class="alert <?= h($healthAlertClass) ?> py-2 mb-3">
+                <div class="fw-semibold"><i class="fas fa-heart-pulse me-1"></i><?= h((string)$healthStatus['label']) ?></div>
+                <?php if (!empty($healthStatus['filled_at'])): ?>
+                <div class="small">Poslední vyplnění: <?= h(formatDateTime((string)$healthStatus['filled_at'])) ?></div>
+                <?php endif; ?>
+                <?php if (!empty($healthStatus['alerts'])): ?>
+                <div class="small mt-1">
+                    <?php foreach ($healthStatus['alerts'] as $alert): ?>
+                    <div>• <?= h((string)($alert['alert_text'] ?? 'Upozornění')) ?></div>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
+            </div>
+
+            <?php if ($lastSession): ?>
+            <div class="alert alert-light border mb-3 py-2">
+                <small class="text-muted">Poslední trénink:</small><br>
+                <strong><?= h($lastSession['set_name']) ?></strong>
+                – <?= formatDateTime($lastSession['completed_at']) ?>
+                <?php if ($lastSession['location']): ?>
+                <span class="text-muted ms-2"><i class="fas fa-map-marker-alt"></i> <?= h($lastSession['location']) ?></span>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
+
+            <?php if (!empty($athlete['online_only'])): ?>
+            <div class="alert alert-warning">Sportovec je pouze ONLINE. Nový klasický trénink nelze zahájit.<?php if ($activeTraining): ?> <a href="<?= BASE_URL ?>/<?= $activeTraining['paired_session_id'] ? 'training_paired_session.php?id=' . (int)$activeTraining['paired_session_id'] : 'training_session.php?id=' . (int)$activeTraining['id'] ?>">Pokračovat v rozpracovaném tréninku</a>.<?php endif; ?></div>
+            <?php elseif (empty($workoutSets)): ?>
+            <div class="alert alert-warning py-2 mb-0">
+                <i class="fas fa-exclamation-triangle me-1"></i>
+                Nejprve vytvořte <a href="<?= BASE_URL ?>/sady.php" class="alert-link">sady</a> a
+                <a href="<?= BASE_URL ?>/exercises.php" class="alert-link">cviky</a>.
+            </div>
+            <?php else: ?>
+            <form action="<?= BASE_URL ?>/training_start.php" method="post" id="startTrainingForm"<?= $activeTraining ? ' onsubmit="return openActiveTrainingWarning();"' : '' ?>>
+                <?= csrfField() ?>
+                <input type="hidden" name="athlete_id" value="<?= $athleteId ?>">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold" for="workout_set_id">Vyberte sadu</label>
+                    <select name="workout_set_id" id="workout_set_id" class="form-select" required>
+                        <option value="">– vyberte sadu –</option>
+                        <?php foreach ($workoutSets as $ws): ?>
+                        <?php
+                            $namesPreview = '';
+                            if (!empty($ws['exercise_names'])) {
+                                $namesArr = array_filter(array_map('trim', explode(',', (string)$ws['exercise_names'])), fn($n) => $n !== '');
+                                $previewCount = 4;
+                                if (count($namesArr) > $previewCount) {
+                                    $namesPreview = implode(', ', array_slice($namesArr, 0, $previewCount)) . ' a další ' . (count($namesArr) - $previewCount);
+                                } else {
+                                    $namesPreview = implode(', ', $namesArr);
+                                }
+                                if (mb_strlen($namesPreview) > 70) {
+                                    $namesPreview = rtrim(mb_substr($namesPreview, 0, 70)) . '…';
+                                }
+                            }
+                        ?>
+                        <option value="<?= $ws['id'] ?>">
+                            <?= !empty($ws['is_global']) ? 'Globální: ' : '' ?><?= h($ws['name']) ?>
+                            (<?= $ws['exercise_count'] ?> <?= $ws['exercise_count'] === 1 ? 'cvik' : ($ws['exercise_count'] < 5 ? 'cviky' : 'cviků') ?>)
+                            <?php if ($ws['name'] === 'Flexibilní sada'): ?>
+                                – přidávání cviků během tréninku
+                            <?php endif; ?>
+                            <?php if ($namesPreview !== ''): ?>
+                                – <?= h($namesPreview) ?>
+                            <?php endif; ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-warning fw-bold">
+                    <i class="fas fa-play me-1"></i>Zahájit trénink
+                </button>
+            </form>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4 athlete-detail-order-card" style="order: 4">
+    <div class="card-header athlete-detail-card-header p-0">
+        <button class="athlete-detail-card-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#athleteDetailIntake" aria-expanded="false" aria-controls="athleteDetailIntake">
+            <span><i class="fas fa-clipboard-question me-2"></i>Vstupní dotazník</span>
+            <i class="fas fa-chevron-down" aria-hidden="true"></i>
+        </button>
+    </div>
+    <div class="collapse" id="athleteDetailIntake">
+        <div class="card-body d-flex justify-content-end">
+            <a class="btn btn-outline-dark btn-sm" href="<?= BASE_URL ?>/intake_questionnaire.php?athlete_id=<?= $athleteId ?>">Zobrazit nebo vyplnit</a>
+        </div>
+    </div>
+</div>
 
 <?php if ($calcCoachVisible): ?>
-<div class="card border-0 shadow-sm mb-4" id="calculator-results">
-    <div class="card-header text-white d-flex justify-content-between align-items-center flex-wrap gap-2" style="background:linear-gradient(150deg,#23272f 0%,#16181d 60%,#0e1013 100%);border-bottom:2px solid #d4a73c;">
-        <span>
-            <i class="fas fa-calculator me-2" style="color:#d4a73c"></i>Kalkulačky sportovce
-            <?php if ($calcCoachUnseen > 0): ?><span class="badge bg-danger ms-1"><?= $calcCoachUnseen ?> <?= $calcCoachUnseen === 1 ? 'nový výsledek' : ($calcCoachUnseen < 5 ? 'nové výsledky' : 'nových výsledků') ?></span><?php endif; ?>
-        </span>
+<div class="card border-0 shadow-sm mb-4 athlete-detail-order-card" id="calculator-results" style="order: 8">
+    <div class="card-header athlete-detail-card-header p-0 d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <button class="athlete-detail-card-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#athleteDetailCalculatorResults" aria-expanded="false" aria-controls="athleteDetailCalculatorResults">
+            <span>
+                <i class="fas fa-calculator me-2"></i>Kalkulačky sportovce
+                <?php if ($calcCoachUnseen > 0): ?><span class="badge bg-danger ms-1"><?= $calcCoachUnseen ?> <?= $calcCoachUnseen === 1 ? 'nový výsledek' : ($calcCoachUnseen < 5 ? 'nové výsledky' : 'nových výsledků') ?></span><?php endif; ?>
+            </span>
+            <i class="fas fa-chevron-down" aria-hidden="true"></i>
+        </button>
         <?php if ($calcCoachSettings['share_with_coach'] && $calcCoachResults): ?>
-        <a href="<?= BASE_URL ?>/calculators_print.php?type=report&amp;athlete_id=<?= $athleteId ?>&amp;print=1" target="_blank" rel="noopener" class="btn btn-warning btn-sm fw-semibold"><i class="fas fa-print me-1"></i>Tisk zprávy</a>
+        <div class="athlete-detail-card-header-actions">
+            <a href="<?= BASE_URL ?>/calculators_print.php?type=report&amp;athlete_id=<?= $athleteId ?>&amp;print=1" target="_blank" rel="noopener" class="btn btn-outline-dark btn-sm fw-semibold"><i class="fas fa-print me-1"></i>Tisk zprávy</a>
+        </div>
         <?php endif; ?>
     </div>
+    <div class="collapse" id="athleteDetailCalculatorResults">
     <div class="card-body">
         <?php if (!$calcCoachSettings['share_with_coach']): ?>
             <div class="text-muted"><i class="fas fa-lock me-1"></i>Sportovec výsledky kalkulaček se svým trenérem nesdílí.</div>
@@ -554,20 +868,25 @@ renderHeader(h($athleteDisplayName), true, true);
             <?php if (count($calcCoachResults) > 10): ?><div class="small text-muted mt-2">Zobrazeno posledních 10 výsledků – celou historii obsahuje tisková zpráva.</div><?php endif; ?>
         <?php endif; ?>
     </div>
+    </div>
 </div>
 <?php endif; ?>
 
 <?php if ($analysisEnabled): ?>
-<div class="card border-0 shadow-sm mb-4" id="athlete-analysis">
-    <div class="card-header text-white d-flex justify-content-between align-items-center flex-wrap gap-2" style="background:linear-gradient(150deg,#23272f 0%,#16181d 60%,#0e1013 100%);border-bottom:2px solid #d4a73c;">
-        <span><i class="fas fa-dna me-2" style="color:#d4a73c"></i>Analýza sportovce<?php if ($analysisCount > 0): ?> <span class="badge bg-secondary ms-1"><?= $analysisCount ?></span><?php endif; ?></span>
-        <span class="d-flex gap-2 flex-wrap">
+<div class="card border-0 shadow-sm mb-4 athlete-detail-order-card" id="athlete-analysis" style="order: 13">
+    <div class="card-header athlete-detail-card-header p-0 d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <button class="athlete-detail-card-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#athleteDetailAnalysis" aria-expanded="false" aria-controls="athleteDetailAnalysis">
+            <span><i class="fas fa-dna me-2"></i>Analýza sportovce<?php if ($analysisCount > 0): ?> <span class="badge bg-secondary ms-1"><?= $analysisCount ?></span><?php endif; ?></span>
+            <i class="fas fa-chevron-down" aria-hidden="true"></i>
+        </button>
+        <div class="athlete-detail-card-header-actions">
             <?php if ($analysisLatest): ?>
-            <a href="<?= BASE_URL ?>/athlete_analysis_print.php?id=<?= (int)$analysisLatest['id'] ?>&amp;athlete_id=<?= $athleteId ?>&amp;print=1" target="_blank" rel="noopener" class="btn btn-outline-light btn-sm"><i class="fas fa-print me-1"></i>Tisk</a>
+            <a href="<?= BASE_URL ?>/athlete_analysis_print.php?id=<?= (int)$analysisLatest['id'] ?>&amp;athlete_id=<?= $athleteId ?>&amp;print=1" target="_blank" rel="noopener" class="btn btn-outline-dark btn-sm"><i class="fas fa-print me-1"></i>Tisk</a>
             <?php endif; ?>
-            <a href="<?= BASE_URL ?>/athlete_analysis.php?athlete_id=<?= $athleteId ?>&amp;view=wizard" class="btn btn-warning btn-sm fw-semibold"><i class="fas fa-plus me-1"></i>Nová analýza</a>
-        </span>
+            <a href="<?= BASE_URL ?>/athlete_analysis.php?athlete_id=<?= $athleteId ?>&amp;view=wizard" class="btn btn-outline-dark btn-sm fw-semibold"><i class="fas fa-plus me-1"></i>Nová analýza</a>
+        </div>
     </div>
+    <div class="collapse" id="athleteDetailAnalysis">
     <div class="card-body">
         <?php if (!$analysisLatest): ?>
             <div class="text-muted"><i class="fas fa-circle-info me-1"></i><?= $calcCoachSettings['share_with_coach'] ? 'Sportovec zatím nemá dokončenou analýzu.' : 'Sportovec výsledky nesdílí – vidíte jen analýzy vytvořené vámi.' ?> Analýzu můžete vyplnit i za něj.</div>
@@ -607,11 +926,18 @@ renderHeader(h($athleteDisplayName), true, true);
             <div class="small mt-2"><a href="<?= BASE_URL ?>/athlete_analysis.php?athlete_id=<?= $athleteId ?>">Historie, grafy a porovnání období →</a></div>
         <?php endif; ?>
     </div>
+    </div>
 </div>
 <?php endif; ?>
 
-<div class="card border-warning shadow-sm mb-4">
-    <div class="card-header bg-warning text-dark fw-bold"><i class="fas fa-laptop me-2"></i>Online tréninky a účtování</div>
+<div class="card border-0 shadow-sm mb-4 athlete-detail-order-card" style="order: 5">
+    <div class="card-header athlete-detail-card-header p-0">
+        <button class="athlete-detail-card-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#athleteDetailOnlineTraining" aria-expanded="false" aria-controls="athleteDetailOnlineTraining">
+            <span><i class="fas fa-laptop me-2"></i>Online tréninky a účtování</span>
+            <i class="fas fa-chevron-down" aria-hidden="true"></i>
+        </button>
+    </div>
+    <div class="collapse" id="athleteDetailOnlineTraining">
     <div class="card-body">
         <p><?php if ($activeOnlineSubscription): ?>Platné předplatné do <?= h(formatDate($activeOnlineSubscription['ends_on'])) ?>.
         <?php elseif ($futureOnlineSubscription): ?><?= (float)$futureOnlineSubscription['price'] === 0.0 ? 'Bezplatné' : 'Uhrazené' ?> předplatné začne platit <?= h(formatDate($futureOnlineSubscription['starts_on'])) ?>. Online tréninky lze odesílat až od tohoto data.
@@ -629,15 +955,20 @@ renderHeader(h($athleteDisplayName), true, true);
         <?php foreach ($onlineSubscriptions as $subscription): ?><tr><td><?= $subscription['starts_on'] ? h(formatDate($subscription['starts_on']) . ' – ' . formatDate($subscription['ends_on'])) : 'Historický balík (' . (int)$subscription['total_trainings'] . ' tréninků)' ?></td><td><?= number_format((float)$subscription['price'], 2, ',', ' ') ?> Kč</td><td><?= h(onlineTrainingSubscriptionPaymentLabel($subscription)) ?></td><td><?php if ($subscription['status'] === 'active' && $subscription['starts_on']): ?><form method="post" onsubmit="return confirm('Ukončit předplatné? Platební historie zůstane zachována.');"><?= csrfField() ?><input type="hidden" name="action" value="cancel_online_subscription"><input type="hidden" name="subscription_id" value="<?= (int)$subscription['id'] ?>"><button class="btn btn-sm btn-outline-danger">Ukončit</button></form><?php endif; ?></td></tr><?php endforeach; ?>
         </tbody></table></div><?php endif; ?>
     </div>
+    </div>
 </div>
 
-<div class="row g-4 mb-4">
+<div class="row g-4 mb-4 athlete-detail-order-group">
     <!-- Info karta -->
-    <div class="col-md-4">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-dark text-white">
-                <i class="fas fa-user me-2"></i>Informace
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100 athlete-detail-order-card athlete-detail-order-card--half" style="order: 2">
+            <div class="card-header athlete-detail-card-header p-0">
+                <button class="athlete-detail-card-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#athleteDetailInformation" aria-expanded="false" aria-controls="athleteDetailInformation">
+                    <span><i class="fas fa-user me-2"></i>Informace</span>
+                    <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                </button>
             </div>
+            <div class="collapse" id="athleteDetailInformation">
             <div class="card-body">
                 <?php $athletePhoto = photoUrl($athlete['photo'] ?? null, 'athletes'); ?>
                 <div class="text-center mb-3">
@@ -663,30 +994,6 @@ renderHeader(h($athleteDisplayName), true, true);
                     <tr>
                         <td class="text-muted fw-semibold">E-mail</td>
                         <td><?= $athlete['email'] ? '<a href="mailto:'.h($athlete['email']).'">'.h($athlete['email']).'</a>' : '–' ?></td>
-                    </tr>
-                    <tr>
-                        <td class="text-muted fw-semibold">Přístup do aplikace</td>
-                        <td>
-                            <?php if (!empty($athlete['login_enabled'])): ?>
-                                <span class="badge bg-success">Aktivní</span>
-                            <?php else: ?>
-                                <span class="badge bg-secondary">Nevytvořen</span>
-                            <?php endif; ?>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td class="text-muted fw-semibold">Heslo</td>
-                        <td>
-                            <?php if (!empty($athlete['password'])): ?>
-                                <span class="badge bg-success">Nastaveno</span>
-                                <?php if (!empty($athlete['force_password_change'])): ?>
-                                <span class="badge bg-warning text-dark ms-1">Vyžaduje změnu</span>
-                                <?php endif; ?>
-                                <small class="text-muted d-block">Poslední změna: <?= !empty($athlete['password_changed_at']) ? h(formatDateTime((string)$athlete['password_changed_at'])) : formatDate($athlete['created_at']) ?></small>
-                            <?php else: ?>
-                                <span class="badge bg-secondary">Bez hesla</span>
-                            <?php endif; ?>
-                        </td>
                     </tr>
                     <tr>
                         <td class="text-muted fw-semibold">Tel. kontakt</td>
@@ -746,98 +1053,103 @@ renderHeader(h($athleteDisplayName), true, true);
                     <?php endif; ?>
                 </table>
             </div>
+            </div>
         </div>
     </div>
 
-    <!-- Spustit trénink -->
-    <div class="col-md-8">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-warning text-dark">
-                <i class="fas fa-play me-2"></i>Spustit nový trénink
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100 athlete-detail-order-card athlete-detail-order-card--half" style="order: 3">
+            <div class="card-header athlete-detail-card-header p-0">
+                <button class="athlete-detail-card-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#athleteDetailAppAccess" aria-expanded="false" aria-controls="athleteDetailAppAccess">
+                    <span><i class="fas fa-key me-2"></i>Přístup do aplikace</span>
+                    <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                </button>
             </div>
-            <div class="card-body">
-                <?php
-                $healthAlertClass = $healthStatus['state'] === 'ok'
-                    ? 'alert-success'
-                    : ($healthStatus['state'] === 'warning' ? 'alert-warning' : 'alert-danger');
-                ?>
-                <div class="alert <?= h($healthAlertClass) ?> py-2 mb-3">
-                    <div class="fw-semibold"><i class="fas fa-heart-pulse me-1"></i><?= h((string)$healthStatus['label']) ?></div>
-                    <?php if (!empty($healthStatus['filled_at'])): ?>
-                    <div class="small">Poslední vyplnění: <?= h(formatDateTime((string)$healthStatus['filled_at'])) ?></div>
-                    <?php endif; ?>
-                    <?php if (!empty($healthStatus['alerts'])): ?>
-                    <div class="small mt-1">
-                        <?php foreach ($healthStatus['alerts'] as $alert): ?>
-                        <div>• <?= h((string)($alert['alert_text'] ?? 'Upozornění')) ?></div>
-                        <?php endforeach; ?>
-                    </div>
-                    <?php endif; ?>
-                </div>
+            <div class="collapse" id="athleteDetailAppAccess">
+                <div class="card-body">
+                    <table class="table table-sm table-borderless mb-3">
+                        <tbody>
+                            <tr>
+                                <td class="text-muted fw-semibold">Stav přístupu</td>
+                                <td><?= !empty($athlete['login_enabled']) ? '<span class="badge bg-success">Aktivní</span>' : '<span class="badge bg-secondary">Nevytvořen</span>' ?></td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted fw-semibold">Heslo</td>
+                                <td>
+                                    <?php if (!empty($athlete['password'])): ?>
+                                        <span class="badge bg-success">Nastaveno</span>
+                                        <?php if (!empty($athlete['force_password_change'])): ?>
+                                            <span class="badge bg-warning text-dark ms-1">Vyžaduje změnu</span>
+                                        <?php endif; ?>
+                                        <small class="text-muted d-block">Poslední změna: <?= !empty($athlete['password_changed_at']) ? h(formatDateTime((string)$athlete['password_changed_at'])) : formatDate($athlete['created_at']) ?></small>
+                                    <?php else: ?>
+                                        <span class="badge bg-secondary">Bez hesla</span>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
 
-                <?php if ($lastSession): ?>
-                <div class="alert alert-light border mb-3 py-2">
-                    <small class="text-muted">Poslední trénink:</small><br>
-                    <strong><?= h($lastSession['set_name']) ?></strong>
-                    – <?= formatDateTime($lastSession['completed_at']) ?>
-                    <?php if ($lastSession['location']): ?>
-                    <span class="text-muted ms-2"><i class="fas fa-map-marker-alt"></i> <?= h($lastSession['location']) ?></span>
+                    <?php if (!empty($athlete['email'])): ?>
+                    <form method="post" class="mb-2">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="action" value="create_login_credentials">
+                        <button type="submit" class="btn btn-outline-dark w-100"
+                                onclick="return confirm('Vygenerovat nové přístupové heslo a zobrazit ho zde? (E-mail odeslán jen pokud SMTP funguje.)')">
+                            <i class="fas fa-key me-1"></i>
+                            <?= !empty($athlete['login_enabled']) ? 'Resetovat heslo sportovce' : 'Vytvořit přístup sportovce' ?>
+                        </button>
+                        <small class="text-muted d-block mt-2">Login = e-mail sportovce. Heslo se zobrazí na obrazovce i při nefunkčním SMTP.</small>
+                    </form>
+
+                    <?php if (!empty($athlete['login_enabled'])): ?>
+                    <form method="post">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="action" value="revoke_login_access">
+                        <button type="submit" class="btn btn-outline-secondary w-100"
+                                onclick="return confirm('Opravdu zrušit přístup tohoto sportovce do aplikace?')">
+                            <i class="fas fa-ban me-1"></i>Zrušit přístup sportovce
+                        </button>
+                    </form>
+                    <?php endif; ?>
+                    <?php else: ?>
+                    <div class="alert alert-light border mb-0">Pro vytvoření přístupu je nejprve potřeba doplnit e-mail sportovce.</div>
                     <?php endif; ?>
                 </div>
-                <?php endif; ?>
+            </div>
+        </div>
+    </div>
 
-                <?php if (!empty($athlete['online_only'])): ?>
-                <div class="alert alert-warning">Sportovec je pouze ONLINE. Nový klasický trénink nelze zahájit.<?php if ($activeTraining): ?> <a href="<?= BASE_URL ?>/<?= $activeTraining['paired_session_id'] ? 'training_paired_session.php?id=' . (int)$activeTraining['paired_session_id'] : 'training_session.php?id=' . (int)$activeTraining['id'] ?>">Pokračovat v rozpracovaném tréninku</a>.<?php endif; ?></div>
-                <?php elseif (empty($workoutSets)): ?>
-                <div class="alert alert-warning py-2 mb-0">
-                    <i class="fas fa-exclamation-triangle me-1"></i>
-                    Nejprve vytvořte <a href="<?= BASE_URL ?>/sady.php" class="alert-link">sady</a> a
-                    <a href="<?= BASE_URL ?>/exercises.php" class="alert-link">cviky</a>.
-                </div>
-                <?php else: ?>
-                <form action="<?= BASE_URL ?>/training_start.php" method="post" id="startTrainingForm"<?= $activeTraining ? ' onsubmit="return openActiveTrainingWarning();"' : '' ?>>
-                    <?= csrfField() ?>
-                    <input type="hidden" name="athlete_id" value="<?= $athleteId ?>">
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold" for="workout_set_id">Vyberte sadu</label>
-                        <select name="workout_set_id" id="workout_set_id" class="form-select" required>
-                            <option value="">– vyberte sadu –</option>
-                            <?php foreach ($workoutSets as $ws): ?>
-                            <?php
-                                // Krátký náhled jen s názvy cviků (bez popisku sady), max. 4 + zbytek souhrnně
-                                $namesPreview = '';
-                                if (!empty($ws['exercise_names'])) {
-                                    $namesArr = array_filter(array_map('trim', explode(',', (string)$ws['exercise_names'])), fn($n) => $n !== '');
-                                    $previewCount = 4;
-                                    if (count($namesArr) > $previewCount) {
-                                        $namesPreview = implode(', ', array_slice($namesArr, 0, $previewCount)) . ' a další ' . (count($namesArr) - $previewCount);
-                                    } else {
-                                        $namesPreview = implode(', ', $namesArr);
-                                    }
-                                    // Omezit celkovou délku, aby nativní rozbalovací seznam nepřetekl mimo obrazovku
-                                    if (mb_strlen($namesPreview) > 70) {
-                                        $namesPreview = rtrim(mb_substr($namesPreview, 0, 70)) . '…';
-                                    }
-                                }
-                            ?>
-                            <option value="<?= $ws['id'] ?>">
-                                <?= !empty($ws['is_global']) ? 'Globální: ' : '' ?><?= h($ws['name']) ?>
-                                (<?= $ws['exercise_count'] ?> <?= $ws['exercise_count'] === 1 ? 'cvik' : ($ws['exercise_count'] < 5 ? 'cviky' : 'cviků') ?>)
-                                <?php if ($ws['name'] === 'Flexibilní sada'): ?>
-                                    – přidávání cviků během tréninku
-                                <?php endif; ?>
-                                <?php if ($namesPreview !== ''): ?>
-                                    – <?= h($namesPreview) ?>
-                                <?php endif; ?>
-                            </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <button type="submit" class="btn btn-warning fw-bold">
-                        <i class="fas fa-play me-1"></i>Zahájit trénink
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm h-100 athlete-detail-order-card" style="order: 6">
+            <div class="card-header athlete-detail-card-header p-0">
+                <button class="athlete-detail-card-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#athleteDetailCommunication" aria-expanded="false" aria-controls="athleteDetailCommunication">
+                    <span><i class="fas fa-comments me-2"></i>Komunikace se sportovcem</span>
+                    <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                </button>
+            </div>
+            <div class="collapse" id="athleteDetailCommunication">
+                <div class="card-body">
+                    <?php if (!empty($athlete['email'])): ?>
+                    <form method="post" class="mb-3">
+                        <?= csrfField() ?>
+                        <input type="hidden" name="action" value="send_weight_invite">
+                        <button type="submit" class="btn btn-outline-dark w-100">
+                            <i class="fas fa-envelope me-1"></i>Odeslat výzvu k zadání váhy
+                        </button>
+                        <small class="text-muted d-block mt-2">Sportovec obdrží e-mail s bezpečným odkazem pro jednorázové zadání.</small>
+                    </form>
+                    <?php else: ?>
+                    <div class="alert alert-light border">Sportovec nemá vyplněný e-mail, výzvu nelze odeslat.</div>
+                    <?php endif; ?>
+
+                    <button type="button" class="btn btn-outline-dark w-100 mb-2" data-bs-toggle="modal" data-bs-target="#messageAthleteModal">
+                        <i class="fas fa-paper-plane me-1"></i>Napsat sportovci
                     </button>
-                </form>
-                <?php endif; ?>
+                    <a href="<?= BASE_URL ?>/athlete_chat.php?id=<?= (int)$athlete['id'] ?>" class="btn btn-outline-dark w-100">
+                        <i class="fas fa-comments me-1"></i>Chat se sportovcem
+                    </a>
+                </div>
             </div>
         </div>
     </div>
@@ -875,10 +1187,14 @@ function openActiveTrainingWarning() {
 </script>
 <?php endif; ?>
 
-<div class="card border-0 shadow-sm mb-4" id="health-questionnaire">
-    <div class="card-header bg-danger-subtle fw-semibold">
-        <i class="fas fa-heart-pulse me-2"></i>Zdravotní dotazník sportovce
+<div class="card border-0 shadow-sm mb-4 athlete-detail-order-card" id="health-questionnaire" style="order: 7">
+    <div class="card-header athlete-detail-card-header p-0">
+        <button class="athlete-detail-card-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#athleteDetailHealthQuestionnaire" aria-expanded="false" aria-controls="athleteDetailHealthQuestionnaire">
+            <span><i class="fas fa-heart-pulse me-2"></i>Zdravotní dotazník sportovce</span>
+            <i class="fas fa-chevron-down" aria-hidden="true"></i>
+        </button>
     </div>
+    <div class="collapse" id="athleteDetailHealthQuestionnaire">
     <div class="card-body">
         <div class="d-flex justify-content-end mb-3">
             <a href="<?= BASE_URL ?>/health_questionnaire_print.php?athlete_id=<?= (int)$athleteId ?>" target="_blank" rel="noopener" class="btn btn-outline-dark btn-sm">
@@ -955,14 +1271,19 @@ function openActiveTrainingWarning() {
         <div class="text-muted">Sportovec zatím nenahlásil žádné průběžné změny zdravotního stavu.</div>
         <?php endif; ?>
     </div>
+    </div>
 </div>
 
-<div class="row g-4 mb-4">
+<div class="row g-4 mb-4 athlete-detail-order-group">
     <div class="col-lg-4">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-primary text-white">
-                <i class="fas fa-weight-scale me-2"></i>Tělesná hmotnost
+        <div class="card border-0 shadow-sm h-100 athlete-detail-order-card athlete-detail-order-card--weight" id="weight-entry" style="order: 9">
+            <div class="card-header athlete-detail-card-header p-0">
+                <button class="athlete-detail-card-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#athleteDetailWeightInput" aria-expanded="<?= $editingWeightLog ? 'true' : 'false' ?>" aria-controls="athleteDetailWeightInput">
+                    <span><i class="fas fa-weight-scale me-2"></i>Tělesná hmotnost</span>
+                    <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                </button>
             </div>
+            <div class="collapse<?= $editingWeightLog ? ' show' : '' ?>" id="athleteDetailWeightInput">
             <div class="card-body">
                 <form method="post" class="mb-3">
                     <?= csrfField() ?>
@@ -993,61 +1314,20 @@ function openActiveTrainingWarning() {
                         <?php endif; ?>
                     </div>
                 </form>
-
-                <?php if (!empty($athlete['email'])): ?>
-                <form method="post" class="mb-2">
-                    <?= csrfField() ?>
-                    <input type="hidden" name="action" value="create_login_credentials">
-                    <button type="submit" class="btn btn-outline-dark w-100"
-                            onclick="return confirm('Vygenerovat nové přístupové heslo a zobrazit ho zde? (E-mail odeslán jen pokud SMTP funguje.)')">
-                        <i class="fas fa-key me-1"></i>
-                        <?= !empty($athlete['login_enabled']) ? 'Resetovat heslo sportovce' : 'Vytvořit přístup sportovce' ?>
-                    </button>
-                    <small class="text-muted d-block mt-2">Login = e-mail sportovce. Heslo se zobrazí na obrazovce i při nefunkčním SMTP.</small>
-                </form>
-
-                <?php if (!empty($athlete['login_enabled'])): ?>
-                <form method="post" class="mb-2">
-                    <?= csrfField() ?>
-                    <input type="hidden" name="action" value="revoke_login_access">
-                    <button type="submit" class="btn btn-outline-danger w-100"
-                            onclick="return confirm('Opravdu zrušit přístup tohoto sportovce do aplikace?')">
-                        <i class="fas fa-ban me-1"></i>Zrušit přístup sportovce
-                    </button>
-                </form>
-                <?php endif; ?>
-
-                <form method="post">
-                    <?= csrfField() ?>
-                    <input type="hidden" name="action" value="send_weight_invite">
-                    <button type="submit" class="btn btn-outline-primary w-100">
-                        <i class="fas fa-envelope me-1"></i>Odeslat výzvu k zadání váhy
-                    </button>
-                    <small class="text-muted d-block mt-2">Sportovec obdrží e-mail s bezpečným odkazem pro jednorázové zadání.</small>
-                </form>
-
-                <?php else: ?>
-                <div class="alert alert-warning py-2 mb-0">
-                    Sportovec nemá vyplněný e-mail, výzvu nelze odeslat.
-                </div>
-                <?php endif; ?>
-
-                <button type="button" class="btn btn-outline-success w-100 mt-2" data-bs-toggle="modal" data-bs-target="#messageAthleteModal">
-                    <i class="fas fa-paper-plane me-1"></i>Napsat sportovci
-                </button>
-                <a href="<?= BASE_URL ?>/athlete_chat.php?id=<?= (int)$athlete['id'] ?>" class="btn btn-outline-primary w-100 mt-2">
-                    <i class="fas fa-comments me-1"></i>Chat se sportovcem
-                </a>
+            </div>
             </div>
         </div>
     </div>
 
     <div class="col-lg-8">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
-                <span><i class="fas fa-chart-line me-2"></i>Vývoj hmotnosti</span>
-                <span class="badge bg-light text-dark"><?= (int)$weightStats['entries'] ?> záznamů</span>
+        <div class="card border-0 shadow-sm h-100 athlete-detail-order-card athlete-detail-order-card--chart" style="order: 10">
+            <div class="card-header athlete-detail-card-header p-0">
+                <button class="athlete-detail-card-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#athleteDetailWeightChart" aria-expanded="false" aria-controls="athleteDetailWeightChart">
+                    <span><i class="fas fa-chart-line me-2"></i>Vývoj hmotnosti <span class="badge bg-white text-dark border ms-1"><?= (int)$weightStats['entries'] ?> záznamů</span></span>
+                    <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                </button>
             </div>
+            <div class="collapse" id="athleteDetailWeightChart">
             <div class="card-body">
                 <?php if (empty($weightHistory)): ?>
                 <div class="text-center text-muted py-5">
@@ -1074,6 +1354,7 @@ function openActiveTrainingWarning() {
                 </div>
                 <canvas id="athleteWeightChart" style="max-height:340px"></canvas>
                 <?php endif; ?>
+            </div>
             </div>
         </div>
     </div>
@@ -1108,11 +1389,14 @@ function openActiveTrainingWarning() {
     </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-4" id="weight-history">
-    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <span><i class="fas fa-clock-rotate-left me-2"></i>Historie hmotnosti</span>
-        <span class="badge bg-light text-dark"><?= count($weightHistory) ?> záznamů</span>
+<div class="card border-0 shadow-sm mb-4 athlete-detail-order-card" id="weight-history" style="order: 11">
+    <div class="card-header athlete-detail-card-header p-0">
+        <button class="athlete-detail-card-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#athleteDetailWeightHistory" aria-expanded="false" aria-controls="athleteDetailWeightHistory">
+            <span><i class="fas fa-clock-rotate-left me-2"></i>Historie hmotnosti <span class="badge bg-white text-dark border ms-1"><?= count($weightHistory) ?> záznamů</span></span>
+            <i class="fas fa-chevron-down" aria-hidden="true"></i>
+        </button>
     </div>
+    <div class="collapse" id="athleteDetailWeightHistory">
     <div class="card-body p-0">
         <?php if (empty($weightHistory)): ?>
         <div class="text-center text-muted py-4">Zatím nejsou evidované žádné záznamy hmotnosti.</div>
@@ -1142,7 +1426,7 @@ function openActiveTrainingWarning() {
                         <td><strong><?= number_format((float)$weightRow['weight_kg'], 1, ',', '') ?> kg</strong></td>
                         <td><span class="badge bg-secondary"><?= h($sourceLabel) ?></span></td>
                         <td class="text-end">
-                            <a href="<?= BASE_URL ?>/athlete_detail.php?id=<?= $athleteId ?>&edit_weight=<?= (int)$weightRow['id'] ?>#weight-history" class="btn btn-sm btn-outline-primary">
+                            <a href="<?= BASE_URL ?>/athlete_detail.php?id=<?= $athleteId ?>&edit_weight=<?= (int)$weightRow['id'] ?>#weight-entry" class="btn btn-sm btn-outline-primary">
                                 <i class="fas fa-pen me-1"></i>Upravit
                             </a>
                             <form method="post" class="d-inline" onsubmit="return confirm('Opravdu smazat tento záznam hmotnosti?');">
@@ -1173,7 +1457,7 @@ function openActiveTrainingWarning() {
                         <td><strong><?= number_format((float)$weightRow['weight_kg'], 1, ',', '') ?> kg</strong></td>
                         <td><span class="badge bg-secondary"><?= h($sourceLabel) ?></span></td>
                         <td class="text-end">
-                            <a href="<?= BASE_URL ?>/athlete_detail.php?id=<?= $athleteId ?>&edit_weight=<?= (int)$weightRow['id'] ?>#weight-history" class="btn btn-sm btn-outline-primary">
+                            <a href="<?= BASE_URL ?>/athlete_detail.php?id=<?= $athleteId ?>&edit_weight=<?= (int)$weightRow['id'] ?>#weight-entry" class="btn btn-sm btn-outline-primary">
                                 <i class="fas fa-pen me-1"></i>Upravit
                             </a>
                             <form method="post" class="d-inline" onsubmit="return confirm('Opravdu smazat tento záznam hmotnosti?');">
@@ -1201,29 +1485,32 @@ function openActiveTrainingWarning() {
         <?php endif; ?>
         <?php endif; ?>
     </div>
+    </div>
 </div>
 
 <!-- Historie tréninků -->
-<div class="card border-0 shadow-sm">
-    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <span><i class="fas fa-history me-2"></i>Historie tréninků</span>
-        <?php if (!empty($sessions)): ?>
-        <div class="d-flex gap-2">
-            <button type="button" class="btn btn-outline-light btn-sm" id="toggleSelectTrainings">
-                <i class="fas fa-check-square me-1"></i>Označit vše
-            </button>
-            <button type="submit" form="bulkDeleteTrainingsForm" class="btn btn-danger btn-sm fw-bold" id="bulkDeleteBtn" disabled>
-                <i class="fas fa-trash me-1"></i>Smazat vybrané
-            </button>
-        </div>
-        <?php endif; ?>
+<div class="card border-0 shadow-sm athlete-detail-order-card" id="training-history" style="order: 12">
+    <div class="card-header athlete-detail-card-header p-0">
+        <button class="athlete-detail-card-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#athleteDetailTrainingHistory" aria-expanded="false" aria-controls="athleteDetailTrainingHistory">
+            <span><i class="fas fa-history me-2"></i>Historie tréninků <span class="badge bg-white text-dark border ms-1"><?= count($sessions) ?></span></span>
+            <i class="fas fa-chevron-down" aria-hidden="true"></i>
+        </button>
     </div>
+    <div class="collapse" id="athleteDetailTrainingHistory">
     <div class="card-body p-0">
         <?php if (empty($sessions)): ?>
         <div class="text-center py-4 text-muted">
             <i class="fas fa-inbox fa-2x mb-2"></i><br>Zatím žádné tréninky.
         </div>
         <?php else: ?>
+        <div class="d-flex justify-content-end gap-2 p-3 border-bottom">
+            <button type="button" class="btn btn-outline-dark btn-sm" id="toggleSelectTrainings">
+                <i class="fas fa-check-square me-1"></i>Označit vše
+            </button>
+            <button type="submit" form="bulkDeleteTrainingsForm" class="btn btn-outline-dark btn-sm" id="bulkDeleteBtn" disabled>
+                <i class="fas fa-trash me-1"></i>Smazat vybrané
+            </button>
+        </div>
         <form method="post" action="<?= BASE_URL ?>/training_delete.php" id="bulkDeleteTrainingsForm" onsubmit="return confirmBulkDeleteTrainings();">
             <?= csrfField() ?>
             <input type="hidden" name="redirect_to" value="<?= h(BASE_URL . '/athlete_detail.php?id=' . $athleteId) ?>">
@@ -1471,6 +1758,11 @@ function openActiveTrainingWarning() {
         </form>
         <?php endif; ?>
     </div>
+    </div>
+</div>
+
+</div>
+
 </div>
 
 <script>

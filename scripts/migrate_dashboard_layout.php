@@ -1,5 +1,5 @@
 <?php
-// Idempotent: creates the quick menu preference table. Run once after deploying: php scripts/migrate_dashboard_layout.php.
+// Idempotent: creates dashboard preference tables. Run once after deploying: php scripts/migrate_dashboard_layout.php.
 if (PHP_SAPI === 'cli') {
     require_once __DIR__ . '/../config/database.php';
 } else {
@@ -12,7 +12,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 try {
     dashboardLayoutEnsureSchema(getDB());
-    echo json_encode(['success' => true, 'message' => 'Nastavení rychlého menu je připraveno.'], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['success' => true, 'message' => 'Nastavení dashboardu a profilu je připraveno.'], JSON_UNESCAPED_UNICODE);
 } catch (PDOException $e) {
     error_log('Dashboard layout migration: ' . $e->getMessage());
     http_response_code(500);

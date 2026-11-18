@@ -115,8 +115,8 @@ function renderDashboardQuickMenu(string $role, int $userId, string $tiles): voi
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                 <h2 class="small text-uppercase fw-bold text-muted mb-0">Rychlé menu</h2>
                 <div class="d-flex flex-wrap gap-2">
-                    <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#quick-menu-all" aria-controls="quick-menu-all" aria-expanded="false">Všechny funkce</button>
-                    <button class="btn btn-outline-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#quick-menu-editor" aria-controls="quick-menu-editor" aria-expanded="false"<?= !$available ? ' disabled' : '' ?>>Upravit menu</button>
+                    <button class="btn btn-sm quick-menu-control" type="button" data-bs-toggle="collapse" data-bs-target="#quick-menu-all" aria-controls="quick-menu-all" aria-expanded="false">Všechny funkce</button>
+                    <button class="btn btn-sm quick-menu-control" type="button" data-bs-toggle="collapse" data-bs-target="#quick-menu-editor" aria-controls="quick-menu-editor" aria-expanded="false"<?= !$available ? ' disabled' : '' ?>>Upravit menu</button>
                 </div>
             </div>
             <?php if (!$available): ?>
@@ -128,6 +128,11 @@ function renderDashboardQuickMenu(string $role, int $userId, string $tiles): voi
                     <?php $position = array_search($key, $selected, true); ?>
                     <?= $position === false ? 'display: none !important;' : 'order: ' . (int)$position . ';' ?>
                 }
+                <?php if ($role === 'athlete' && in_array($key, $selected, true)): ?>
+                #quick-menu-all [data-shortcut="<?= h($key) ?>"] {
+                    display: none !important;
+                }
+                <?php endif; ?>
                 <?php endforeach; ?>
             </style>
             <div id="quick-menu-selected"><?= $tiles ?></div>

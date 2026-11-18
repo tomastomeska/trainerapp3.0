@@ -1,7 +1,7 @@
 'use strict';
 
 const APP_ROOT = new URL('/', self.location.origin);
-const APP_ICON = new URL('/assets/pwa/icon-192.png', self.location.origin).href;
+const APP_ICON = new URL('/assets/pwa/icon-192.png?v=2', self.location.origin).href;
 const NAVIGATION_DB = 'trainerapp-push-navigation';
 const NAVIGATION_STORE = 'pending';
 

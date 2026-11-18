@@ -87,9 +87,9 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title><?= h($fullTitle) ?></title>
-    <link rel="manifest" href="<?= BASE_URL ?>/manifest.webmanifest">
-    <link rel="icon" type="image/png" sizes="192x192" href="<?= BASE_URL ?>/assets/pwa/icon-192.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="<?= BASE_URL ?>/assets/pwa/icon-180.png">
+    <link rel="manifest" href="<?= BASE_URL ?>/manifest.webmanifest?v=2">
+    <link rel="icon" type="image/png" sizes="192x192" href="<?= BASE_URL ?>/assets/pwa/icon-192.png?v=2">
+    <link rel="apple-touch-icon" sizes="180x180" href="<?= BASE_URL ?>/assets/pwa/icon-180.png?v=2">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/style.css?v=<?= (int)@filemtime(__DIR__ . '/../assets/css/style.css') ?>">
@@ -211,10 +211,10 @@ function renderAthleteHeader(string $title = '', bool $withCharts = false, bool 
 <div class="d-flex athlete-compact-topbar justify-content-between align-items-center gap-2 flex-wrap mb-3">
     <div class="fw-bold fs-5"><?= h($title !== '' ? $title : 'Přehled') ?></div>
     <div class="d-flex align-items-center gap-2 flex-wrap">
-        <a href="<?= BASE_URL ?>/athlete_dashboard.php" class="btn btn-outline-secondary btn-sm fw-bold">
+        <a href="<?= BASE_URL ?>/athlete_dashboard.php" class="btn athlete-topbar-action fw-bold">
             <i class="fas fa-house me-1"></i>Domů
         </a>
-        <a href="<?= BASE_URL ?>/logout.php" class="btn btn-danger btn-sm fw-bold">
+        <a href="<?= BASE_URL ?>/logout.php" class="btn athlete-topbar-action athlete-topbar-action--logout fw-bold">
             <i class="fas fa-sign-out-alt me-1"></i>Odhlásit
         </a>
     </div>

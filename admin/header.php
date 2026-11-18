@@ -249,9 +249,10 @@ function renderAdminHeader(string $title = ''): void {
 		<div class="text-muted text-center small py-3">Načítám…</div>
 	</div>
 	<div class="admin-chat-panel-body d-none" id="adminHubChatBody"></div>
-	<form class="admin-chat-panel-footer d-none" id="adminHubChatForm">
-		<input type="text" class="form-control" id="adminHubChatInput" maxlength="4000" placeholder="Napište zprávu…" autocomplete="off" required>
-		<button type="submit" class="btn btn-primary" id="adminHubChatSendBtn"><i class="fas fa-paper-plane"></i></button>
+	<form class="admin-chat-panel-footer d-none" id="adminHubChatForm" data-chat-composer>
+		<input type="text" class="form-control" id="adminHubChatInput" name="body" data-chat-input maxlength="4000" placeholder="Napište zprávu…" autocomplete="off">
+		<button type="submit" class="btn btn-primary" id="adminHubChatSendBtn" data-chat-send><i class="fas fa-paper-plane"></i></button>
+		<span class="chat-send-error" data-chat-error role="status"></span>
 	</form>
 </div>
 
@@ -299,9 +300,24 @@ function renderAdminHeader(string $title = ''): void {
 .admin-chat-bubble-time { display: block; margin-top: 3px; font-size: 10.5px; color: #667781; text-align: right; }
 .admin-chat-read-status { margin-left: 4px; font-weight: 700; letter-spacing: -1px; }
 .admin-chat-read-status.is-read { color: #4f46e5; }
-.admin-chat-panel-footer { display: flex; gap: 8px; padding: 10px; background: #f0f0f0; border-top: 1px solid #ddd; }
+.admin-chat-panel-footer { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; background: #f0f0f0; border-top: 1px solid #ddd; }
+.admin-chat-panel-footer .chat-composer-wrap { display: flex; align-items: center; }
+.admin-chat-panel-footer .chat-composer-wrap > input { border-radius: 20px; padding: 10px 14px; }
+.chat-send-error { flex-basis: 100%; color: #b02a37; font-size: 12px; }
+.chat-send-error:empty { display: none; }
+.admin-chat-bubble-attachment { display: block; max-width: 100%; max-height: 220px; border-radius: 8px; }
+.admin-chat-bubble video.admin-chat-bubble-attachment { width: 100%; }
 @media (max-width: 768px) {
-	.admin-chat-panel { right: 12px; bottom: 82px; width: calc(100vw - 24px); }
+	.admin-chat-panel {
+		inset: 0;
+		width: auto;
+		height: auto;
+		max-width: none;
+		max-height: none;
+		border-radius: 0;
+	}
+	.admin-chat-panel-header { padding-top: calc(12px + env(safe-area-inset-top, 0px)); }
+	.admin-chat-panel-footer { padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
 	.admin-chat-fab { right: 12px; bottom: 12px; }
 }
 </style>
@@ -326,6 +342,7 @@ function renderAdminHeader(string $title = ''): void {
 	let isOpen = false;
 	let currentThread = null;
 	let lastId = 0;
+	let lastDeletionId = 0;
 	let fastPollTimer = null;
 	let slowPollTimer = null;
 
@@ -342,21 +359,96 @@ function renderAdminHeader(string $title = ''): void {
 		}
 	};
 
-	const renderMessage = (m) => {
+	const renderMessage = (m, existingRow = null) => {
+		if (!existingRow) {
+			existingRow = body.querySelector('[data-message-id="' + Number(m.id) + '"]');
+		}
 		const row = document.createElement('div');
 		const isMine = m.sender === 'admin';
 		row.className = 'admin-chat-bubble-row from-' + (isMine ? 'admin' : 'user');
+		row.dataset.messageId = String(m.id);
 		let html = '<div class="admin-chat-bubble">' + escapeHtml(m.body).replace(/\n/g, '<br>');
 		if (m.attachment_url) {
-			html += '<div class="mt-1"><a href="' + m.attachment_url + '" target="_blank" rel="noopener"><i class="fas fa-paperclip"></i> ' + escapeHtml(m.attachment_name || 'Příloha') + '</a></div>';
+			if (m.attachment_type && m.attachment_type.indexOf('image/') === 0) {
+				html += '<div class="mt-1"><a href="' + escapeHtml(m.attachment_url) + '" target="_blank" rel="noopener">'
+					+ '<img class="admin-chat-bubble-attachment" src="' + escapeHtml(m.attachment_url) + '" alt="' + escapeHtml(m.attachment_name || 'Obrázek') + '"></a></div>';
+			} else if (m.attachment_type && m.attachment_type.indexOf('video/') === 0) {
+				html += '<div class="mt-1"><div class="admin-chat-video-preview" data-chat-video-preview>'
+					+ '<video class="admin-chat-bubble-attachment" preload="metadata" playsinline><source src="' + escapeHtml(m.attachment_url) + '" type="' + escapeHtml(m.attachment_type) + '"></video>'
+					+ '<img class="admin-chat-video-poster" alt="" aria-hidden="true">'
+					+ '<button type="button" class="admin-chat-video-play" aria-label="Přehrát video"><i class="fas fa-play" aria-hidden="true"></i></button>'
+					+ '</div></div>';
+			} else {
+				html += '<div class="mt-1"><a href="' + escapeHtml(m.attachment_url) + '" target="_blank" rel="noopener"><i class="fas fa-paperclip"></i> ' + escapeHtml(m.attachment_name || 'Příloha') + '</a></div>';
+			}
 		}
 		html += '<span class="admin-chat-bubble-time">' + escapeHtml(m.created_at)
 			+ (isMine ? '<span class="admin-chat-read-status' + (m.read_at ? ' is-read' : '') + '" title="' + (m.read_at ? 'Přečteno' : 'Odesláno') + '">' + (m.read_at ? '✓✓' : '✓') + '</span>' : '')
 			+ '</span></div>';
+		html = html.slice(0, -6);
+		html += '<button type="button" class="chat-message-more" data-chat-message-menu-toggle aria-label="Možnosti zprávy" title="Možnosti zprávy"><i class="fas fa-ellipsis-v" aria-hidden="true"></i></button>'
+			+ '<div class="chat-message-menu" data-chat-message-menu hidden>'
+			+ '<button type="button" data-chat-delete-scope="me">Odstranit pro mě</button>'
+			+ (isMine && !m.deleted_for_everyone ? '<button type="button" data-chat-delete-scope="everyone">Odstranit pro všechny</button>' : '')
+			+ '</div></div>';
 		row.innerHTML = html;
-		body.appendChild(row);
+		if (existingRow) existingRow.replaceWith(row);
+		else body.appendChild(row);
 		if (Number(m.id) > lastId) { lastId = Number(m.id); }
+		lastDeletionId = Math.max(lastDeletionId, Number(m.deleted_event_id) || 0);
 	};
+
+	body.addEventListener('click', async (event) => {
+		const target = event.target instanceof Element ? event.target : null;
+		if (!target) return;
+		const toggle = target.closest('[data-chat-message-menu-toggle]');
+		if (toggle) {
+			const menu = toggle.parentElement.querySelector('[data-chat-message-menu]');
+			body.querySelectorAll('[data-chat-message-menu]').forEach((item) => {
+				if (item !== menu) item.hidden = true;
+			});
+			menu.hidden = !menu.hidden;
+			return;
+		}
+
+		const deleteButton = target.closest('[data-chat-delete-scope]');
+		if (!deleteButton) {
+			if (!target.closest('[data-chat-message-menu]')) {
+				body.querySelectorAll('[data-chat-message-menu]').forEach((item) => { item.hidden = true; });
+			}
+			return;
+		}
+		const row = deleteButton.closest('.admin-chat-bubble-row');
+		const scope = deleteButton.dataset.chatDeleteScope;
+		if (!row || !currentThread) return;
+		if (scope === 'everyone' && !window.confirm('Opravdu chcete odstranit tuto zprávu pro všechny účastníky?')) return;
+
+		const formData = new FormData();
+		formData.append('message_id', row.dataset.messageId);
+		formData.append('scope', scope);
+		formData.append('csrf_token', csrfToken);
+		try {
+			const response = await fetch(apiUrl + '?action=delete&type=' + currentThread.type + '&target_id=' + currentThread.id, {
+				method: 'POST',
+				body: formData,
+				credentials: 'same-origin'
+			});
+			const data = await response.json();
+			if (!response.ok || !data || !data.ok) {
+				throw new Error(data && data.error ? data.error : 'Zprávu se nepodařilo odstranit.');
+			}
+			if (scope === 'me') {
+				row.remove();
+			} else if (data.message) {
+				renderMessage(data.message, row);
+			} else {
+				row.remove();
+			}
+			if (data.warning) window.alert(data.warning);
+		} catch (error) {
+			window.alert(error && error.message ? error.message : 'Zprávu se nepodařilo odstranit.');
+		}
+	});
 
 	const scrollToBottom = () => { body.scrollTop = body.scrollHeight; };
 
@@ -374,6 +466,7 @@ function renderAdminHeader(string $title = ''): void {
 	const openThread = (type, id, name) => {
 		currentThread = { type, id, label: name };
 		lastId = 0;
+		lastDeletionId = 0;
 		title.innerHTML = '<i class="' + (type === 'coach' ? 'fas fa-user-tie' : 'fas fa-person-running') + ' me-2"></i>' + escapeHtml(name);
 		backBtn.classList.remove('d-none');
 		hub.classList.add('d-none');
@@ -417,7 +510,7 @@ function renderAdminHeader(string $title = ''): void {
 	const pollNewMessages = async () => {
 		if (!currentThread) { return; }
 		try {
-			const res = await fetch(apiUrl + '?action=poll&type=' + currentThread.type + '&target_id=' + currentThread.id + '&since_id=' + lastId, { credentials: 'same-origin' });
+			const res = await fetch(apiUrl + '?action=poll&type=' + currentThread.type + '&target_id=' + currentThread.id + '&since_id=' + lastId + '&since_deletion_id=' + lastDeletionId, { credentials: 'same-origin' });
 			const data = await res.json();
 			if (data && data.ok && data.messages.length > 0) {
 				data.messages.forEach(renderMessage);
@@ -477,26 +570,39 @@ function renderAdminHeader(string $title = ''): void {
 	form.addEventListener('submit', async function (e) {
 		e.preventDefault();
 		const text = input.value.trim();
-		if (text === '' || !currentThread) { return; }
+		const fileInput = form.querySelector('input[type="file"]');
+		const cameraInput = form.querySelector('input[name="camera_attachment"]');
+		const hasAttachment = Boolean((fileInput && fileInput.files.length) || (cameraInput && cameraInput.files.length));
+		const errorMessage = form.querySelector('[data-chat-error]');
+		if (errorMessage) errorMessage.textContent = '';
+		if ((text === '' && !hasAttachment) || !currentThread) { return; }
 
 		const sendBtn = document.getElementById('adminHubChatSendBtn');
 		sendBtn.disabled = true;
 		try {
-			const formData = new FormData();
+			const formData = new FormData(form);
 			formData.append('action', 'send');
 			formData.append('type', currentThread.type);
 			formData.append('target_id', currentThread.id);
-			formData.append('body', text);
 			formData.append('csrf_token', csrfToken);
 
 			const res = await fetch(apiUrl, { method: 'POST', body: formData, credentials: 'same-origin' });
 			const data = await res.json();
 			if (data && data.ok) {
 				input.value = '';
+				form.reset();
+				const attachmentPreview = form.querySelector('.chat-attachment-preview');
+				if (attachmentPreview) attachmentPreview.hidden = true;
 				await pollNewMessages();
+			} else if (errorMessage) {
+				errorMessage.textContent = data.error || 'Zprávu se nepodařilo odeslat.';
 			}
-		} catch (e) { /* tichy fail */ } finally {
+		} catch (e) {
+			if (errorMessage) errorMessage.textContent = 'Zprávu se nepodařilo odeslat. Zkontrolujte připojení a zkuste to znovu.';
+			console.error('Odeslání zprávy selhalo:', e);
+		} finally {
 			sendBtn.disabled = false;
+			sendBtn.removeAttribute('aria-busy');
 			input.focus();
 		}
 	});
@@ -515,6 +621,8 @@ function renderAdminFooter(): void {
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="<?= BASE_URL ?>/assets/js/app.js"></script>
+<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/chat-composer.css?v=6">
+<script src="<?= BASE_URL ?>/assets/js/chat-composer.js?v=6"></script>
 <script>
 // Admin menu – rozbalovací skupiny + mobilní off-canvas sidebar
 document.addEventListener('DOMContentLoaded', function () {

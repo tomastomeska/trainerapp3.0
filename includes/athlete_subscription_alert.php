@@ -44,7 +44,7 @@ $subscriptionPaymentAmount = (float)($unpaidOnlineSubscription['payment_amount']
     <?php endif; ?>
 </div>
 <?php endif; ?>
-<div class="alert alert-<?= $subscriptionAlertClass ?> mb-3">
+<div class="alert alert-<?= $subscriptionAlertClass ?> mb-3 athlete-subscription-status <?= $activeOnlineSubscription ? 'athlete-subscription-status--active' : 'athlete-subscription-status--inactive' ?>">
     <strong>Online tréninky:</strong>
     <?php if ($activeOnlineSubscription): ?>
         Předplatné je platné do <?= h(formatDate($activeOnlineSubscription['ends_on'])) ?>.

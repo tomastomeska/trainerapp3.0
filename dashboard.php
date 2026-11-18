@@ -143,13 +143,13 @@ if ($mustChangePassword && $_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $sortOptions = [
-    'first_name' => [
-        'label' => 'Jméno (A-Z)',
-        'sql' => 'a.first_name ASC, a.last_name ASC, a.id ASC',
-    ],
     'last_name' => [
-        'label' => 'Příjmení (A-Z)',
+        'label' => 'Příjmení, potom jméno (A-Z)',
         'sql' => 'a.last_name ASC, a.first_name ASC, a.id ASC',
+    ],
+    'first_name' => [
+        'label' => 'Jméno, potom příjmení (A-Z)',
+        'sql' => 'a.first_name ASC, a.last_name ASC, a.id ASC',
     ],
     'last_training' => [
         'label' => 'Poslední trénink (nejnovější)',
@@ -161,9 +161,9 @@ $sortOptions = [
     ],
 ];
 
-$selectedSort = (string)($_GET['sort'] ?? 'first_name');
+$selectedSort = (string)($_GET['sort'] ?? 'last_name');
 if (!isset($sortOptions[$selectedSort])) {
-    $selectedSort = 'first_name';
+    $selectedSort = 'last_name';
 }
 
 $athleteOrderSql = $sortOptions[$selectedSort]['sql'];
@@ -340,7 +340,6 @@ $todayCalendarStmt = $pdo->prepare(
              AND e.approval_status = 'approved'
        AND e.starts_at >= CURDATE()
        AND e.starts_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
-       AND e.ends_at > NOW()
          ORDER BY e.starts_at ASC, e.id ASC"
 );
 $todayCalendarStmt->execute([$coachId]);
@@ -360,10 +359,17 @@ $formatCalendarEventPerson = static function (array $event): string {
 
 $ongoingTodayEvents = [];
 $nextTodayEvent = null;
+$todayPendingCount = 0;
 
 foreach ($todayPlannedEvents as $event) {
     $eventStart = new DateTimeImmutable($event['starts_at']);
     $eventEnd = new DateTimeImmutable($event['ends_at']);
+
+    if ($eventEnd <= $now) {
+        continue;
+    }
+
+    $todayPendingCount++;
 
     if ($eventStart <= $now && $eventEnd > $now) {
         $ongoingTodayEvents[] = $event;
@@ -374,8 +380,6 @@ foreach ($todayPlannedEvents as $event) {
         $nextTodayEvent = $event;
     }
 }
-
-$todayPendingCount = count($todayPlannedEvents);
 
 $unreadInboxCount = 0;
 $pendingCalendarRequestCount = 0;

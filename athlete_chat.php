@@ -2,12 +2,15 @@
 // athlete_chat.php – individuální chat trenéra s jedním jeho sportovcem
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/chat_attachments.php';
+require_once __DIR__ . '/includes/chat_message_deletions.php';
 require_once __DIR__ . '/includes/header.php';
 require_once __DIR__ . '/includes/push_chat_notifications.php';
 
 requireLogin();
 $coachId = getCurrentCoachId();
 $pdo = getDB();
+ensureChatMessageDeletionTable($pdo);
 
 $athleteId = intParam($_GET, 'id');
 $athleteStmt = $pdo->prepare('SELECT id, first_name, last_name, email FROM athletes WHERE id = ? AND coach_id = ? LIMIT 1');
@@ -57,38 +60,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'send'
     }
 
     $body = mb_substr(trim((string)($_POST['body'] ?? '')), 0, 4000, 'UTF-8');
-    if ($body === '') {
-        $errors[] = 'Text zprávy nesmí být prázdný.';
-    }
-
-    $attachmentPath = null;
-    $attachmentName = null;
-    if (!empty($_FILES['attachment']['name'])) {
-        $upload = $_FILES['attachment'];
-        if ((int)$upload['error'] !== UPLOAD_ERR_OK) {
-            $errors[] = 'Chyba při nahrávání přílohy (kód ' . (int)$upload['error'] . ').';
-        } elseif ((int)$upload['size'] > 50 * 1024 * 1024) {
-            $errors[] = 'Příloha nesmí být větší než 50 MB.';
-        } else {
-            $extension = strtolower(pathinfo((string)$upload['name'], PATHINFO_EXTENSION));
-            $allowedExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'zip', 'rar', '7z', 'mp4', 'mov', 'avi', 'mkv', 'txt', 'ppt', 'pptx'];
-            if (!in_array($extension, $allowedExtensions, true)) {
-                $errors[] = 'Typ souboru .' . h($extension) . ' není povolen.';
-            } else {
-                $uploadDir = __DIR__ . '/uploads/messages/';
-                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
-                    $errors[] = 'Přílohu se nepodařilo uložit.';
-                } else {
-                    $attachmentName = mb_substr((string)$upload['name'], 0, 255, 'UTF-8');
-                    $attachmentPath = time() . '_' . bin2hex(random_bytes(4)) . '.' . $extension;
-                    if (!move_uploaded_file((string)$upload['tmp_name'], $uploadDir . $attachmentPath)) {
-                        $attachmentPath = null;
-                        $attachmentName = null;
-                        $errors[] = 'Přílohu se nepodařilo uložit.';
-                    }
-                }
-            }
-        }
+    $attachment = receiveChatAttachment($_FILES);
+    if ($attachment['error'] !== null) {
+        $errors[] = $attachment['error'];
+    } elseif ($body === '' && $attachment['path'] === null) {
+        $errors[] = 'Zadejte zprávu nebo přidejte přílohu.';
     }
 
     if (empty($errors)) {
@@ -97,14 +73,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'send'
                 'INSERT INTO coach_athlete_chat_messages (coach_id, athlete_id, sender, body, attachment_path, attachment_name, coach_read_at)
                  VALUES (?, ?, "coach", ?, ?, ?, NOW())'
             );
-            $ins->execute([$coachId, $athleteId, $body, $attachmentPath, $attachmentName]);
+            $ins->execute([$coachId, $athleteId, $body, $attachment['path'], $attachment['name']]);
             $newId = (int)$pdo->lastInsertId();
             pushNotifyCoachAthleteChatMessage($pdo, $newId);
 
             if (!empty($athlete['email'])) {
                 $coach = getCurrentCoach();
                 $coachName = trim((string)($coach['name'] ?? '')) !== '' ? (string)$coach['name'] : trim((string)($coach['username'] ?? 'trenér'));
-                notifyAthleteAboutNewCoachChatMessage($coachId, $athleteId, $newId, (string)$athlete['email'], $athleteName, $coachName, $body);
+                notifyAthleteAboutNewCoachChatMessage($coachId, $athleteId, $newId, (string)$athlete['email'], $athleteName, $coachName, chatNotificationText($body, $attachment['name']));
             }
 
             redirect(BASE_URL . '/athlete_chat.php?id=' . $athleteId);
@@ -118,9 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'send'
 $pdo->prepare("UPDATE coach_athlete_chat_messages SET coach_read_at = NOW() WHERE coach_id = ? AND athlete_id = ? AND sender = 'athlete' AND coach_read_at IS NULL")
     ->execute([$coachId, $athleteId]);
 
-$thread = $pdo->prepare('SELECT * FROM coach_athlete_chat_messages WHERE coach_id = ? AND athlete_id = ? ORDER BY created_at ASC, id ASC');
-$thread->execute([$coachId, $athleteId]);
-$messages = $thread->fetchAll();
+$messages = fetchChatMessagesForUser($pdo, 'coach_athlete_chat_messages', ['coach_id' => $coachId, 'athlete_id' => $athleteId], 'coach', $coachId);
 
 renderHeader('Chat: ' . $athleteName);
 ?>
@@ -137,12 +111,12 @@ renderHeader('Chat: ' . $athleteName);
 <div class="row justify-content-center">
     <div class="col-lg-8">
         <div class="card shadow-sm">
-            <div class="card-body" style="max-height:60vh; overflow-y:auto" id="chatScroll">
+            <div class="card-body" style="max-height:60vh; overflow-y:auto" id="chatScroll" data-chat-delete-api="<?= h(BASE_URL . '/api/coach_athlete_chat.php?athlete_id=' . $athleteId . '&action=delete') ?>" data-chat-delete-csrf="<?= h(csrfToken()) ?>">
                 <?php if (empty($messages)): ?>
                 <div class="text-muted text-center py-4">Zatím žádné zprávy. Napište sportovci první zprávu.</div>
                 <?php else: foreach ($messages as $m): $isCoach = $m['sender'] === 'coach'; ?>
-                <div class="d-flex mb-3 <?= $isCoach ? 'justify-content-end' : 'justify-content-start' ?>">
-                    <div class="p-2 px-3 rounded-3 <?= $isCoach ? 'bg-primary text-white' : 'bg-light border' ?>" style="max-width:75%">
+                <div class="d-flex mb-3 <?= $isCoach ? 'justify-content-end' : 'justify-content-start' ?>" data-message-id="<?= (int)$m['id'] ?>">
+                    <div class="p-2 px-3 rounded-3 <?= $isCoach ? 'bg-primary text-white' : 'bg-light border' ?>" style="max-width:75%;position:relative;padding-right:2.5rem">
                         <div style="white-space:pre-wrap"><?= h((string)$m['body']) ?></div>
                         <?php if (!empty($m['attachment_name'])): ?>
                         <div class="mt-1">
@@ -154,20 +128,24 @@ renderHeader('Chat: ' . $athleteName);
                         <div class="small mt-1 <?= $isCoach ? 'text-white-50' : 'text-muted' ?>">
                             <?= $isCoach ? 'Vy' : h($athleteName) ?> · <?= formatDateTime((string)$m['created_at']) ?>
                         </div>
+                        <button type="button" class="chat-message-more" data-chat-message-menu-toggle aria-label="Možnosti zprávy" title="Možnosti zprávy"><i class="fas fa-ellipsis-v" aria-hidden="true"></i></button>
+                        <div class="chat-message-menu" data-chat-message-menu hidden>
+                            <button type="button" data-chat-delete-scope="me">Odstranit pro mě</button>
+                            <?php if ($isCoach && empty($m['deleted_for_everyone'])): ?><button type="button" data-chat-delete-scope="everyone">Odstranit pro všechny</button><?php endif; ?>
+                        </div>
                     </div>
                 </div>
                 <?php endforeach; endif; ?>
             </div>
             <div class="card-footer">
-                <form method="post" enctype="multipart/form-data">
+                <form method="post" enctype="multipart/form-data" data-chat-composer>
                     <?= csrfField() ?>
                     <input type="hidden" name="action" value="send">
                     <div class="mb-2">
-                        <textarea name="body" class="form-control" rows="3" maxlength="4000" placeholder="Napište zprávu sportovci..." required></textarea>
+                        <textarea name="body" data-chat-input class="form-control" rows="3" maxlength="4000" placeholder="Napište zprávu sportovci..."></textarea>
                     </div>
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                        <input type="file" name="attachment" class="form-control form-control-sm" style="max-width:300px" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.jpg,.jpeg,.png,.gif,.webp,.zip,.rar,.7z,.mp4,.mov,.avi,.mkv,.txt,.ppt,.pptx">
-                        <button type="submit" class="btn btn-primary"><i class="fas fa-paper-plane me-1"></i>Odeslat</button>
+                        <button type="submit" data-chat-send class="btn btn-primary"><i class="fas fa-paper-plane me-1"></i>Odeslat</button>
                     </div>
                 </form>
             </div>

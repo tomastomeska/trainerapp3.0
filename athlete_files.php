@@ -194,9 +194,94 @@ foreach ($files as $file) {
 
 renderAthleteHeader('Soubory', false, true);
 ?>
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-    <h2 class="mb-0"><i class="fas fa-folder-open me-2 text-primary"></i>Soubory</h2>
-</div>
+<style>
+.athlete-file-group {
+    padding: 1rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #fff;
+}
+
+.athlete-file-group + .athlete-file-group {
+    margin-top: .75rem;
+}
+
+.athlete-file-group-header,
+.athlete-file-meta,
+.athlete-file-actions,
+.athlete-file-links,
+.athlete-file-link {
+    display: flex;
+    align-items: center;
+}
+
+.athlete-file-group-header,
+.athlete-file-meta,
+.athlete-file-actions {
+    justify-content: space-between;
+    gap: .75rem;
+}
+
+.athlete-file-group-header {
+    padding-bottom: .75rem;
+    border-bottom: 1px solid #e2e8f0;
+    color: #273449;
+    font-weight: 700;
+}
+
+.athlete-file-group-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.athlete-file-links {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .5rem;
+    padding: .75rem 0;
+}
+
+.athlete-file-link {
+    justify-content: space-between;
+    gap: .75rem;
+    min-width: 0;
+    padding: .55rem .7rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 9px;
+    color: #765900;
+    text-decoration: none;
+}
+
+.athlete-file-link:hover {
+    border-color: #e8c34f;
+    background: #fffaf0;
+    color: #5f4900;
+}
+
+.athlete-file-meta {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    color: #64748b;
+    font-size: .85rem;
+}
+
+.athlete-file-actions {
+    margin-top: .75rem;
+    padding-top: .75rem;
+    border-top: 1px solid #e2e8f0;
+}
+
+@media (max-width: 575.98px) {
+    .athlete-file-group {
+        padding: .8rem;
+    }
+
+    .athlete-file-actions {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
+</style>
 
 <?php if (!empty($errors)): ?>
 <div class="alert alert-danger"><ul class="mb-0"><?php foreach ($errors as $error): ?><li><?= h($error) ?></li><?php endforeach; ?></ul></div>
@@ -204,8 +289,11 @@ renderAthleteHeader('Soubory', false, true);
 
 <div class="row justify-content-center mb-4">
     <div class="col-lg-7">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body p-4 text-center">
+        <section class="card athlete-page-card shadow-sm">
+            <div class="card-header">
+                <h2><i class="fas fa-cloud-arrow-up me-2 text-warning"></i>Nahrát soubor</h2>
+            </div>
+            <div class="card-body p-3 p-md-4">
                 <form method="post" enctype="multipart/form-data">
                     <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
                     <input type="hidden" name="action" value="upload">
@@ -213,7 +301,7 @@ renderAthleteHeader('Soubory', false, true);
                         <label class="form-label fw-semibold" for="athleteFile">Vybrat soubor</label>
                         <input type="file" name="files[]" id="athleteFile" class="form-control" required>
                     </div>
-                    <button type="button" id="addAnotherFile" class="btn btn-outline-primary btn-sm mb-3"><i class="fas fa-plus me-1"></i>Přidat další soubor</button>
+                    <button type="button" id="addAnotherFile" class="btn athlete-page-action mb-3"><i class="fas fa-plus"></i>Přidat další soubor</button>
                     <div class="text-start">
                         <label class="form-label fw-semibold">Typ souboru</label>
                         <select name="document_category" class="form-select mb-3" required>
@@ -226,26 +314,60 @@ renderAthleteHeader('Soubory', false, true);
                             <label class="form-check-label" for="shareWithCoach">Zpřístupnit soubor trenérovi</label>
                         </div>
                     </div>
-                    <button type="submit" class="btn btn-success mt-4"><i class="fas fa-upload me-1"></i>Nahrát</button>
+                    <button type="submit" class="btn athlete-page-action athlete-page-action--primary mt-4"><i class="fas fa-upload"></i>Nahrát</button>
                 </form>
             </div>
-        </div>
+        </section>
     </div>
 </div>
 
 <?php if (empty($files)): ?>
 <div class="alert alert-light border text-center py-4"><i class="fas fa-file-upload fa-2x text-muted mb-2 d-block"></i>Zatím zde nemáte žádné nahrané soubory.</div>
 <?php else: ?>
-<div class="card border-0 shadow-sm"><div class="table-responsive"><table class="table align-middle mb-0">
-    <thead><tr><th>Soubor</th><th>Typ</th><th>Nahráno</th><th>Trenér</th><th class="text-end">Akce</th></tr></thead>
-    <tbody><?php foreach ($fileGroups as $group): $file = $group['primary']; ?><tr>
-        <td><i class="fas fa-file me-2 text-primary"></i><strong><?= h($file['display_name'] ?: $file['original_name']) ?></strong><?php if (count($group['files']) > 1): ?><span class="badge bg-secondary ms-1"><?= count($group['files']) ?> souborů</span><?php endif; ?><?php foreach ($group['files'] as $groupFile): ?><small class="text-muted d-block ms-4"><a href="<?= BASE_URL ?>/athlete_file_download.php?id=<?= (int)$groupFile['id'] ?>"><?= h($groupFile['original_name']) ?></a> (<?= round((int)$groupFile['file_size'] / 1024, 1) ?> KB)</small><?php endforeach; ?></td>
-        <td><?= h($categories[$file['document_category']] ?? $categories['other']) ?></td>
-        <td><?= h(date('d.m.Y', strtotime($file['created_at']))) ?></td>
-        <td><form method="post" class="m-0"><input type="hidden" name="csrf_token" value="<?= csrfToken() ?>"><input type="hidden" name="action" value="toggle_sharing"><input type="hidden" name="file_id" value="<?= (int)$file['id'] ?>"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" role="switch" name="shared_with_coach" <?= (int)$file['shared_with_coach'] === 1 ? 'checked' : '' ?> onchange="this.form.submit()" aria-label="Zpřístupnit trenérovi"></div></form></td>
-        <td class="text-end"><form method="post" class="d-inline" onsubmit="return confirm('Opravdu smazat <?= count($group['files']) > 1 ? 'celou sadu (' . count($group['files']) . ' souborů)' : 'tento soubor' ?>? Tato akce je nenávratná a soubory nebude možné obnovit.')"><input type="hidden" name="csrf_token" value="<?= csrfToken() ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="file_id" value="<?= (int)$file['id'] ?>"><button class="btn btn-outline-danger btn-sm" title="Smazat"><i class="fas fa-trash"></i></button></form></td>
-    </tr><?php endforeach; ?></tbody>
-</table></div></div>
+<section class="card athlete-page-card shadow-sm mb-4">
+    <div class="card-header">
+        <h2><i class="fas fa-folder-open me-2 text-warning"></i>Moje soubory <span class="badge rounded-pill text-bg-warning ms-1"><?= count($fileGroups) ?></span></h2>
+    </div>
+    <div class="card-body p-2 p-md-3">
+        <?php foreach ($fileGroups as $group): $file = $group['primary']; ?>
+        <article class="athlete-file-group">
+            <div class="athlete-file-group-header">
+                <div class="athlete-file-group-title"><i class="fas fa-file-lines me-2 text-warning"></i><?= h($file['display_name'] ?: $file['original_name']) ?></div>
+                <?php if (count($group['files']) > 1): ?><span class="badge rounded-pill text-bg-warning"><?= count($group['files']) ?> souborů</span><?php endif; ?>
+            </div>
+            <div class="athlete-file-links">
+                <?php foreach ($group['files'] as $groupFile): ?>
+                <a class="athlete-file-link" href="<?= BASE_URL ?>/athlete_file_download.php?id=<?= (int)$groupFile['id'] ?>">
+                    <span class="text-break"><i class="fas fa-download me-2"></i><?= h($groupFile['original_name']) ?></span>
+                    <small class="text-muted text-nowrap"><?= round((int)$groupFile['file_size'] / 1024, 1) ?> KB</small>
+                </a>
+                <?php endforeach; ?>
+            </div>
+            <div class="athlete-file-meta">
+                <span><i class="fas fa-folder me-1"></i><?= h($categories[$file['document_category']] ?? $categories['other']) ?></span>
+                <span><i class="fas fa-calendar me-1"></i><?= h(date('d.m.Y', strtotime($file['created_at']))) ?></span>
+            </div>
+            <div class="athlete-file-actions">
+                <form method="post" class="m-0">
+                    <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                    <input type="hidden" name="action" value="toggle_sharing">
+                    <input type="hidden" name="file_id" value="<?= (int)$file['id'] ?>">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" name="shared_with_coach" id="shareWithCoach<?= (int)$file['id'] ?>" <?= (int)$file['shared_with_coach'] === 1 ? 'checked' : '' ?> onchange="this.form.submit()">
+                        <label class="form-check-label" for="shareWithCoach<?= (int)$file['id'] ?>">Zpřístupnit trenérovi</label>
+                    </div>
+                </form>
+                <form method="post" class="m-0" onsubmit="return confirm('Opravdu smazat <?= count($group['files']) > 1 ? 'celou sadu (' . count($group['files']) . ' souborů)' : 'tento soubor' ?>? Tato akce je nenávratná a soubory nebude možné obnovit.')">
+                    <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="file_id" value="<?= (int)$file['id'] ?>">
+                    <button class="btn athlete-page-action" type="submit" title="Smazat"><i class="fas fa-trash"></i>Smazat</button>
+                </form>
+            </div>
+        </article>
+        <?php endforeach; ?>
+    </div>
+</section>
 <?php endif; ?>
 <script>
 document.getElementById('addAnotherFile').addEventListener('click', function () {
@@ -253,7 +375,7 @@ document.getElementById('addAnotherFile').addEventListener('click', function () 
     const index = container.querySelectorAll('input[type="file"]').length + 1;
     const wrapper = document.createElement('div');
     wrapper.className = 'input-group mt-2';
-    wrapper.innerHTML = '<input type="file" name="files[]" class="form-control" required aria-label="Další soubor ' + index + '"><button type="button" class="btn btn-outline-danger" title="Odebrat soubor"><i class="fas fa-times"></i></button>';
+    wrapper.innerHTML = '<input type="file" name="files[]" class="form-control" required aria-label="Další soubor ' + index + '"><button type="button" class="btn athlete-page-action" title="Odebrat soubor"><i class="fas fa-times"></i></button>';
     wrapper.querySelector('button').addEventListener('click', function () { wrapper.remove(); });
     container.appendChild(wrapper);
 });

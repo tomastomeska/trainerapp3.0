@@ -35,6 +35,12 @@ CREATE TABLE IF NOT EXISTS mobile_api_tokens (
 - `GET /api/mobile/athlete.php?id=123` – detail sportovce + poslední tréninky
 - `GET /api/mobile/workout_sets.php` – aktivní tréninkové sady trenéra
 - `POST /api/mobile/training_start.php` – vytvoření skutečného `training_session`
+- `GET /api/mobile/chat.php?action=conversations` – chaty trenéra
+- `GET /api/mobile/chat.php?action=thread&conversation_id=123` – zprávy v chatu (`admin` pro chat s administrátorem)
+- `POST /api/mobile/chat.php?action=delete` – odstranění zprávy trenéra
+- `POST /api/mobile/athlete_portal.php?action=chat_delete` – odstranění zprávy sportovce
+
+Obě akce mazání přijímají JSON s `message_id` a `scope` (`me` nebo `everyone`); trenér navíc posílá `conversation_id`, sportovec `with` (`coach` nebo `admin`). Odstranění pro všechny je povoleno pouze autorovi zprávy. Záznamy mazání se ukládají do tabulky, kterou API vytvoří automaticky.
 
 ## Přihlášení
 

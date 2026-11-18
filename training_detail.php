@@ -293,21 +293,21 @@ renderHeader('Detail tréninku');
     </div>
 </div>
 <?php else: ?>
-<div class="row g-3 mb-4">
-    <div class="col-sm-4">
-        <div class="card border-0 shadow-sm text-center py-3">
-            <div class="display-6 fw-bold text-warning"><?= count($exercises) ?></div>
-            <div class="text-muted">Cviků</div>
+<div class="row g-2 mb-4 training-detail-summary-stats">
+    <div class="col-4">
+        <div class="card border-0 shadow-sm text-center py-3 h-100">
+            <div class="display-6 fw-bold text-warning training-detail-summary-stats__value"><?= count($exercises) ?></div>
+            <div class="text-muted training-detail-summary-stats__label">Cviků</div>
         </div>
     </div>
-    <div class="col-sm-4">
-        <div class="card border-0 shadow-sm text-center py-3">
-            <div class="display-6 fw-bold text-warning"><?= $totalSeries ?></div>
-            <div class="text-muted">Sérií celkem</div>
+    <div class="col-4">
+        <div class="card border-0 shadow-sm text-center py-3 h-100">
+            <div class="display-6 fw-bold text-warning training-detail-summary-stats__value"><?= $totalSeries ?></div>
+            <div class="text-muted training-detail-summary-stats__label">Sérií celkem</div>
         </div>
     </div>
-    <div class="col-sm-4">
-        <div class="card border-0 shadow-sm text-center py-3">
+    <div class="col-4">
+        <div class="card border-0 shadow-sm text-center py-3 h-100">
             <?php
             $totalVolume = 0;
             foreach ($seriesByExercise as $sArr) {
@@ -316,8 +316,8 @@ renderHeader('Detail tréninku');
                 }
             }
             ?>
-            <div class="display-6 fw-bold text-warning"><?= number_format($totalVolume, 0, ',', '&nbsp;') ?></div>
-            <div class="text-muted">Celkový objem (kg×rep)</div>
+            <div class="display-6 fw-bold text-warning training-detail-summary-stats__value"><?= number_format($totalVolume, 0, ',', '&nbsp;') ?></div>
+            <div class="text-muted training-detail-summary-stats__label">Celkový objem (kg×rep)</div>
         </div>
     </div>
 </div>
@@ -521,7 +521,7 @@ $exerciseMode = ((int)($ex['is_timed'] ?? 0) === 1)
         <div class="text-center py-3 text-muted">Žádné série.</div>
         <?php else: ?>
         <div class="table-responsive">
-            <table class="table table-striped table-bordered mb-0 align-middle text-center">
+            <table class="table table-striped table-bordered mb-0 align-middle text-center training-detail-series-table no-mobile-stack<?= $exerciseMode === 'standard' ? ' training-detail-series-table--standard' : '' ?><?= $editMode ? ' has-edit-actions' : '' ?>">
                 <thead class="table-light">
                     <tr>
                         <th>#</th>
@@ -596,18 +596,14 @@ $exerciseMode = ((int)($ex['is_timed'] ?? 0) === 1)
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
-                <?php if ($exerciseMode === 'standard'): ?>
-                <tfoot class="table-dark">
-                    <tr>
-                        <td colspan="4" class="text-end fw-semibold">Objem celkem</td>
-                        <td class="fw-bold">
-                            <?= number_format(array_sum(array_map(fn($s) => ((float)$s['weight'] + (float)($s['equipment_weight'] ?? 0)) * $s['reps'], $series)), 0, ',', '') ?>
-                        </td>
-                    </tr>
-                </tfoot>
-                <?php endif; ?>
             </table>
         </div>
+        <?php if ($exerciseMode === 'standard'): ?>
+        <div class="training-volume-summary">
+            <span>Objem celkem</span>
+            <strong><?= number_format(array_sum(array_map(fn($s) => ((float)$s['weight'] + (float)($s['equipment_weight'] ?? 0)) * $s['reps'], $series)), 0, ',', '') ?></strong>
+        </div>
+        <?php endif; ?>
         <?php endif; ?>
         <!-- Formulář pro editaci sérií -->
         <?php if ($editMode): ?>

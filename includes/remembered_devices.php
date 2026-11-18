@@ -240,7 +240,7 @@ function rememberRevokeCurrent(PDO $pdo): void
     unset($_SESSION['remember_selector']);
 }
 
-function renderRememberedDevices(PDO $pdo, string $role, int $ownerId): void
+function renderRememberedDevices(PDO $pdo, string $role, int $ownerId, bool $collapsed = false): void
 {
     if (!empty($_SESSION['superadmin_id']) || !empty($_SESSION['impersonating_admin_id'])) return;
     try {
@@ -258,7 +258,19 @@ function renderRememberedDevices(PDO $pdo, string $role, int $ownerId): void
     }
     ?>
     <section class="card border-0 shadow-sm mb-4" id="remembered-devices">
-        <div class="card-header bg-dark text-white"><i class="fas fa-shield-halved me-2"></i>Přihlášená zařízení</div>
+        <div class="card-header bg-dark text-white<?= $collapsed ? ' p-0' : '' ?>">
+            <?php if ($collapsed): ?>
+            <button class="coach-profile-card-toggle btn text-white text-start w-100 fw-bold p-3" type="button" data-bs-toggle="collapse" data-bs-target="#remembered-devices-content" aria-expanded="false" aria-controls="remembered-devices-content">
+                <span><i class="fas fa-shield-halved me-2"></i>Přihlášená zařízení</span>
+                <i class="fas fa-chevron-down" aria-hidden="true"></i>
+            </button>
+            <?php else: ?>
+            <i class="fas fa-shield-halved me-2"></i>Přihlášená zařízení
+            <?php endif; ?>
+        </div>
+        <?php if ($collapsed): ?>
+        <div id="remembered-devices-content" class="collapse">
+        <?php endif; ?>
         <div class="card-body">
             <p class="small text-muted">Zapamatované přihlášení platí 30 dní od posledního použití. Odhlášení zařízení nezruší jeho push oznámení.</p>
             <?php if (!$devices): ?>
@@ -283,6 +295,9 @@ function renderRememberedDevices(PDO $pdo, string $role, int $ownerId): void
                 </ul>
             <?php endif; ?>
         </div>
+        <?php if ($collapsed): ?>
+        </div>
+        <?php endif; ?>
     </section>
     <?php
 }

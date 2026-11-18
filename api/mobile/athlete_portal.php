@@ -4,6 +4,7 @@ require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/../../includes/payment_billing.php';
 require_once __DIR__ . '/../../includes/push_chat_notifications.php';
 require_once __DIR__ . '/../../includes/push_calendar_notifications.php';
+require_once __DIR__ . '/../../includes/chat_message_deletions.php';
 
 $athlete = mobileRequireAthlete();
 $pdo = getDB();
@@ -928,20 +929,22 @@ if ($action === 'cancel_request' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 if ($action === 'chat') {
+    ensureChatMessageDeletionTable($pdo);
     $with = (string)($_GET['with'] ?? $input['with'] ?? 'coach');
     $messages = [];
     if ($with === 'admin') {
         try {
             $pdo->prepare("UPDATE admin_athlete_chat_messages SET athlete_read_at = NOW() WHERE athlete_id = ? AND sender = 'admin' AND athlete_read_at IS NULL")->execute([$athleteId]);
-            $stmt = $pdo->prepare('SELECT id, sender, body, created_at FROM admin_athlete_chat_messages WHERE athlete_id = ? ORDER BY created_at ASC, id ASC LIMIT 200');
-            $stmt->execute([$athleteId]);
-            foreach ($stmt->fetchAll() as $row) {
+            $rows = fetchChatMessagesForUser($pdo, 'admin_athlete_chat_messages', ['athlete_id' => $athleteId], 'athlete', $athleteId);
+            foreach ($rows as $row) {
                 $messages[] = [
                     'id' => (int)$row['id'],
                     'sender' => (string)$row['sender'],
                     'body' => (string)$row['body'],
                     'created_at' => (string)$row['created_at'],
                     'is_me' => (string)$row['sender'] === 'athlete',
+                    'deleted_for_everyone' => !empty($row['deleted_for_everyone']),
+                    'deleted_event_id' => (int)($row['deleted_event_id'] ?? 0),
                 ];
             }
         } catch (Throwable $e) {
@@ -953,18 +956,35 @@ if ($action === 'chat') {
         $pdo->prepare("UPDATE coach_athlete_chat_messages SET athlete_read_at = NOW() WHERE athlete_id = ? AND sender = 'coach' AND athlete_read_at IS NULL")->execute([$athleteId]);
     } catch (Throwable $e) {
     }
-    $stmt = $pdo->prepare('SELECT id, sender, body, created_at FROM coach_athlete_chat_messages WHERE coach_id = ? AND athlete_id = ? ORDER BY created_at ASC, id ASC LIMIT 200');
-    $stmt->execute([$coachId, $athleteId]);
-    foreach ($stmt->fetchAll() as $row) {
+    $rows = fetchChatMessagesForUser($pdo, 'coach_athlete_chat_messages', ['coach_id' => $coachId, 'athlete_id' => $athleteId], 'athlete', $athleteId);
+    foreach ($rows as $row) {
         $messages[] = [
             'id' => (int)$row['id'],
             'sender' => (string)$row['sender'],
             'body' => (string)$row['body'],
             'created_at' => (string)$row['created_at'],
             'is_me' => (string)$row['sender'] === 'athlete',
+            'deleted_for_everyone' => !empty($row['deleted_for_everyone']),
+            'deleted_event_id' => (int)($row['deleted_event_id'] ?? 0),
         ];
     }
     mobileJson(['success' => true, 'with' => 'coach', 'messages' => $messages, 'coach_name' => 'Trenér']);
+}
+
+if ($action === 'chat_delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $with = (string)($input['with'] ?? 'coach');
+    $messageId = max(0, (int)($input['message_id'] ?? 0));
+    $scope = (string)($input['scope'] ?? '');
+    $table = $with === 'admin' ? 'admin_athlete_chat_messages' : 'coach_athlete_chat_messages';
+    $threadFilters = $with === 'admin'
+        ? ['athlete_id' => $athleteId]
+        : ['coach_id' => $coachId, 'athlete_id' => $athleteId];
+    try {
+        $result = deleteChatMessageForUser($pdo, $table, $threadFilters, $messageId, $scope, 'athlete', $athleteId);
+    } catch (ChatMessageDeletionException | InvalidArgumentException $e) {
+        mobileJson(['success' => false, 'error' => $e->getMessage()], 400);
+    }
+    mobileJson(['success' => true, 'scope' => $result['scope'], 'warning' => !$result['attachment_removed'] ? 'Soubor se nepodařilo odstranit ze serveru.' : null]);
 }
 
 if ($action === 'send' && $_SERVER['REQUEST_METHOD'] === 'POST') {

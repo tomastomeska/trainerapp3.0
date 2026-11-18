@@ -1,10 +1,12 @@
 <?php
 // admin/zpravy.php – přehled odeslaných zpráv trenérům
 require_once __DIR__ . '/../includes/admin_auth.php';
+require_once __DIR__ . '/../includes/chat_message_deletions.php';
 require_once __DIR__ . '/header.php';
 
 requireAdminLogin();
 $pdo = getDB();
+ensureChatMessageDeletionTable($pdo);
 
 // Smazání zprávy
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete') {
@@ -59,13 +61,24 @@ $coachChatList = [];
 if ($coachChatTableExists) {
 	$coachChatList = $pdo->query(
 		"SELECT c.id, c.name, c.username,
-				(SELECT body FROM admin_coach_chat_messages WHERE coach_id = c.id ORDER BY created_at DESC, id DESC LIMIT 1) AS last_body,
-				(SELECT created_at FROM admin_coach_chat_messages WHERE coach_id = c.id ORDER BY created_at DESC, id DESC LIMIT 1) AS last_at,
 				(SELECT COUNT(*) FROM admin_coach_chat_messages WHERE coach_id = c.id AND sender = 'coach' AND admin_read_at IS NULL) AS unread_count
 		 FROM coaches c
-		 WHERE c.is_active = 1
-		 ORDER BY (last_at IS NULL) ASC, last_at DESC, c.name ASC"
+		 WHERE c.is_active = 1"
 	)->fetchAll();
+	foreach ($coachChatList as &$chatItem) {
+		$preview = fetchChatMessagePreview($pdo, 'admin_coach_chat_messages', ['coach_id' => (int)$chatItem['id']], 'admin', 0);
+		$chatItem['last_body'] = $preview['body'];
+		$chatItem['last_at'] = $preview['created_at'];
+	}
+	unset($chatItem);
+	usort($coachChatList, static function (array $a, array $b): int {
+		$aAt = $a['last_at'] ?? '';
+		$bAt = $b['last_at'] ?? '';
+		if ($aAt === $bAt) {
+			return strcasecmp((string)($a['name'] ?: $a['username']), (string)($b['name'] ?: $b['username']));
+		}
+		return $aAt > $bAt ? -1 : 1;
+	});
 }
 
 // Načíst zprávy se statistikou přečtení

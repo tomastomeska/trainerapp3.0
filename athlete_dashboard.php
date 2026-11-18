@@ -379,11 +379,22 @@ $weightShouldExpandAll = $editingWeightLog !== null;
 $trainingPreviewLimit = 5;
 $trainingVisibleRows = array_slice($sessions, 0, $trainingPreviewLimit);
 $trainingCollapsedRows = array_slice($sessions, $trainingPreviewLimit);
+$trainingCurrentMonthKey = date('Y-m');
+$trainingCurrentMonthSessions = [];
+$trainingOlderMonthsByMonth = [];
+foreach ($sessions as $trainingSession) {
+    $trainingMonthKey = date('Y-m', strtotime((string)$trainingSession['started_at']));
+    if ($trainingMonthKey === $trainingCurrentMonthKey) {
+        $trainingCurrentMonthSessions[] = $trainingSession;
+    } else {
+        $trainingOlderMonthsByMonth[$trainingMonthKey][] = $trainingSession;
+    }
+}
+$trainingCurrentMonthMobileRows = array_slice($trainingCurrentMonthSessions, 0, 4);
+$trainingCurrentMonthMobileCollapsedRows = array_slice($trainingCurrentMonthSessions, 4);
 $onlineTrainingPreviewLimit = 5;
 $onlineHistoryVisibleRows = array_slice($onlineHistory, 0, $onlineTrainingPreviewLimit);
 $onlineHistoryCollapsedRows = array_slice($onlineHistory, $onlineTrainingPreviewLimit);
-$trainingMobileRows = array_slice($sessions, 0, 4);
-$trainingMobileCollapsedRows = array_slice($sessions, 4);
 
 $coachDisplayName = trim((string)($athlete['coach_name'] ?: $athlete['coach_username']));
 $coachLastNameParts = preg_split('/\s+/u', $coachDisplayName) ?: [];

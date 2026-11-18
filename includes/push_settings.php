@@ -2,13 +2,23 @@
 
 require_once __DIR__ . '/push_install_guide.php';
 
-function renderPushSettings(): void
+function renderPushSettings(bool $collapsed = false): void
 {
     ?>
     <section class="card border-0 shadow-sm mb-4" id="push-settings" data-csrf="<?= h(csrfToken()) ?>">
-        <div class="card-header bg-dark text-white">
+        <div class="card-header bg-dark text-white<?= $collapsed ? ' p-0' : '' ?>">
+            <?php if ($collapsed): ?>
+            <button class="coach-profile-card-toggle btn text-white text-start w-100 fw-bold p-3" type="button" data-bs-toggle="collapse" data-bs-target="#push-settings-content" aria-expanded="false" aria-controls="push-settings-content">
+                <span><i class="fas fa-bell me-2"></i>Oznámení</span>
+                <i class="fas fa-chevron-down" aria-hidden="true"></i>
+            </button>
+            <?php else: ?>
             <i class="fas fa-bell me-2"></i>Oznámení
+            <?php endif; ?>
         </div>
+        <?php if ($collapsed): ?>
+        <div id="push-settings-content" class="collapse">
+        <?php endif; ?>
         <div class="card-body">
             <p class="text-muted small">Push oznámení můžete spravovat pro každé zařízení zvlášť. Na iPhonu otevřete TrainerApp přidanou na plochu.</p>
             <p class="text-muted small">Jednotlivé typy událostí se postupně zapojují; nastavení kategorie samo o sobě nezapne dosud nepřipojené oznámení.</p>
@@ -41,6 +51,9 @@ function renderPushSettings(): void
             </fieldset>
             <noscript>Pro správu oznámení zapněte JavaScript.</noscript>
         </div>
+        <?php if ($collapsed): ?>
+        </div>
+        <?php endif; ?>
     </section>
     <script src="<?= BASE_URL ?>/assets/js/push-subscriptions.js?v=2" defer></script>
     <script src="<?= BASE_URL ?>/assets/js/push-settings.js?v=1" defer></script>

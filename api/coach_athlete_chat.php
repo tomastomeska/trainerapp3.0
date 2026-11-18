@@ -3,6 +3,8 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../includes/push_chat_notifications.php';
+require_once __DIR__ . '/../includes/chat_attachments.php';
+require_once __DIR__ . '/../includes/chat_message_deletions.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -14,6 +16,7 @@ if (!isLoggedIn()) {
 
 $coachId = (int)getCurrentCoachId();
 $pdo = getDB();
+ensureChatMessageDeletionTable($pdo);
 
 $chatTableCheck = $pdo->query("SHOW TABLES LIKE 'coach_athlete_chat_messages'");
 if ($chatTableCheck === false || !(bool)$chatTableCheck->fetchColumn()) {
@@ -29,8 +32,11 @@ function coachAthleteChatMessageToArray(array $m): array {
         'body' => (string)$m['body'],
         'attachment_url' => !empty($m['attachment_path']) ? BASE_URL . '/uploads/messages/' . rawurlencode((string)$m['attachment_path']) : null,
         'attachment_name' => $m['attachment_name'] ?? null,
+        'attachment_type' => !empty($m['attachment_name']) ? chatAttachmentMimeType((string)$m['attachment_name']) : null,
         'read_at' => $m['sender'] === 'coach' ? ($m['athlete_read_at'] ?? null) : ($m['coach_read_at'] ?? null),
         'created_at' => formatDateTime((string)$m['created_at']),
+        'deleted_for_everyone' => !empty($m['deleted_for_everyone']),
+        'deleted_event_id' => (int)($m['deleted_event_id'] ?? 0),
     ];
 }
 
@@ -48,23 +54,35 @@ if ($action === 'list') {
     session_write_close();
     $listStmt = $pdo->prepare(
         "SELECT a.id, a.first_name, a.last_name,
-                (SELECT body FROM coach_athlete_chat_messages WHERE coach_id = ? AND athlete_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) AS last_body,
-                (SELECT created_at FROM coach_athlete_chat_messages WHERE coach_id = ? AND athlete_id = a.id ORDER BY created_at DESC, id DESC LIMIT 1) AS last_at,
                 (SELECT COUNT(*) FROM coach_athlete_chat_messages WHERE coach_id = ? AND athlete_id = a.id AND sender = 'athlete' AND coach_read_at IS NULL) AS unread_count
          FROM athletes a
          WHERE a.coach_id = ?
-         ORDER BY (last_at IS NULL) ASC, last_at DESC, a.first_name ASC, a.last_name ASC"
+         ORDER BY a.first_name ASC, a.last_name ASC"
     );
-    $listStmt->execute([$coachId, $coachId, $coachId, $coachId]);
-    $athletes = array_map(static function (array $row): array {
+    $listStmt->execute([$coachId, $coachId]);
+    $athletes = array_map(function (array $row) use ($pdo, $coachId): array {
+        $preview = fetchChatMessagePreview($pdo, 'coach_athlete_chat_messages', ['coach_id' => $coachId, 'athlete_id' => (int)$row['id']], 'coach', $coachId);
         return [
             'id' => (int)$row['id'],
             'name' => trim((string)$row['first_name'] . ' ' . (string)$row['last_name']),
-            'last_body' => $row['last_body'],
-            'last_at' => $row['last_at'] ? formatDateTime((string)$row['last_at']) : null,
+            'last_body' => $preview['body'],
+            'last_at' => $preview['created_at'] ? formatDateTime((string)$preview['created_at']) : null,
+            'last_at_raw' => $preview['created_at'],
             'unread_count' => (int)$row['unread_count'],
         ];
     }, $listStmt->fetchAll());
+    usort($athletes, static function (array $a, array $b): int {
+        $aAt = $a['last_at_raw'] ?? '';
+        $bAt = $b['last_at_raw'] ?? '';
+        if ($aAt === $bAt) {
+            return strcasecmp($a['name'], $b['name']);
+        }
+        return $aAt > $bAt ? -1 : 1;
+    });
+    foreach ($athletes as &$athleteItem) {
+        unset($athleteItem['last_at_raw']);
+    }
+    unset($athleteItem);
 
     echo json_encode(['ok' => true, 'athletes' => $athletes]);
     exit;
@@ -85,9 +103,8 @@ if ($action === 'thread' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $pdo->prepare("UPDATE coach_athlete_chat_messages SET coach_read_at = NOW() WHERE coach_id = ? AND athlete_id = ? AND sender = 'athlete' AND coach_read_at IS NULL")
         ->execute([$coachId, $athleteId]);
 
-    $stmt = $pdo->prepare('SELECT * FROM coach_athlete_chat_messages WHERE coach_id = ? AND athlete_id = ? ORDER BY created_at ASC, id ASC LIMIT 200');
-    $stmt->execute([$coachId, $athleteId]);
-    $messages = array_map('coachAthleteChatMessageToArray', $stmt->fetchAll());
+    $rows = fetchChatMessagesForUser($pdo, 'coach_athlete_chat_messages', ['coach_id' => $coachId, 'athlete_id' => $athleteId], 'coach', $coachId);
+    $messages = array_map('coachAthleteChatMessageToArray', $rows);
 
     echo json_encode(['ok' => true, 'messages' => $messages]);
     exit;
@@ -95,15 +112,55 @@ if ($action === 'thread' && $_SERVER['REQUEST_METHOD'] === 'GET') {
 
 if ($action === 'poll' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     $sinceId = max(0, (int)($_GET['since_id'] ?? 0));
+    $sinceDeletionId = max(0, (int)($_GET['since_deletion_id'] ?? 0));
     $pdo->prepare("UPDATE coach_athlete_chat_messages SET coach_read_at = NOW() WHERE coach_id = ? AND athlete_id = ? AND sender = 'athlete' AND coach_read_at IS NULL")
         ->execute([$coachId, $athleteId]);
     session_write_close();
 
-    $stmt = $pdo->prepare('SELECT * FROM coach_athlete_chat_messages WHERE coach_id = ? AND athlete_id = ? AND id > ? ORDER BY created_at ASC, id ASC LIMIT 100');
-    $stmt->execute([$coachId, $athleteId, $sinceId]);
-    $messages = array_map('coachAthleteChatMessageToArray', $stmt->fetchAll());
+    $rows = fetchChatMessagesForUser($pdo, 'coach_athlete_chat_messages', ['coach_id' => $coachId, 'athlete_id' => $athleteId], 'coach', $coachId, $sinceId, $sinceDeletionId, 100);
+    $messages = array_map('coachAthleteChatMessageToArray', $rows);
 
     echo json_encode(['ok' => true, 'messages' => $messages]);
+    exit;
+}
+
+if ($action === 'delete' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!verifyCsrf((string)($_POST['csrf_token'] ?? ''))) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'csrf']);
+        exit;
+    }
+
+    try {
+        $result = deleteChatMessageForUser(
+            $pdo,
+            'coach_athlete_chat_messages',
+            ['coach_id' => $coachId, 'athlete_id' => $athleteId],
+            max(0, (int)($_POST['message_id'] ?? 0)),
+            (string)($_POST['scope'] ?? ''),
+            'coach',
+            $coachId
+        );
+    } catch (ChatMessageDeletionException | InvalidArgumentException $e) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+        exit;
+    }
+
+    $response = ['ok' => true, 'scope' => $result['scope']];
+    if ($result['scope'] === 'everyone') {
+        $rows = fetchChatMessagesForUser($pdo, 'coach_athlete_chat_messages', ['coach_id' => $coachId, 'athlete_id' => $athleteId], 'coach', $coachId);
+        foreach ($rows as $row) {
+            if ((int)$row['id'] === (int)($_POST['message_id'] ?? 0)) {
+                $response['message'] = coachAthleteChatMessageToArray($row);
+                break;
+            }
+        }
+        if (!$result['attachment_removed']) {
+            $response['warning'] = 'Zpráva byla odstraněna, ale soubor se nepodařilo odstranit ze serveru.';
+        }
+    }
+    echo json_encode($response);
     exit;
 }
 
@@ -115,14 +172,20 @@ if ($action === 'send' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $body = mb_substr(trim((string)($_POST['body'] ?? '')), 0, 4000, 'UTF-8');
-    if ($body === '') {
+    $attachment = receiveChatAttachment($_FILES);
+    if ($attachment['error'] !== null) {
         http_response_code(400);
-        echo json_encode(['ok' => false, 'error' => 'empty_body']);
+        echo json_encode(['ok' => false, 'error' => $attachment['error']]);
+        exit;
+    }
+    if ($body === '' && $attachment['path'] === null) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Zadejte zprávu nebo přidejte přílohu.']);
         exit;
     }
 
-    $pdo->prepare("INSERT INTO coach_athlete_chat_messages (coach_id, athlete_id, sender, body, coach_read_at) VALUES (?, ?, 'coach', ?, NOW())")
-        ->execute([$coachId, $athleteId, $body]);
+    $pdo->prepare("INSERT INTO coach_athlete_chat_messages (coach_id, athlete_id, sender, body, attachment_path, attachment_name, coach_read_at) VALUES (?, ?, 'coach', ?, ?, ?, NOW())")
+        ->execute([$coachId, $athleteId, $body, $attachment['path'], $attachment['name']]);
     $newId = (int)$pdo->lastInsertId();
     pushNotifyCoachAthleteChatMessage($pdo, $newId);
     session_write_close();
@@ -131,7 +194,7 @@ if ($action === 'send' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $coach = getCurrentCoach();
     $coachName = trim((string)($coach['name'] ?? '')) !== '' ? (string)$coach['name'] : trim((string)($coach['username'] ?? 'trenér'));
     if (!empty($athlete['email'])) {
-        notifyAthleteAboutNewCoachChatMessage($coachId, $athleteId, $newId, (string)$athlete['email'], $athleteName, $coachName, $body);
+        notifyAthleteAboutNewCoachChatMessage($coachId, $athleteId, $newId, (string)$athlete['email'], $athleteName, $coachName, chatNotificationText($body, $attachment['name']));
     }
 
     echo json_encode(['ok' => true, 'id' => $newId]);

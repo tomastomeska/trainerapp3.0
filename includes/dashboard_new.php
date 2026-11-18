@@ -3,6 +3,9 @@
  * @var bool $mustChangePassword
  * @var bool $mycoachAppIsLive
  * @var bool $coachSurveyPending
+ * @var \PDO $pdo
+ * @var \DateTimeImmutable $now
+ * @var array<int, array<string, mixed>> $todayPlannedEvents
  * @var int $todayPendingCount
  * @var \Closure(array): string $formatCalendarEventPerson
  * @var int $tomorrowCount
@@ -53,6 +56,11 @@ renderHeader('Dashboard', false, true, true);
         padding: 1rem;
     }
 
+    .coach-today-plan-card .card-header {
+        padding: .85rem 1rem;
+        border-bottom: 0;
+    }
+
     .coach-today-plan-grid {
         display: grid;
         gap: .65rem;
@@ -61,50 +69,115 @@ renderHeader('Dashboard', false, true, true);
     .coach-today-plan-header {
         display: flex;
         justify-content: space-between;
-        align-items: flex-start;
+        align-items: center;
         gap: .75rem;
         flex-wrap: wrap;
     }
 
     .coach-today-plan-kicker {
-        font-size: .72rem;
+        font-size: .68rem;
         font-weight: 800;
         letter-spacing: .05em;
         text-transform: uppercase;
-        color: #6b7280;
+        color: rgba(255, 255, 255, .72);
     }
 
     .coach-today-plan-count {
         font-weight: 900;
-        font-size: 1.35rem;
-        line-height: 1.05;
+        font-size: 1.15rem;
+        line-height: 1.2;
+    }
+
+    .coach-today-plan-calendar-btn {
+        white-space: nowrap;
+        border-radius: .6rem;
     }
 
     .coach-today-plan-event {
-        border-radius: 14px;
-        padding: .8rem .9rem;
-        border: 1px solid rgba(15, 23, 42, .08);
+        border-radius: 12px;
+        padding: .75rem .85rem;
+        border: 1px solid #e1e3e5;
+        background: #f8f9fa;
+        color: #212529;
         line-height: 1.35;
-        box-shadow: 0 1px 8px rgba(15, 23, 42, .04);
+    }
+
+    .coach-today-plan-event i {
+        color: #495057;
     }
 
     .coach-today-plan-event strong {
         font-weight: 800;
     }
 
-    .coach-today-plan-event--ongoing {
-        background: linear-gradient(135deg, #dcfce7 0%, #ecfdf5 100%);
-        color: #14532d;
+    .coach-today-plan-event--empty {
+        color: #6c757d;
     }
 
-    .coach-today-plan-event--next {
-        background: linear-gradient(135deg, #fef3c7 0%, #fff7ed 100%);
-        color: #7c2d12;
+    .coach-today-plan-list-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: .45rem;
     }
 
-    .coach-today-plan-event--tomorrow {
-        background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%);
-        color: #1e3a8a;
+    .coach-today-plan-list-toggle .fa-chevron-down {
+        transition: transform .2s ease;
+    }
+
+    .coach-today-plan-list-toggle[aria-expanded="true"] .fa-chevron-down {
+        transform: rotate(180deg);
+    }
+
+    .coach-today-events-list {
+        display: grid;
+        gap: .5rem;
+        margin-top: .75rem;
+        padding-top: .75rem;
+        border-top: 1px solid #e1e3e5;
+    }
+
+    .coach-today-event {
+        display: grid;
+        grid-template-columns: 92px minmax(0, 1fr);
+        align-items: start;
+        gap: .65rem;
+        padding: .7rem .75rem;
+        border: 1px solid #e1e3e5;
+        border-radius: 12px;
+        background: #fff;
+    }
+
+    .coach-today-event__time {
+        color: #343a40;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .coach-today-event__details {
+        min-width: 0;
+    }
+
+    .coach-today-event__name {
+        font-weight: 700;
+        overflow-wrap: anywhere;
+    }
+
+    .coach-today-event__meta {
+        color: #6c757d;
+        font-size: .875rem;
+    }
+
+    .coach-today-event__status {
+        display: inline-block;
+        margin-top: .3rem;
+        padding: .12rem .45rem;
+        border: 1px solid #dee2e6;
+        border-radius: 999px;
+        background: #f8f9fa;
+        color: #495057;
+        font-size: .72rem;
+        font-weight: 700;
     }
 
     .coach-dashboard-shortcut {
@@ -212,6 +285,11 @@ renderHeader('Dashboard', false, true, true);
             border-radius: 12px;
         }
 
+        .coach-today-event {
+            grid-template-columns: 84px minmax(0, 1fr);
+            gap: .5rem;
+        }
+
         .coach-dashboard-toolbar__actions {
             width: 100%;
         }
@@ -259,6 +337,108 @@ renderHeader('Dashboard', false, true, true);
     Po prvním přihlášení je nutné změnit heslo, než budete pokračovat v práci.
 </div>
 <?php endif; ?>
+
+<div class="card border-0 shadow-sm mb-3 coach-today-plan-card">
+    <div class="card-header bg-dark text-white coach-today-plan-header">
+        <div>
+            <div class="coach-today-plan-kicker">Dnešní plán v kalendáři</div>
+            <div class="coach-today-plan-count"><?= (int)$todayPendingCount ?> neproběhlých tréninků</div>
+        </div>
+        <a href="<?= BASE_URL ?>/calendar.php" class="btn btn-light btn-sm fw-semibold coach-today-plan-calendar-btn">
+            <i class="fas fa-calendar-alt me-1"></i>Kalendář
+        </a>
+    </div>
+    <div class="card-body py-3">
+        <div class="coach-today-plan-grid">
+            <?php if (!empty($ongoingTodayEvents)): ?>
+                <?php $current = $ongoingTodayEvents[0]; ?>
+                <div class="coach-today-plan-event fw-semibold">
+                    <i class="fas fa-circle-play me-1"></i>
+                    Probíhá:
+                    <strong><?= h($formatCalendarEventPerson($current)) ?></strong>
+                    <?php if (!empty($current['location'])): ?>
+                        · <?= h($current['location']) ?>
+                    <?php endif; ?>
+                    <?php if (count($ongoingTodayEvents) > 1): ?>
+                        <span class="d-block mt-1">+ další <?= count($ongoingTodayEvents) - 1 ?></span>
+                    <?php endif; ?>
+                </div>
+            <?php else: ?>
+                <div class="coach-today-plan-event coach-today-plan-event--empty fw-semibold">Aktuálně nic neprobíhá</div>
+            <?php endif; ?>
+
+            <?php if ($nextTodayEvent !== null && $minutesToNextTodayEvent !== null): ?>
+            <div class="coach-today-plan-event text-start fw-semibold">
+                <i class="fas fa-clock me-1"></i>
+                Za <?= (int)$minutesToNextTodayEvent ?> min:
+                <strong><?= h($formatCalendarEventPerson($nextTodayEvent)) ?></strong>
+                <?php if (!empty($nextTodayEvent['location'])): ?>
+                    · <?= h($nextTodayEvent['location']) ?>
+                <?php endif; ?>
+            </div>
+            <?php else: ?>
+            <div class="coach-today-plan-event coach-today-plan-event--empty fw-semibold">Dnes už další trénink nezačíná</div>
+            <?php endif; ?>
+
+            <div class="coach-today-plan-event text-start fw-semibold">
+                <i class="fas fa-calendar-day me-1"></i>
+                Zítra naplánováno: <strong><?= (int)$tomorrowCount ?></strong>
+                <?php if ($firstTomorrowEvent): ?>
+                    <span class="d-block mt-1">
+                        První: <strong><?= h($formatCalendarEventPerson($firstTomorrowEvent)) ?></strong>
+                        v <?= h((string)$firstTomorrowTime) ?>
+                        <?php if (!empty($firstTomorrowEvent['location'])): ?>
+                            · <?= h($firstTomorrowEvent['location']) ?>
+                        <?php endif; ?>
+                    </span>
+                <?php else: ?>
+                    <span class="d-block mt-1">Bez naplánovaného tréninku</span>
+                <?php endif; ?>
+            </div>
+
+            <button class="btn btn-outline-dark btn-sm w-100 coach-today-plan-list-toggle"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#coach-today-events"
+                    aria-expanded="false"
+                    aria-controls="coach-today-events">
+                <i class="fas fa-list-ul"></i>
+                Dnešní události (<?= count($todayPlannedEvents) ?>)
+                <i class="fas fa-chevron-down"></i>
+            </button>
+
+            <div class="collapse" id="coach-today-events">
+                <div class="coach-today-events-list">
+                    <?php if (!empty($todayPlannedEvents)): ?>
+                        <?php foreach ($todayPlannedEvents as $event): ?>
+                            <?php
+                            $eventStart = new DateTimeImmutable($event['starts_at']);
+                            $eventEnd = new DateTimeImmutable($event['ends_at']);
+                            $eventStatus = $eventStart > $now
+                                ? 'Nadcházející'
+                                : ($eventEnd > $now ? 'Probíhá' : 'Proběhlo');
+                            ?>
+                            <article class="coach-today-event">
+                                <time class="coach-today-event__time" datetime="<?= h((string)$event['starts_at']) ?>">
+                                    <?= h($eventStart->format('H:i')) ?>–<?= h($eventEnd->format('H:i')) ?>
+                                </time>
+                                <div class="coach-today-event__details">
+                                    <div class="coach-today-event__name"><?= h($formatCalendarEventPerson($event)) ?></div>
+                                    <?php if (!empty($event['location'])): ?>
+                                        <div class="coach-today-event__meta"><?= h($event['location']) ?></div>
+                                    <?php endif; ?>
+                                    <span class="coach-today-event__status"><?= h($eventStatus) ?></span>
+                                </div>
+                            </article>
+                        <?php endforeach; ?>
+                    <?php else: ?>
+                        <div class="coach-today-plan-event coach-today-plan-event--empty">Na dnešek nejsou naplánované žádné události.</div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
 <?php ob_start(); ?>
 <div class="dashboard-quick-tiles mb-3">
@@ -343,70 +523,6 @@ renderHeader('Dashboard', false, true, true);
             </a>
 </div>
 <?php renderDashboardQuickMenu('coach', (int)$coachId, ob_get_clean()); ?>
-
-<div class="card border-0 shadow-sm mb-3 coach-today-plan-card">
-    <div class="card-body py-3">
-        <div class="coach-today-plan-grid">
-            <div class="coach-today-plan-header">
-                <div>
-                    <div class="coach-today-plan-kicker">Dnešní plán v kalendáři</div>
-                    <div class="coach-today-plan-count"><?= (int)$todayPendingCount ?> neproběhlých tréninků</div>
-                </div>
-                <a href="<?= BASE_URL ?>/calendar.php" class="btn btn-outline-secondary btn-sm align-self-start">
-                    <i class="fas fa-calendar-alt me-1"></i>Kalendář
-                </a>
-            </div>
-
-            <div class="coach-today-plan-grid">
-                <?php if (!empty($ongoingTodayEvents)): ?>
-                    <?php $current = $ongoingTodayEvents[0]; ?>
-                    <div class="coach-today-plan-event coach-today-plan-event--ongoing fw-semibold">
-                        <i class="fas fa-circle-play me-1"></i>
-                        Probíhá:
-                        <strong><?= h($formatCalendarEventPerson($current)) ?></strong>
-                        <?php if (!empty($current['location'])): ?>
-                            · <?= h($current['location']) ?>
-                        <?php endif; ?>
-                        <?php if (count($ongoingTodayEvents) > 1): ?>
-                            <span class="d-block mt-1">+ další <?= count($ongoingTodayEvents) - 1 ?></span>
-                        <?php endif; ?>
-                    </div>
-                <?php else: ?>
-                    <div class="coach-today-plan-event bg-light text-muted fw-semibold">Aktuálně nic neprobíhá</div>
-                <?php endif; ?>
-
-                <?php if ($nextTodayEvent !== null && $minutesToNextTodayEvent !== null): ?>
-                <div class="coach-today-plan-event coach-today-plan-event--next text-start fw-semibold">
-                    <i class="fas fa-clock me-1"></i>
-                    Za <?= (int)$minutesToNextTodayEvent ?> min:
-                    <strong><?= h($formatCalendarEventPerson($nextTodayEvent)) ?></strong>
-                    <?php if (!empty($nextTodayEvent['location'])): ?>
-                        · <?= h($nextTodayEvent['location']) ?>
-                    <?php endif; ?>
-                </div>
-                <?php else: ?>
-                <div class="coach-today-plan-event bg-light text-muted fw-semibold">Dnes už další trénink nezačíná</div>
-                <?php endif; ?>
-
-                <div class="coach-today-plan-event coach-today-plan-event--tomorrow text-start fw-semibold">
-                    <i class="fas fa-calendar-day me-1"></i>
-                    Zítra naplánováno: <strong><?= (int)$tomorrowCount ?></strong>
-                    <?php if ($firstTomorrowEvent): ?>
-                        <span class="d-block mt-1">
-                            První: <strong><?= h($formatCalendarEventPerson($firstTomorrowEvent)) ?></strong>
-                            v <?= h((string)$firstTomorrowTime) ?>
-                            <?php if (!empty($firstTomorrowEvent['location'])): ?>
-                                · <?= h($firstTomorrowEvent['location']) ?>
-                            <?php endif; ?>
-                        </span>
-                    <?php else: ?>
-                        <span class="d-block mt-1">Bez naplánovaného tréninku</span>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
 
 <div class="coach-dashboard-toolbar mb-4">
     <h2 class="mb-0"><i class="fas fa-users me-2 text-warning"></i>Moji sportovci</h2>

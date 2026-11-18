@@ -125,6 +125,16 @@ $pdo = getDB();
 if (isset($_GET['id'])) {
     require_once __DIR__ . '/online_training_detail.php'; exit;
 }
+$currentAthlete = getCurrentAthlete();
+$activeOnlineSubscription = $currentAthlete
+    ? onlineTrainingActiveSubscription($pdo, (int)$currentAthlete['coach_id'], $athleteId)
+    : null;
+$athletePaymentsEnabled = false;
+if ($currentAthlete) {
+    require_once __DIR__ . '/includes/payment_access.php';
+    paymentAccessEnsureSchema($pdo);
+    $athletePaymentsEnabled = paymentAccessIsEnabled($pdo, $athleteId, (int)$currentAthlete['coach_id']);
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCsrf($_POST['csrf_token'] ?? '')) {
     $action = (string)($_POST['action'] ?? '');
     $id = (int)($_POST['training_id'] ?? 0);
@@ -137,6 +147,12 @@ $trainings = $stmt->fetchAll();
 require_once __DIR__ . '/includes/athlete_header.php';
 renderAthleteHeader('Online tréninky', false, true);
 ?><div class="d-flex justify-content-between align-items-center mb-4"><h2><i class="fas fa-laptop me-2 text-warning"></i>Online tréninky</h2></div>
+<?php if (!$activeOnlineSubscription): ?>
+<div class="alert alert-secondary mb-3 d-md-none">
+    <strong>Online tréninky:</strong> Nemáte platné předplatné.
+    <?php if ($athletePaymentsEnabled): ?><a href="<?= BASE_URL ?>/athlete_payments.php" class="ms-2">Platby</a><?php endif; ?>
+</div>
+<?php endif; ?>
 <div class="row g-3">
 <?php foreach ($trainings as $training): ?>
 <?php

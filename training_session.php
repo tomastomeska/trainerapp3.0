@@ -162,21 +162,27 @@ $exerciseMode = ((int)($ex['is_timed'] ?? 0) === 1)
     data-is-timed="<?= ($exerciseMode === 'timed' || $exerciseMode === 'distance_time') ? '1' : '0' ?>"
     data-exercise-mode="<?= h($exerciseMode) ?>"
      draggable="true">
-    <div class="card-header d-flex align-items-center bg-dark text-white">
-        <span class="badge bg-warning text-dark me-2 fs-5"><?= $ex['exercise_order'] ?></span>
-        <span class="fw-bold fs-5"><?= h($ex['exercise_name']) ?></span>
-        <?php if ($sportType !== 'standard'): ?>
-        <span class="badge bg-info ms-2">
-            <?php
-            $typeLabels = [
-            ];
-            echo $typeLabels[$sportType] ?? 'Speciální';
-            ?>
-        </span>
-        <?php endif; ?>
-        <div class="ms-auto d-flex align-items-center gap-2 flex-wrap">
+    <?php $lastCompleted = $lastCompletedByExercise[$ex['exercise_id']] ?? null; ?>
+    <div class="card-header exercise-session-card-header bg-dark text-white">
+        <div class="exercise-session-card-heading">
+            <span class="badge bg-warning text-dark fs-5"><?= $ex['exercise_order'] ?></span>
+            <span class="fw-bold fs-5 exercise-session-card-name"><?= h($ex['exercise_name']) ?></span>
+            <?php if ($sportType !== 'standard'): ?>
+            <span class="badge bg-info">
+                <?php
+                $typeLabels = [
+                ];
+                echo $typeLabels[$sportType] ?? 'Speciální';
+                ?>
+            </span>
+            <?php endif; ?>
+            <span class="badge bg-secondary" id="series-count-<?= $ex['exercise_id'] ?>">
+                <?= count($series) ?> séri<?= count($series) === 1 ? 'e' : 'í' ?>
+            </span>
+        </div>
+        <div class="exercise-session-card-controls<?= !empty($availableExercises) ? ' has-replacement' : '' ?>">
             <?php if (!empty($availableExercises)): ?>
-            <select id="replace-exercise-select-<?= (int)$ex['exercise_id'] ?>" class="form-select form-select-sm" style="min-width:220px">
+            <select id="replace-exercise-select-<?= (int)$ex['exercise_id'] ?>" class="form-select form-select-sm">
                 <option value="">Nahradit cvik...</option>
                 <?php foreach ($availableExercises as $availableExercise): ?>
                 <?php if ((int)$availableExercise['id'] === (int)$ex['exercise_id']) { continue; } ?>
@@ -195,10 +201,6 @@ $exerciseMode = ((int)($ex['is_timed'] ?? 0) === 1)
                 <i class="fas fa-trash me-1"></i>Odebrat
             </button>
         </div>
-        <?php $lastCompleted = $lastCompletedByExercise[$ex['exercise_id']] ?? null; ?>
-        <span class="badge bg-secondary" id="series-count-<?= $ex['exercise_id'] ?>">
-            <?= count($series) ?> séri<?= count($series) === 1 ? 'e' : 'í' ?>
-        </span>
     </div>
     <div class="card-body p-0">
         <?php if ($exerciseMode === 'timed'): ?>
@@ -343,7 +345,7 @@ $exerciseMode = ((int)($ex['is_timed'] ?? 0) === 1)
         <?php else: ?>
         <!-- Standardní formulář (váha, opakování, dopomoc) -->
         <div class="table-responsive">
-            <table class="table table-bordered mb-0 align-middle text-center" id="series-table-<?= $ex['exercise_id'] ?>">
+            <table class="table table-bordered mb-0 align-middle text-center series-records-table no-mobile-stack" id="series-table-<?= $ex['exercise_id'] ?>">
                 <thead class="table-light">
                     <tr>
                         <th style="width:50px">#</th>
@@ -397,62 +399,55 @@ $exerciseMode = ((int)($ex['is_timed'] ?? 0) === 1)
         <div class="p-3 border-top bg-light">
             <?php if ($lastCompleted): ?>
             <div class="previous-exercise-session mb-3">
-                <div class="previous-exercise-session__head">
-                    <div class="previous-exercise-session__title">
-                        <i class="fas fa-history me-2"></i>
-                        Poslední dokončený trénink tohoto cviku
-                    </div>
-                    <div class="small text-muted">
-                        <?= formatDateTime($lastCompleted['session']['completed_at']) ?>
-                        <span class="mx-1">|</span>
-                        <?= h($lastCompleted['session']['set_name']) ?>
-                    </div>
+                <?php $lastCompletedSeriesCount = count($lastCompleted['series']); ?>
+                <button class="previous-exercise-session__toggle collapsed" type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#previous-exercise-session-<?= (int)$ex['exercise_id'] ?>"
+                        aria-expanded="false"
+                        aria-controls="previous-exercise-session-<?= (int)$ex['exercise_id'] ?>">
+                    <span class="previous-exercise-session__toggle-main">
+                        <span class="previous-exercise-session__toggle-title">
+                            <i class="fas fa-history me-1"></i>Poslední trénink cviku
+                        </span>
+                        <span class="previous-exercise-session__toggle-meta">
+                            <?= formatDateTime($lastCompleted['session']['completed_at']) ?>
+                            <span class="mx-1">|</span>
+                            <?= h($lastCompleted['session']['set_name']) ?>
+                        </span>
+                    </span>
+                    <span class="previous-exercise-session__toggle-side">
+                        <span class="badge bg-light text-dark border">
+                            <?= $lastCompletedSeriesCount ?> <?= $lastCompletedSeriesCount === 1 ? 'série' : ($lastCompletedSeriesCount < 5 ? 'série' : 'sérií') ?>
+                        </span>
+                        <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                    </span>
+                </button>
+                <div class="collapse" id="previous-exercise-session-<?= (int)$ex['exercise_id'] ?>">
+                <div class="previous-exercise-session__series-list mt-2">
+                    <?php foreach ($lastCompleted['series'] as $prev): ?>
+                    <?php $previousWeight = (float)$prev['weight'] + (float)($prev['equipment_weight'] ?? 0); ?>
+                    <span class="previous-exercise-session__series">
+                        <strong>#<?= (int)$prev['series_order'] ?></strong>
+                        <?php if ($exerciseMode === 'timed'): ?>
+                        <span><?= !empty($prev['duration_seconds']) ? formatSeriesDuration((int)$prev['duration_seconds']) : '–' ?></span>
+                        <span><?= number_format($previousWeight, 1, ',', '') ?> kg</span>
+                        <?php elseif ($exerciseMode === 'distance'): ?>
+                        <span><?= (int)($prev['reps'] ?? 0) > 0 ? number_format((int)$prev['reps'], 0, ',', ' ') . ' m' : '–' ?></span>
+                        <span><?= number_format($previousWeight, 1, ',', '') ?> kg</span>
+                        <?php elseif ($exerciseMode === 'distance_time'): ?>
+                        <span><?= (int)($prev['reps'] ?? 0) > 0 ? number_format((int)$prev['reps'], 0, ',', ' ') . ' m' : '–' ?></span>
+                        <span><?= !empty($prev['duration_seconds']) ? formatSeriesDuration((int)$prev['duration_seconds']) : '–' ?></span>
+                        <span><?= number_format($previousWeight, 1, ',', '') ?> kg</span>
+                        <?php else: ?>
+                        <span><?= number_format($previousWeight, 1, ',', '') ?> kg</span>
+                        <span>× <?= (int)$prev['reps'] ?></span>
+                        <?php if ((int)$prev['assistance_reps'] > 0): ?>
+                        <span class="previous-exercise-session__assistance">+<?= (int)$prev['assistance_reps'] ?> dop.</span>
+                        <?php endif; ?>
+                        <?php endif; ?>
+                    </span>
+                    <?php endforeach; ?>
                 </div>
-                <div class="table-responsive">
-                    <table class="table table-sm table-bordered mb-0 align-middle text-center previous-exercise-session__table">
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <?php if ($exerciseMode === 'timed'): ?>
-                                <th>Čas</th>
-                                <th>Váha (kg)</th>
-                                <?php elseif ($exerciseMode === 'distance'): ?>
-                                <th>Vzdálenost (m)</th>
-                                <th>Váha (kg)</th>
-                                <?php elseif ($exerciseMode === 'distance_time'): ?>
-                                <th>Vzdálenost (m)</th>
-                                <th>Čas</th>
-                                <th>Váha (kg)</th>
-                                <?php else: ?>
-                                <th>Váha (kg)</th>
-                                <th>Opakování</th>
-                                <th>Dopomoc</th>
-                                <?php endif; ?>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($lastCompleted['series'] as $prev): ?>
-                            <tr>
-                                <td class="fw-bold text-muted"><?= (int)$prev['series_order'] ?></td>
-                                <?php if ($exerciseMode === 'timed'): ?>
-                                <td><?= !empty($prev['duration_seconds']) ? formatSeriesDuration((int)$prev['duration_seconds']) : '–' ?></td>
-                                <td><?= number_format((float)$prev['weight'] + (float)($prev['equipment_weight'] ?? 0), 1, ',', '') ?></td>
-                                <?php elseif ($exerciseMode === 'distance'): ?>
-                                <td><?= (int)($prev['reps'] ?? 0) > 0 ? number_format((int)$prev['reps'], 0, ',', ' ') : '–' ?></td>
-                                <td><?= number_format((float)$prev['weight'] + (float)($prev['equipment_weight'] ?? 0), 1, ',', '') ?></td>
-                                <?php elseif ($exerciseMode === 'distance_time'): ?>
-                                <td><?= (int)($prev['reps'] ?? 0) > 0 ? number_format((int)$prev['reps'], 0, ',', ' ') : '–' ?></td>
-                                <td><?= !empty($prev['duration_seconds']) ? formatSeriesDuration((int)$prev['duration_seconds']) : '–' ?></td>
-                                <td><?= number_format((float)$prev['weight'] + (float)($prev['equipment_weight'] ?? 0), 1, ',', '') ?></td>
-                                <?php else: ?>
-                                <td><?= number_format((float)$prev['weight'] + (float)($prev['equipment_weight'] ?? 0), 1, ',', '') ?></td>
-                                <td><?= (int)$prev['reps'] ?></td>
-                                <td><?= (int)$prev['assistance_reps'] > 0 ? (int)$prev['assistance_reps'] : '–' ?></td>
-                                <?php endif; ?>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
                 </div>
             </div>
             <?php endif; ?>

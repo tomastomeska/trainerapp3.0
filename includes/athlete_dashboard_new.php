@@ -17,7 +17,10 @@
  * @var array $weightVisibleRows
  * @var array $weightMobileRows
  * @var bool $weightShouldExpandAll
- * @var array $trainingMobileRows
+ * @var array $trainingCurrentMonthSessions
+ * @var array $trainingCurrentMonthMobileRows
+ * @var array $trainingCurrentMonthMobileCollapsedRows
+ * @var array $trainingOlderMonthsByMonth
  * @var array $trainingVisibleRows
  * @var array $onlineHistoryVisibleRows
  * @var array $onlineHistoryCollapsedRows
@@ -38,6 +41,7 @@ foreach ($weightHistory as $weightLog) {
         break;
     }
 }
+$athleteProfilePhoto = photoUrl($athlete['photo'] ?? null, 'athletes');
 renderAthleteHeader('Profil sportovce', false, true, true);
 ?>
 
@@ -49,14 +53,6 @@ renderAthleteHeader('Profil sportovce', false, true, true);
 .athlete-mobile-dashboard {
     display: flex;
     flex-direction: column;
-}
-
-.athlete-mobile-next-training {
-    order: 0;
-}
-
-.athlete-mobile-profile-photo {
-    order: 1;
 }
 
 .athlete-profile-grid,
@@ -129,18 +125,64 @@ renderAthleteHeader('Profil sportovce', false, true, true);
         gap: 0.75rem;
         align-items: flex-start;
         padding: 0.8rem 0.85rem;
-        border-bottom: 1px solid #eef2f7;
-        background: #f8fafc;
+        background: #212529;
+        color: #fff;
     }
 
     .athlete-mobile-summary-card__title {
         font-weight: 800;
         font-size: 0.98rem;
         line-height: 1.2;
+        color: #fff;
+    }
+
+    .athlete-mobile-summary-card__head .text-primary {
+        color: #ffc107 !important;
+    }
+
+    .athlete-mobile-transformation-card {
+        overflow: hidden;
+    }
+
+    .athlete-mobile-transformation-head {
+        align-items: center;
+        font-weight: 800;
     }
 
     .athlete-mobile-summary-card__body {
         padding: 0.8rem 0.85rem;
+    }
+
+    .athlete-mobile-accordion .accordion-button,
+    .athlete-mobile-accordion .accordion-button:not(.collapsed) {
+        background: #212529;
+        color: #fff;
+        box-shadow: none;
+    }
+
+    .athlete-mobile-accordion .accordion-button::after {
+        filter: invert(1);
+    }
+
+    .athlete-mobile-accordion .accordion-item {
+        border-color: #39414b;
+    }
+
+    .athlete-mobile-payments-summary [data-bs-toggle="collapse"][aria-expanded="true"] .fa-chevron-down {
+        transform: rotate(180deg);
+    }
+
+    .athlete-mobile-payments-summary [data-bs-toggle="collapse"] {
+        color: #111;
+    }
+
+    .athlete-calculator-card-header {
+        background: #212529 !important;
+        border-bottom: 0 !important;
+    }
+
+    .athlete-subscription-status--inactive {
+        display: none;
     }
 
     .athlete-mobile-summary-meta {
@@ -214,6 +256,53 @@ renderAthleteHeader('Profil sportovce', false, true, true);
         margin-top: 0.55rem;
     }
 
+    .athlete-mobile-training-month-title {
+        margin-bottom: 0.45rem;
+        color: #475569;
+        font-size: 0.82rem;
+        font-weight: 700;
+    }
+
+    .athlete-mobile-training-row {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        min-width: 0;
+    }
+
+    .athlete-mobile-training-date {
+        flex: 0 0 auto;
+        color: #64748b;
+        font-size: 0.76rem;
+        white-space: nowrap;
+    }
+
+    .athlete-mobile-training-name {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        font-size: 0.84rem;
+        font-weight: 600;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .athlete-mobile-training-detail {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+
+    .athlete-mobile-training-months .accordion-button {
+        gap: 0.5rem;
+        padding: 0.7rem 0.75rem;
+        font-size: 0.9rem;
+        font-weight: 700;
+    }
+
+    .athlete-mobile-training-months .accordion-body {
+        padding: 0.65rem;
+    }
+
     .athlete-mobile-accordion .accordion-button {
         padding: 0.8rem 0.9rem;
         font-weight: 700;
@@ -224,8 +313,7 @@ renderAthleteHeader('Profil sportovce', false, true, true);
     }
 }
 
-.athlete-medals-mobile-shortcut,
-.athlete-mobile-payments-shortcut {
+.athlete-medals-mobile-shortcut {
     display: none;
 }
 
@@ -234,18 +322,28 @@ renderAthleteHeader('Profil sportovce', false, true, true);
     .medal-grid--preview .medal-card__date {
         display: none;
     }
+
+    .athlete-mobile-training-date {
+        font-size: 0.7rem;
+    }
+
+    .athlete-mobile-training-detail {
+        padding-right: 0.5rem;
+        padding-left: 0.5rem;
+    }
+
+    .athlete-mobile-training-detail-label {
+        display: none;
+    }
 }
 
 @media (max-width: 319.98px) {
     .athlete-dashboard-medals > .card-header,
-    .athlete-dashboard-medals > .card-body,
-    .athlete-mobile-payments-summary > .athlete-mobile-summary-card__head,
-    .athlete-mobile-payments-summary > .athlete-mobile-summary-card__body {
+    .athlete-dashboard-medals > .card-body {
         display: none !important;
     }
 
-    .athlete-medals-mobile-shortcut,
-    .athlete-mobile-payments-shortcut {
+    .athlete-medals-mobile-shortcut {
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -257,8 +355,7 @@ renderAthleteHeader('Profil sportovce', false, true, true);
         text-decoration: none;
     }
 
-    .athlete-medals-mobile-shortcut__action,
-    .athlete-mobile-payments-shortcut__action {
+    .athlete-medals-mobile-shortcut__action {
         flex: 0 0 auto;
         border-radius: 0.5rem;
         padding: 0.35rem 0.55rem;
@@ -268,10 +365,6 @@ renderAthleteHeader('Profil sportovce', false, true, true);
         font-weight: 700;
     }
 
-    .athlete-mobile-payments-summary .athlete-mobile-payments-shortcut {
-        background: #f8fafc;
-        color: #111;
-    }
 }
 </style>
 
@@ -280,7 +373,36 @@ renderAthleteHeader('Profil sportovce', false, true, true);
 </div>
 
 <?php require __DIR__ . '/athlete_subscription_alert.php'; ?>
-<div class="mb-3"><a href="<?= BASE_URL ?>/intake_questionnaire.php" class="btn btn-outline-dark btn-sm">Můj vstupní dotazník</a></div>
+
+<div class="d-md-none mb-3 athlete-mobile-summary-card athlete-mobile-next-training">
+    <div class="athlete-mobile-summary-card__head">
+        <div class="athlete-mobile-summary-card__title"><i class="fas fa-calendar-check me-2 text-primary"></i>Nejbližší trénink</div>
+        <a href="<?= BASE_URL ?>/athlete_calendar.php" class="btn btn-warning btn-sm fw-semibold">
+            <i class="fas fa-calendar-alt me-1"></i>Kalendář
+        </a>
+    </div>
+    <div class="athlete-mobile-summary-card__body">
+        <?php if ($nearestPlannedTraining): ?>
+        <div class="athlete-mobile-summary-meta">
+            <div class="athlete-mobile-summary-line">
+                <span class="athlete-mobile-summary-label">Datum a čas</span>
+                <strong><?= formatDateTime((string)$nearestPlannedTraining['starts_at']) ?></strong>
+            </div>
+            <div class="athlete-mobile-summary-line">
+                <span class="athlete-mobile-summary-label">Místo</span>
+                <strong><?= !empty($nearestPlannedTraining['location']) ? h((string)$nearestPlannedTraining['location']) : 'neuvedeno' ?></strong>
+            </div>
+            <?php if (($nearestPlannedTraining['approval_status'] ?? 'approved') === 'pending'): ?>
+            <span class="badge bg-warning text-dark align-self-start">Ke schválení</span>
+            <?php endif; ?>
+        </div>
+        <?php else: ?>
+        <div class="text-muted">Nejbližší termín zatím není naplánovaný.</div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<?php require __DIR__ . '/athlete_quick_menu.php'; ?>
 
 <div class="card border-0 shadow-sm mb-4 athlete-desktop-only">
     <div class="card-header bg-dark text-white"><i class="fas fa-calendar-check me-2"></i>Plán tréninků</div>
@@ -326,66 +448,36 @@ renderAthleteHeader('Profil sportovce', false, true, true);
     </div>
 </section>
 
-<?php require __DIR__ . '/athlete_quick_menu.php'; ?>
-
 <a href="<?= BASE_URL ?>/athlete_transformation.php"
-   class="card border-0 shadow-sm mb-4 text-decoration-none text-dark"
+   class="card border-0 shadow-sm mb-4 text-decoration-none text-dark athlete-mobile-summary-card athlete-mobile-transformation-card"
    aria-label="Otevřít stránku Moje proměna v čase">
+    <span class="athlete-mobile-summary-card__head athlete-mobile-transformation-head">
+        <span><i class="fas fa-chart-line me-2 text-warning" aria-hidden="true"></i>Vaše osobní časová osa</span>
+        <i class="fas fa-chevron-right text-warning" aria-hidden="true"></i>
+    </span>
     <div class="card-body d-flex align-items-center gap-3 p-3 p-md-4">
         <span class="d-flex align-items-center justify-content-center rounded-circle bg-warning text-dark flex-shrink-0"
               style="width:48px;height:48px;font-size:1.25rem">
             <i class="fas fa-chart-line" aria-hidden="true"></i>
         </span>
         <span class="flex-grow-1">
-            <span class="d-block small text-uppercase fw-bold text-warning">Vaše osobní časová osa</span>
             <span class="d-block fs-5 fw-bold">Moje proměna v čase</span>
             <span class="d-block small text-muted">Fotografie a měření vašeho vývoje na jednom místě.</span>
         </span>
-        <i class="fas fa-chevron-right text-primary" aria-hidden="true"></i>
     </div>
 </a>
 
 <div class="d-md-none mb-4 athlete-mobile-dashboard">
-    <div class="athlete-mobile-summary-card mb-3 athlete-mobile-next-training">
-        <div class="athlete-mobile-summary-card__head">
-            <div>
-                <div class="athlete-mobile-summary-card__title"><i class="fas fa-calendar-check me-2 text-primary"></i>Nejbližší trénink</div>
-            </div>
-            <a href="<?= BASE_URL ?>/athlete_calendar.php" class="btn btn-outline-primary btn-sm">
-                Kalendář
-            </a>
-        </div>
-        <div class="athlete-mobile-summary-card__body">
-            <?php if ($nearestPlannedTraining): ?>
-            <div class="athlete-mobile-summary-meta">
-                <div class="athlete-mobile-summary-line">
-                    <span class="athlete-mobile-summary-label">Datum a čas</span>
-                    <strong><?= formatDateTime((string)$nearestPlannedTraining['starts_at']) ?></strong>
-                </div>
-                <div class="athlete-mobile-summary-line">
-                    <span class="athlete-mobile-summary-label">Místo</span>
-                    <strong><?= !empty($nearestPlannedTraining['location']) ? h((string)$nearestPlannedTraining['location']) : 'neuvedeno' ?></strong>
-                </div>
-                <?php if (($nearestPlannedTraining['approval_status'] ?? 'approved') === 'pending'): ?>
-                <span class="badge bg-warning text-dark align-self-start">Ke schválení</span>
-                <?php endif; ?>
-            </div>
-            <?php else: ?>
-            <div class="text-muted">Nejbližší termín zatím není naplánovaný.</div>
-            <?php endif; ?>
-        </div>
-    </div>
-
     <div class="athlete-mobile-summary-card mb-3 athlete-mobile-profile-photo">
         <div class="athlete-mobile-summary-card__head">
             <div class="athlete-mobile-summary-card__title"><i class="fas fa-camera me-2 text-warning"></i>Profilová fotografie</div>
-            <a href="<?= BASE_URL ?>/athlete_profile_edit.php" class="btn btn-outline-dark btn-sm"><i class="fas fa-user-edit me-1"></i>Upravit profil</a>
         </div>
         <div class="athlete-mobile-summary-card__body">
-            <?php $athleteMobileProfilePhoto = photoUrl($athlete['photo'] ?? null, 'athletes'); ?>
             <div class="d-flex align-items-center gap-3">
-                <?php if ($athleteMobileProfilePhoto): ?>
-                <img src="<?= h($athleteMobileProfilePhoto) ?>" alt="Profilová fotografie" class="rounded-circle" style="width:64px;height:64px;object-fit:cover;flex:0 0 auto;">
+                <?php if ($athleteProfilePhoto): ?>
+                <button type="button" class="btn p-0 border-0 bg-transparent flex-shrink-0" data-bs-toggle="modal" data-bs-target="#athleteProfilePhotoModal" aria-label="Zvětšit profilovou fotografii">
+                    <img src="<?= h($athleteProfilePhoto) ?>" alt="Profilová fotografie" class="rounded-circle" style="width:64px;height:64px;object-fit:cover;">
+                </button>
                 <?php else: ?>
                 <div class="rounded-circle bg-light border d-flex align-items-center justify-content-center text-muted" style="width:64px;height:64px;flex:0 0 auto;">
                     <i class="fas fa-user fa-lg"></i>
@@ -395,9 +487,13 @@ renderAthleteHeader('Profil sportovce', false, true, true);
                     <?= csrfField() ?>
                     <input type="hidden" name="action" value="save_profile_photo">
                     <input type="file" name="photo" class="form-control form-control-sm" accept="image/*" required>
-                    <button type="submit" class="btn btn-warning btn-sm mt-2"><i class="fas fa-upload me-1"></i>Nahrát fotografii</button>
+                    <div class="d-flex flex-wrap gap-2 mt-2">
+                        <button type="submit" class="btn btn-warning btn-sm"><i class="fas fa-upload me-1"></i>Nahrát fotografii</button>
+                        <a href="<?= BASE_URL ?>/athlete_profile_edit.php" class="btn btn-warning btn-sm"><i class="fas fa-pen me-1"></i>Upravit profil</a>
+                    </div>
                 </form>
             </div>
+            <a href="<?= BASE_URL ?>/intake_questionnaire.php" class="btn btn-outline-dark btn-sm mt-3"><i class="fas fa-clipboard-list me-1"></i>Můj vstupní dotazník</a>
         </div>
     </div>
 
@@ -408,40 +504,41 @@ renderAthleteHeader('Profil sportovce', false, true, true);
                 <div class="athlete-mobile-summary-card__title"><i class="fas fa-wallet me-2 text-warning"></i>Platby</div>
                 <div class="small text-muted">Poslední přehled</div>
             </div>
-            <a href="<?= BASE_URL ?>/athlete_payments.php" class="btn btn-warning btn-sm fw-semibold">
-                Všechny
-            </a>
+            <div class="d-flex flex-wrap justify-content-end gap-2">
+                <button class="btn btn-warning btn-sm fw-semibold" type="button" data-bs-toggle="collapse" data-bs-target="#athleteMobilePaymentsCollapse" aria-expanded="false" aria-controls="athleteMobilePaymentsCollapse">
+                    <i class="fas fa-chevron-down me-1"></i>Zobrazit
+                </button>
+                <a href="<?= BASE_URL ?>/athlete_payments.php" class="btn btn-warning btn-sm fw-semibold">Všechny</a>
+            </div>
         </div>
-        <a class="athlete-mobile-payments-shortcut" href="<?= BASE_URL ?>/athlete_payments.php">
-            <span><i class="fas fa-wallet me-2 text-warning"></i>Platby</span>
-            <span class="athlete-mobile-payments-shortcut__action">Všechny</span>
-        </a>
-        <div class="athlete-mobile-summary-card__body">
-            <?php if (!empty($paymentRowsForView)): ?>
-                <?php foreach (array_slice($paymentRowsForView, 0, 3) as $row): ?>
-                <div class="athlete-mobile-payment-card">
-                    <div class="athlete-mobile-payment-top">
-                        <div class="athlete-mobile-payment-month"><?= h($row['month_label']) ?></div>
-                        <?php if ($row['is_paid']): ?>
-                            <span class="badge bg-success">Uhrazeno</span>
-                        <?php elseif ($row['is_pending']): ?>
-                            <span class="badge bg-warning text-dark">Čeká</span>
-                        <?php else: ?>
-                            <span class="badge bg-secondary">Nevystaveno</span>
-                        <?php endif; ?>
+        <div class="collapse" id="athleteMobilePaymentsCollapse">
+            <div class="athlete-mobile-summary-card__body">
+                <?php if (!empty($paymentRowsForView)): ?>
+                    <?php foreach (array_slice($paymentRowsForView, 0, 3) as $row): ?>
+                    <div class="athlete-mobile-payment-card">
+                        <div class="athlete-mobile-payment-top">
+                            <div class="athlete-mobile-payment-month"><?= h($row['month_label']) ?></div>
+                            <?php if ($row['is_paid']): ?>
+                                <span class="badge bg-success">Uhrazeno</span>
+                            <?php elseif ($row['is_pending']): ?>
+                                <span class="badge bg-warning text-dark">Čeká</span>
+                            <?php else: ?>
+                                <span class="badge bg-secondary">Nevystaveno</span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="athlete-mobile-payment-grid">
+                            <div><span class="text-muted">Tréninky:</span> <strong><?= (int)$row['billable_sessions'] ?></strong></div>
+                            <div><span class="text-muted">Částka:</span> <strong><?= $row['display_amount'] !== null ? number_format((float)$row['display_amount'], 0, ',', ' ') . ' Kč' : 'nelze spočítat' ?></strong></div>
+                            <?php if (!empty($row['payment']['paid_at'])): ?>
+                            <div><span class="text-muted">Uhrazeno:</span> <?= formatDateTime((string)$row['payment']['paid_at']) ?></div>
+                            <?php endif; ?>
+                        </div>
                     </div>
-                    <div class="athlete-mobile-payment-grid">
-                        <div><span class="text-muted">Tréninky:</span> <strong><?= (int)$row['billable_sessions'] ?></strong></div>
-                        <div><span class="text-muted">Částka:</span> <strong><?= $row['display_amount'] !== null ? number_format((float)$row['display_amount'], 0, ',', ' ') . ' Kč' : 'nelze spočítat' ?></strong></div>
-                        <?php if (!empty($row['payment']['paid_at'])): ?>
-                        <div><span class="text-muted">Uhrazeno:</span> <?= formatDateTime((string)$row['payment']['paid_at']) ?></div>
-                        <?php endif; ?>
-                    </div>
-                </div>
-                <?php endforeach; ?>
-            <?php else: ?>
-                <div class="text-muted">Aktuálně tu nemáte žádnou evidovanou platbu.</div>
-            <?php endif; ?>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <div class="text-muted">Aktuálně tu nemáte žádnou evidovanou platbu.</div>
+                <?php endif; ?>
+            </div>
         </div>
     </div>
     <?php endif; ?>
@@ -580,43 +677,76 @@ renderAthleteHeader('Profil sportovce', false, true, true);
                     <?php if (empty($sessions)): ?>
                         <div class="text-muted text-center py-2">Zatím nemáte žádné tréninky.</div>
                     <?php else: ?>
-                        <?php foreach ($trainingMobileRows as $s): ?>
-                        <div class="athlete-mobile-history-card">
-                            <div class="athlete-mobile-history-grid">
-                                <div><span class="text-muted">Datum:</span> <strong><?= formatDateTime((string)$s['started_at']) ?></strong></div>
-                                <div><span class="text-muted">Sada:</span> <strong><?= h((string)$s['set_name']) ?></strong></div>
-                                <div><span class="text-muted">Místo:</span> <?= !empty($s['location']) ? h((string)$s['location']) : '–' ?></div>
-                                <div><span class="text-muted">Stav:</span> <?php if (!empty($s['completed_at'])): ?><span class="badge bg-success">Dokončeno</span><?php else: ?><span class="badge bg-warning text-dark">Naplánováno / probíhá</span><?php endif; ?></div>
+                        <?php if (!empty($trainingCurrentMonthSessions)): ?>
+                        <div class="athlete-mobile-training-month">
+                            <div class="athlete-mobile-training-month-title">
+                                Aktuální měsíc (<?= date('m/Y') ?>)
+                                <span class="badge bg-secondary ms-1"><?= count($trainingCurrentMonthSessions) ?></span>
                             </div>
-                            <div class="athlete-mobile-history-actions">
-                                <a href="<?= BASE_URL ?>/athlete_training_detail.php?id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-secondary">
-                                    <i class="fas fa-eye me-1"></i>Detail
-                                </a>
-                            </div>
-                        </div>
-                        <?php endforeach; ?>
-                        <?php if (!empty($trainingMobileCollapsedRows)): ?>
-                        <div class="collapse mt-2" id="athleteTrainingMobileMore">
-                            <?php foreach ($trainingMobileCollapsedRows as $s): ?>
+                            <?php foreach ($trainingCurrentMonthMobileRows as $s): ?>
                             <div class="athlete-mobile-history-card">
-                                <div class="athlete-mobile-history-grid">
-                                    <div><span class="text-muted">Datum:</span> <strong><?= formatDateTime((string)$s['started_at']) ?></strong></div>
-                                    <div><span class="text-muted">Sada:</span> <strong><?= h((string)$s['set_name']) ?></strong></div>
-                                    <div><span class="text-muted">Místo:</span> <?= !empty($s['location']) ? h((string)$s['location']) : '–' ?></div>
-                                    <div><span class="text-muted">Stav:</span> <?php if (!empty($s['completed_at'])): ?><span class="badge bg-success">Dokončeno</span><?php else: ?><span class="badge bg-warning text-dark">Naplánováno / probíhá</span><?php endif; ?></div>
-                                </div>
-                                <div class="athlete-mobile-history-actions">
-                                    <a href="<?= BASE_URL ?>/athlete_training_detail.php?id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-secondary">
-                                        <i class="fas fa-eye me-1"></i>Detail
+                                <div class="athlete-mobile-training-row">
+                                    <span class="athlete-mobile-training-date"><?= formatDateTime((string)$s['started_at']) ?></span>
+                                    <span class="athlete-mobile-training-name"><?= h((string)$s['set_name']) ?></span>
+                                    <a href="<?= BASE_URL ?>/athlete_training_detail.php?id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-secondary athlete-mobile-training-detail" aria-label="Prohlédnout trénink" title="Prohlédnout trénink">
+                                        <i class="fas fa-eye" aria-hidden="true"></i><span class="athlete-mobile-training-detail-label"> Detail</span>
                                     </a>
                                 </div>
                             </div>
                             <?php endforeach; ?>
-                        </div>
+                            <?php if (!empty($trainingCurrentMonthMobileCollapsedRows)): ?>
+                            <div class="collapse mt-2" id="athleteTrainingCurrentMonthMore">
+                                <?php foreach ($trainingCurrentMonthMobileCollapsedRows as $s): ?>
+                                <div class="athlete-mobile-history-card">
+                                    <div class="athlete-mobile-training-row">
+                                        <span class="athlete-mobile-training-date"><?= formatDateTime((string)$s['started_at']) ?></span>
+                                        <span class="athlete-mobile-training-name"><?= h((string)$s['set_name']) ?></span>
+                                        <a href="<?= BASE_URL ?>/athlete_training_detail.php?id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-secondary athlete-mobile-training-detail" aria-label="Prohlédnout trénink" title="Prohlédnout trénink">
+                                            <i class="fas fa-eye" aria-hidden="true"></i><span class="athlete-mobile-training-detail-label"> Detail</span>
+                                        </a>
+                                    </div>
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
                         <div class="text-center mt-2">
-                            <button class="btn btn-outline-dark btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#athleteTrainingMobileMore" aria-expanded="false" aria-controls="athleteTrainingMobileMore">
-                                <i class="fas fa-chevron-down me-1"></i>Zobrazit všechny tréninky (<?= count($trainingMobileCollapsedRows) ?>)
+                            <button class="btn btn-outline-dark btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#athleteTrainingCurrentMonthMore" aria-expanded="false" aria-controls="athleteTrainingCurrentMonthMore">
+                                <i class="fas fa-chevron-down me-1"></i>Další tréninky tohoto měsíce (<?= count($trainingCurrentMonthMobileCollapsedRows) ?>)
                             </button>
+                        </div>
+                            <?php endif; ?>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (!empty($trainingOlderMonthsByMonth)): ?>
+                        <div class="accordion athlete-mobile-training-months mt-3" id="athleteTrainingHistoryMonths">
+                            <?php foreach ($trainingOlderMonthsByMonth as $trainingMonthKey => $trainingMonthSessions): ?>
+                            <?php
+                            $trainingMonthId = 'athleteTrainingMonth' . str_replace('-', '', (string)$trainingMonthKey);
+                            $trainingMonthLabel = date('m/Y', strtotime((string)$trainingMonthSessions[0]['started_at']));
+                            ?>
+                            <div class="accordion-item">
+                                <h3 class="accordion-header" id="<?= h($trainingMonthId) ?>Heading">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#<?= h($trainingMonthId) ?>Collapse" aria-expanded="false" aria-controls="<?= h($trainingMonthId) ?>Collapse">
+                                        <span><?= h($trainingMonthLabel) ?></span>
+                                        <span class="badge bg-secondary"><?= count($trainingMonthSessions) ?></span>
+                                    </button>
+                                </h3>
+                                <div id="<?= h($trainingMonthId) ?>Collapse" class="accordion-collapse collapse" aria-labelledby="<?= h($trainingMonthId) ?>Heading" data-bs-parent="#athleteTrainingHistoryMonths">
+                                    <div class="accordion-body">
+                                        <?php foreach ($trainingMonthSessions as $s): ?>
+                                        <div class="athlete-mobile-history-card">
+                                            <div class="athlete-mobile-training-row">
+                                                <span class="athlete-mobile-training-date"><?= formatDateTime((string)$s['started_at']) ?></span>
+                                                <span class="athlete-mobile-training-name"><?= h((string)$s['set_name']) ?></span>
+                                                <a href="<?= BASE_URL ?>/athlete_training_detail.php?id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-secondary athlete-mobile-training-detail" aria-label="Prohlédnout trénink" title="Prohlédnout trénink">
+                                                    <i class="fas fa-eye" aria-hidden="true"></i><span class="athlete-mobile-training-detail-label"> Detail</span>
+                                                </a>
+                                            </div>
+                                        </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
                         </div>
                         <?php endif; ?>
                     <?php endif; ?>
@@ -626,28 +756,21 @@ renderAthleteHeader('Profil sportovce', false, true, true);
     </div>
 </div>
 
-<div class="mb-4">
-    <button class="btn btn-outline-danger btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#athleteAccountDeletionForm" aria-expanded="false" aria-controls="athleteAccountDeletionForm">
-        <i class="fas fa-user-slash me-1"></i>Požádat o smazání účtu
-    </button>
-    <div class="collapse mt-2" id="athleteAccountDeletionForm">
-        <div class="border border-danger rounded p-3">
-            <p class="small text-muted mb-3">
-                Systém odstraní profil, přístupová data a související záznamy v rozsahu aplikace. Zákonné účetní a evidenční záznamy mohou být uchovány podle právních povinností.
-            </p>
-            <form method="post" onsubmit="return confirm('Opravdu chcete požádat o smazání svého účtu a přidružených dat? Tato akce je nevratná.');">
-                <?= csrfField() ?>
-                <input type="hidden" name="action" value="request_account_deletion">
-                <div class="d-flex gap-2 flex-wrap align-items-start">
-                    <textarea name="delete_reason" class="form-control" rows="2" maxlength="1000" placeholder="Volitelný důvod žádosti"></textarea>
-                    <button type="submit" class="btn btn-outline-danger">
-                        <i class="fas fa-user-slash me-1"></i>Odeslat žádost
-                    </button>
-                </div>
-            </form>
+<?php if ($athleteProfilePhoto): ?>
+<div class="modal fade" id="athleteProfilePhotoModal" tabindex="-1" aria-labelledby="athleteProfilePhotoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title fs-5" id="athleteProfilePhotoModalLabel">Profilová fotografie</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+            </div>
+            <div class="modal-body text-center p-2">
+                <img src="<?= h($athleteProfilePhoto) ?>" alt="Profilová fotografie" class="img-fluid rounded" style="max-height:80vh;object-fit:contain;">
+            </div>
         </div>
     </div>
 </div>
+<?php endif; ?>
 
 <div class="athlete-dashboard-details" id="athlete-dashboard-details">
 <div class="athlete-profile-grid mb-4 athlete-desktop-only">
@@ -658,10 +781,11 @@ renderAthleteHeader('Profil sportovce', false, true, true);
                 <a href="<?= BASE_URL ?>/athlete_profile_edit.php" class="btn btn-warning btn-sm fw-semibold"><i class="fas fa-pen me-1"></i>Upravit</a>
             </div>
             <div class="card-body">
-                <?php $athleteProfilePhoto = photoUrl($athlete['photo'] ?? null, 'athletes'); ?>
                 <div class="athlete-profile-photo d-flex align-items-center gap-3 mb-3 pb-3 border-bottom">
                     <?php if ($athleteProfilePhoto): ?>
-                    <img src="<?= h($athleteProfilePhoto) ?>" alt="Profilová fotografie" class="rounded-circle" style="width:72px;height:72px;object-fit:cover;">
+                    <button type="button" class="btn p-0 border-0 bg-transparent flex-shrink-0" data-bs-toggle="modal" data-bs-target="#athleteProfilePhotoModal" aria-label="Zvětšit profilovou fotografii">
+                        <img src="<?= h($athleteProfilePhoto) ?>" alt="Profilová fotografie" class="rounded-circle" style="width:72px;height:72px;object-fit:cover;">
+                    </button>
                     <?php else: ?>
                     <div class="rounded-circle bg-light border d-flex align-items-center justify-content-center text-muted" style="width:72px;height:72px;flex:0 0 auto;">
                         <i class="fas fa-user fa-2x"></i>
@@ -686,6 +810,7 @@ renderAthleteHeader('Profil sportovce', false, true, true);
                     <tr><td class="text-muted fw-semibold">Datum narození</td><td><?= !empty($athlete['birth_date']) ? formatDate((string)$athlete['birth_date']) : '–' ?></td></tr>
                     <tr><td class="text-muted fw-semibold">Aktuální váha</td><td><?= $weightStats['current_weight'] !== null ? number_format((float)$weightStats['current_weight'], 1, ',', '') . ' kg' : '–' ?></td></tr>
                 </table>
+                <a href="<?= BASE_URL ?>/intake_questionnaire.php" class="btn btn-outline-dark btn-sm mt-3"><i class="fas fa-clipboard-list me-1"></i>Můj vstupní dotazník</a>
             </div>
         </div>
     </div>
@@ -833,7 +958,7 @@ $calcBmiToneClass = [
 ][(string)($calcLatestBmi['inputs']['category_tone'] ?? '')] ?? 'bg-secondary';
 ?>
 <div class="card border-0 shadow-sm mb-4" id="calculator-profile-card">
-    <div class="card-header text-white d-flex justify-content-between align-items-center flex-wrap gap-2" style="background:linear-gradient(150deg,#23272f 0%,#16181d 60%,#0e1013 100%);border-bottom:2px solid #d4a73c;">
+    <div class="card-header text-white d-flex justify-content-between align-items-center flex-wrap gap-2 athlete-calculator-card-header" style="background:linear-gradient(150deg,#23272f 0%,#16181d 60%,#0e1013 100%);border-bottom:2px solid #d4a73c;">
         <span><i class="fas fa-calculator me-2" style="color:#d4a73c"></i>Kalkulačky</span>
         <div class="d-flex gap-2 flex-wrap">
             <?php if (calculatorIsEnabled('performance')): ?><a href="<?= BASE_URL ?>/performance.php" class="btn btn-outline-light btn-sm">Výkonnost a regenerace</a><?php endif; ?>

@@ -2,6 +2,8 @@
 // athlete_chat_mobile.php – odlehčená mobilní stránka jen pro chat sportovce s trenérem a administrátorem (pro záložku/plochu na mobilu)
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/chat_attachments.php';
+require_once __DIR__ . '/includes/chat_message_deletions.php';
 require_once __DIR__ . '/includes/athlete_header.php';
 require_once __DIR__ . '/includes/push_chat_notifications.php';
 
@@ -10,6 +12,7 @@ $athleteId = (int)getCurrentAthleteId();
 $athlete = getCurrentAthlete();
 $coachId = (int)($athlete['coach_id'] ?? 0);
 $pdo = getDB();
+ensureChatMessageDeletionTable($pdo);
 
 $coachChatTableExists = (bool)$pdo->query("SHOW TABLES LIKE 'coach_athlete_chat_messages'")->fetchColumn();
 $adminChatTableExists = (bool)$pdo->query("SHOW TABLES LIKE 'admin_athlete_chat_messages'")->fetchColumn();
@@ -39,30 +42,40 @@ if ($target !== '' && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
     }
 
     $body = mb_substr(trim((string)($_POST['body'] ?? '')), 0, 4000, 'UTF-8');
-    if ($body !== '') {
+    $attachment = receiveChatAttachment($_FILES);
+    if ($attachment['error'] !== null) {
+        flash('danger', $attachment['error']);
+        redirect(BASE_URL . '/athlete_chat_mobile.php?target=' . $target);
+    }
+    if ($body === '' && $attachment['path'] === null) {
+        flash('danger', 'Zadejte zprávu nebo přidejte přílohu.');
+        redirect(BASE_URL . '/athlete_chat_mobile.php?target=' . $target);
+    }
+    if ($body !== '' || $attachment['path'] !== null) {
         try {
             if ($target === 'coach') {
                 $pdo->prepare(
-                    "INSERT INTO coach_athlete_chat_messages (coach_id, athlete_id, sender, body, athlete_read_at) VALUES (?, ?, 'athlete', ?, NOW())"
-                )->execute([$coachId, $athleteId, $body]);
+                    "INSERT INTO coach_athlete_chat_messages (coach_id, athlete_id, sender, body, attachment_path, attachment_name, athlete_read_at) VALUES (?, ?, 'athlete', ?, ?, ?, NOW())"
+                )->execute([$coachId, $athleteId, $body, $attachment['path'], $attachment['name']]);
                 $newId = (int)$pdo->lastInsertId();
                 pushNotifyCoachAthleteChatMessage($pdo, $newId);
 
                 $athleteName = trim((string)($athlete['first_name'] ?? '') . ' ' . (string)($athlete['last_name'] ?? ''));
                 if (!empty($coach['email'])) {
-                    notifyCoachAboutNewAthleteChatMessage($coachId, $athleteId, $newId, (string)$coach['email'], $coachName, $athleteName !== '' ? $athleteName : 'sportovec', $body);
+                    notifyCoachAboutNewAthleteChatMessage($coachId, $athleteId, $newId, (string)$coach['email'], $coachName, $athleteName !== '' ? $athleteName : 'sportovec', chatNotificationText($body, $attachment['name']));
                 }
             } else {
                 $pdo->prepare(
-                    "INSERT INTO admin_athlete_chat_messages (athlete_id, sender, body, athlete_read_at) VALUES (?, 'athlete', ?, NOW())"
-                )->execute([$athleteId, $body]);
+                    "INSERT INTO admin_athlete_chat_messages (athlete_id, sender, body, attachment_path, attachment_name, athlete_read_at) VALUES (?, 'athlete', ?, ?, ?, NOW())"
+                )->execute([$athleteId, $body, $attachment['path'], $attachment['name']]);
                 $newId = (int)$pdo->lastInsertId();
 
                 $athleteName = trim((string)($athlete['first_name'] ?? '') . ' ' . (string)($athlete['last_name'] ?? ''));
-                notifyAdminAboutNewAthleteChatMessage($athleteId, $newId, $athleteName !== '' ? $athleteName : 'sportovec', $body);
+                notifyAdminAboutNewAthleteChatMessage($athleteId, $newId, $athleteName !== '' ? $athleteName : 'sportovec', chatNotificationText($body, $attachment['name']));
             }
         } catch (Throwable $e) {
             error_log('athlete chat_mobile send error: ' . $e->getMessage());
+            flash('danger', 'Zprávu se nepodařilo odeslat.');
         }
     }
     redirect(BASE_URL . '/athlete_chat_mobile.php?target=' . $target);
@@ -72,50 +85,42 @@ $messages = [];
 if ($target === 'coach') {
     $pdo->prepare("UPDATE coach_athlete_chat_messages SET athlete_read_at = NOW() WHERE athlete_id = ? AND sender = 'coach' AND athlete_read_at IS NULL")
         ->execute([$athleteId]);
-    $threadStmt = $pdo->prepare('SELECT * FROM coach_athlete_chat_messages WHERE athlete_id = ? ORDER BY created_at ASC, id ASC');
-    $threadStmt->execute([$athleteId]);
-    $messages = $threadStmt->fetchAll();
+    $messages = fetchChatMessagesForUser($pdo, 'coach_athlete_chat_messages', ['coach_id' => $coachId, 'athlete_id' => $athleteId], 'athlete', $athleteId);
 } elseif ($target === 'admin') {
     $pdo->prepare("UPDATE admin_athlete_chat_messages SET athlete_read_at = NOW() WHERE athlete_id = ? AND sender = 'admin' AND athlete_read_at IS NULL")
         ->execute([$athleteId]);
-    $threadStmt = $pdo->prepare('SELECT * FROM admin_athlete_chat_messages WHERE athlete_id = ? ORDER BY created_at ASC, id ASC');
-    $threadStmt->execute([$athleteId]);
-    $messages = $threadStmt->fetchAll();
+    $messages = fetchChatMessagesForUser($pdo, 'admin_athlete_chat_messages', ['athlete_id' => $athleteId], 'athlete', $athleteId);
 }
 
 $conversations = [];
 if ($target === '') {
     if ($coachChatTableExists && $coachId > 0) {
         $lastStmt = $pdo->prepare(
-            "SELECT
-                (SELECT body FROM coach_athlete_chat_messages WHERE athlete_id = ? ORDER BY created_at DESC, id DESC LIMIT 1) AS last_body,
-                (SELECT created_at FROM coach_athlete_chat_messages WHERE athlete_id = ? ORDER BY created_at DESC, id DESC LIMIT 1) AS last_at,
-                (SELECT COUNT(*) FROM coach_athlete_chat_messages WHERE athlete_id = ? AND sender = 'coach' AND athlete_read_at IS NULL) AS unread_count"
+            "SELECT COUNT(*) AS unread_count FROM coach_athlete_chat_messages WHERE athlete_id = ? AND sender = 'coach' AND athlete_read_at IS NULL"
         );
-        $lastStmt->execute([$athleteId, $athleteId, $athleteId]);
+        $lastStmt->execute([$athleteId]);
         $row = $lastStmt->fetch();
+        $preview = fetchChatMessagePreview($pdo, 'coach_athlete_chat_messages', ['coach_id' => $coachId, 'athlete_id' => $athleteId], 'athlete', $athleteId);
         $conversations[] = [
             'target' => 'coach',
             'name' => $coachName !== '' ? $coachName : 'Trenér',
-            'last_body' => $row['last_body'] ?? null,
-            'last_at' => $row['last_at'] ?? null,
+            'last_body' => $preview['body'],
+            'last_at' => $preview['created_at'],
             'unread_count' => (int)($row['unread_count'] ?? 0),
         ];
     }
     if ($adminChatTableExists) {
         $lastStmt = $pdo->prepare(
-            "SELECT
-                (SELECT body FROM admin_athlete_chat_messages WHERE athlete_id = ? ORDER BY created_at DESC, id DESC LIMIT 1) AS last_body,
-                (SELECT created_at FROM admin_athlete_chat_messages WHERE athlete_id = ? ORDER BY created_at DESC, id DESC LIMIT 1) AS last_at,
-                (SELECT COUNT(*) FROM admin_athlete_chat_messages WHERE athlete_id = ? AND sender = 'admin' AND athlete_read_at IS NULL) AS unread_count"
+            "SELECT COUNT(*) AS unread_count FROM admin_athlete_chat_messages WHERE athlete_id = ? AND sender = 'admin' AND athlete_read_at IS NULL"
         );
-        $lastStmt->execute([$athleteId, $athleteId, $athleteId]);
+        $lastStmt->execute([$athleteId]);
         $row = $lastStmt->fetch();
+        $preview = fetchChatMessagePreview($pdo, 'admin_athlete_chat_messages', ['athlete_id' => $athleteId], 'athlete', $athleteId);
         $conversations[] = [
             'target' => 'admin',
             'name' => 'Administrátor',
-            'last_body' => $row['last_body'] ?? null,
-            'last_at' => $row['last_at'] ?? null,
+            'last_body' => $preview['body'],
+            'last_at' => $preview['created_at'],
             'unread_count' => (int)($row['unread_count'] ?? 0),
         ];
     }
@@ -211,6 +216,7 @@ $targetName = $target === 'coach' ? ($coachName !== '' ? $coachName : 'Trenér')
         border: none; background: #0d6efd; color: #fff; padding: 6px 12px; border-radius: 8px; font-size: 13px; white-space: nowrap;
     }
 </style>
+<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/chat-composer.css?v=6">
 <?php if (!$sidebarChat): ?>
 </head>
 <body>
@@ -250,22 +256,28 @@ window.trainerAppSuppressCoachChatAlerts = true;
     <?php if (empty($messages)): ?>
     <div class="empty">Zatím žádné zprávy.</div>
     <?php else: foreach ($messages as $m): $isMine = $m['sender'] === 'athlete'; ?>
-    <div class="bubble-row <?= $isMine ? 'from-athlete' : 'from-other' ?>">
+    <div class="bubble-row <?= $isMine ? 'from-athlete' : 'from-other' ?>" data-message-id="<?= (int)$m['id'] ?>" data-deleted-event-id="<?= (int)($m['deleted_event_id'] ?? 0) ?>">
         <div class="bubble">
             <?= h((string)$m['body']) ?>
             <?php if (!empty($m['attachment_name'])): ?>
             <div style="margin-top:4px"><a href="<?= h(BASE_URL . '/uploads/messages/' . rawurlencode((string)$m['attachment_path'])) ?>" target="_blank" rel="noopener"><i class="fas fa-paperclip"></i> <?= h((string)$m['attachment_name']) ?></a></div>
             <?php endif; ?>
             <span class="bubble-time"><?= formatDateTime((string)$m['created_at']) ?></span>
+            <button type="button" class="chat-message-more" data-chat-message-menu-toggle aria-label="Možnosti zprávy" title="Možnosti zprávy"><i class="fas fa-ellipsis-v" aria-hidden="true"></i></button>
+            <div class="chat-message-menu" data-chat-message-menu hidden>
+                <button type="button" data-chat-delete-scope="me">Odstranit pro mě</button>
+                <?php if ($isMine && empty($m['deleted_for_everyone'])): ?><button type="button" data-chat-delete-scope="everyone">Odstranit pro všechny</button><?php endif; ?>
+            </div>
         </div>
     </div>
     <?php endforeach; endif; ?>
 </div>
-<form class="chat-footer" method="post">
+<form class="chat-footer" method="post" enctype="multipart/form-data" data-chat-composer>
     <?= csrfField() ?>
     <input type="hidden" name="action" value="send">
-    <input type="text" name="body" placeholder="Napište zprávu…" maxlength="4000" autocomplete="off" required>
-    <button type="submit"><i class="fas fa-paper-plane"></i></button>
+    <input type="text" name="body" data-chat-input placeholder="Napište zprávu…" maxlength="4000" autocomplete="off">
+    <button type="submit" data-chat-send><i class="fas fa-paper-plane"></i></button>
+    <span class="chat-send-error" data-chat-error role="status"></span>
 </form>
 <script>
 (function () {
@@ -278,6 +290,10 @@ window.trainerAppSuppressCoachChatAlerts = true;
 
     var apiUrl = <?= json_encode(BASE_URL . ($target === 'coach' ? '/api/athlete_coach_chat.php' : '/api/athlete_chat_admin.php')) ?>;
     var lastId = <?= (int)($messages !== [] ? $messages[count($messages) - 1]['id'] : 0) ?>;
+    var lastDeletionId = Math.max(0, ...Array.from(box.querySelectorAll('[data-deleted-event-id]')).map(function (row) {
+        return Number(row.dataset.deletedEventId) || 0;
+    }));
+    var csrfToken = <?= json_encode(csrfToken()) ?>;
     var partnerLabel = <?= json_encode($targetName) ?>;
 
     function escapeHtml(str) {
@@ -286,28 +302,75 @@ window.trainerAppSuppressCoachChatAlerts = true;
         });
     }
 
-    function appendMessage(m) {
+    function appendMessage(m, existingRow) {
+        if (!existingRow) {
+            existingRow = box.querySelector('[data-message-id="' + Number(m.id) + '"]');
+        }
         var row = document.createElement('div');
         row.className = 'bubble-row ' + (m.sender === 'athlete' ? 'from-athlete' : 'from-other');
+        row.dataset.messageId = String(m.id);
+        row.dataset.deletedEventId = String(m.deleted_event_id || 0);
         var html = '<div class="bubble">' + escapeHtml(m.body).replace(/\n/g, '<br>');
         if (m.attachment_url) {
             html += '<div style="margin-top:4px"><a href="' + m.attachment_url + '" target="_blank" rel="noopener"><i class="fas fa-paperclip"></i> ' + escapeHtml(m.attachment_name || 'Příloha') + '</a></div>';
         }
-        html += '<span class="bubble-time">' + escapeHtml(m.created_at) + '</span></div>';
+        html += '<span class="bubble-time">' + escapeHtml(m.created_at) + '</span>';
+        html += '<button type="button" class="chat-message-more" data-chat-message-menu-toggle aria-label="Možnosti zprávy" title="Možnosti zprávy"><i class="fas fa-ellipsis-v" aria-hidden="true"></i></button>'
+            + '<div class="chat-message-menu" data-chat-message-menu hidden><button type="button" data-chat-delete-scope="me">Odstranit pro mě</button>'
+            + (m.sender === 'athlete' && !m.deleted_for_everyone ? '<button type="button" data-chat-delete-scope="everyone">Odstranit pro všechny</button>' : '')
+            + '</div></div>';
         row.innerHTML = html;
-        box.appendChild(row);
+        if (existingRow) existingRow.replaceWith(row);
+        else box.appendChild(row);
         if (Number(m.id) > lastId) { lastId = Number(m.id); }
+        lastDeletionId = Math.max(lastDeletionId, Number(m.deleted_event_id) || 0);
     }
 
+    box.addEventListener('click', async function (event) {
+        var target = event.target instanceof Element ? event.target : null;
+        if (!target) return;
+        var toggle = target.closest('[data-chat-message-menu-toggle]');
+        if (toggle) {
+            var menu = toggle.parentElement.querySelector('[data-chat-message-menu]');
+            box.querySelectorAll('[data-chat-message-menu]').forEach(function (item) { if (item !== menu) item.hidden = true; });
+            menu.hidden = !menu.hidden;
+            return;
+        }
+        var deleteButton = target.closest('[data-chat-delete-scope]');
+        if (!deleteButton) {
+            if (!target.closest('[data-chat-message-menu]')) box.querySelectorAll('[data-chat-message-menu]').forEach(function (item) { item.hidden = true; });
+            return;
+        }
+        var row = deleteButton.closest('.bubble-row');
+        var scope = deleteButton.dataset.chatDeleteScope;
+        if (!row) return;
+        if (scope === 'everyone' && !window.confirm('Opravdu chcete odstranit tuto zprávu pro všechny účastníky?')) return;
+        var formData = new FormData();
+        formData.append('message_id', row.dataset.messageId);
+        formData.append('scope', scope);
+        formData.append('csrf_token', csrfToken);
+        try {
+            var response = await fetch(apiUrl + '?action=delete', { method: 'POST', body: formData, credentials: 'same-origin' });
+            var data = await response.json();
+            if (!response.ok || !data || !data.ok) throw new Error(data && data.error ? data.error : 'Zprávu se nepodařilo odstranit.');
+            if (scope === 'me') row.remove();
+            else if (data.message) appendMessage(data.message, row);
+            else row.remove();
+            if (data.warning) window.alert(data.warning);
+        } catch (error) {
+            window.alert(error && error.message ? error.message : 'Zprávu se nepodařilo odstranit.');
+        }
+    });
+
     function pollNew() {
-        fetch(apiUrl + '?action=poll&since_id=' + lastId + (document.hidden ? '&mark_read=0' : ''), { credentials: 'same-origin' })
+        fetch(apiUrl + '?action=poll&since_id=' + lastId + '&since_deletion_id=' + lastDeletionId + (document.hidden ? '&mark_read=0' : ''), { credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (!data || !data.ok || !data.messages.length) { return; }
                 var hasIncoming = false;
                 data.messages.forEach(function (m) {
                     appendMessage(m);
-                    if (m.sender !== 'athlete') { hasIncoming = true; }
+                    if (m.sender !== 'athlete' && !m.deleted_for_everyone) { hasIncoming = true; }
                 });
                 box.scrollTop = box.scrollHeight;
                 if (hasIncoming && (<?= json_encode($target) ?> !== 'coach' || !window.trainerAppSuppressCoachChatAlerts) && 'Notification' in window && Notification.permission === 'granted' && document.hidden) {
@@ -428,5 +491,6 @@ window.trainerAppSuppressCoachChatAlerts = true;
 </div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <?php endif; ?>
+<script src="<?= BASE_URL ?>/assets/js/chat-composer.js?v=6"></script>
 </body>
 </html>

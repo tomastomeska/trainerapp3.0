@@ -71,23 +71,24 @@ function buildVideoSignature(array $files): string
 function renderSharedVideosSection(array $sharedFiles): string
 {
     ob_start();
-    if (empty($sharedFiles)): ?>
-<div class="alert alert-light border text-center py-5">
-    <i class="fas fa-video fa-3x text-muted mb-3 d-block"></i>
-    <p class="text-muted mb-0">Zatim zde nejsou zadna sdilena videa.</p>
-</div>
-<?php else: ?>
+    ?>
+<section class="card athlete-page-card mb-4">
+    <div class="card-header d-flex align-items-center justify-content-between gap-2">
+        <h2><i class="fas fa-circle-play me-2 text-warning"></i>Od trenéra</h2>
+        <?php if (!empty($sharedFiles)): ?><span class="badge rounded-pill text-bg-warning"><?= count($sharedFiles) ?></span><?php endif; ?>
+    </div>
+    <div class="card-body p-2 p-md-3">
+    <?php if (empty($sharedFiles)): ?>
+    <div class="alert alert-light border text-center py-4 mb-0">
+        <i class="fas fa-video fa-2x text-muted mb-2 d-block"></i>
+        <p class="text-muted mb-0">Zatím zde nejsou žádná sdílená videa.</p>
+    </div>
+    <?php else: ?>
 <?php
     $first = $sharedFiles[0];
     $firstSrc = BASE_URL . '/video_stream.php?id=' . (int)$first['id'];
     $firstMime = (string)($first['mime_type'] ?: 'video/mp4');
 ?>
-<div class="mb-5">
-    <h5 class="fw-bold mb-3">
-        <i class="fas fa-user-check me-2 text-danger"></i>Od trenera
-        <span class="badge bg-secondary ms-2" style="font-size:.75rem"><?= count($sharedFiles) ?></span>
-    </h5>
-
     <div class="video-player-shell card border-0 shadow-sm mx-auto mb-4">
         <div class="video-stage">
             <video id="athleteMainVideo" controls playsinline disablePictureInPicture controlsList="nodownload noplaybackrate" oncontextmenu="return false;" class="w-100" preload="metadata">
@@ -138,9 +139,10 @@ function renderSharedVideosSection(array $sharedFiles): string
         </div>
         <?php endforeach; ?>
     </div>
+    <?php endif; ?>
 </div>
+</section>
 <?php
-    endif;
     return (string)ob_get_clean();
 }
 
@@ -159,10 +161,6 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
 renderAthleteHeader('Videa', false, true);
 ?>
-
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-    <h2 class="mb-0"><i class="fas fa-video me-2 text-danger"></i>Videa</h2>
-</div>
 
 <div id="athleteVideosSharedSection"><?= $sharedHtml ?></div>
 
@@ -196,12 +194,18 @@ renderAthleteHeader('Videa', false, true);
 .video-playlist-item:hover {
     transform: translateY(-2px);
     box-shadow: 0 .4rem .9rem rgba(0,0,0,.12);
-    border-color: #9bbcff;
+    border-color: #e8c34f;
 }
 
 .video-playlist-item.is-active {
-    border-color: #0d6efd;
-    box-shadow: 0 .35rem .9rem rgba(13,110,253,.18);
+    border-color: #efd477;
+    background: #fffbeb;
+    box-shadow: 0 .35rem .9rem rgba(120,90,0,.14);
+}
+
+.video-playlist-item:focus-visible {
+    outline: 3px solid rgba(232,195,79,.55);
+    outline-offset: 2px;
 }
 
 .video-thumb-wrap video {

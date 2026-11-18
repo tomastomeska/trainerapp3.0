@@ -217,9 +217,10 @@ function renderSupportWidget(string $userType = 'coach'): void {
             <div class="text-muted text-center small py-3">Načítám…</div>
         </div>
         <div class="admin-chat-panel-body d-none" id="adminChatBody"></div>
-        <form class="admin-chat-panel-footer d-none" id="adminChatForm">
-            <input type="text" class="form-control" id="adminChatInput" maxlength="4000" placeholder="Napište zprávu…" autocomplete="off" required>
-            <button type="submit" class="btn btn-primary" id="adminChatSendBtn"><i class="fas fa-paper-plane"></i></button>
+        <form class="admin-chat-panel-footer d-none" id="adminChatForm" data-chat-composer>
+            <input type="text" class="form-control" id="adminChatInput" name="body" data-chat-input maxlength="4000" placeholder="Napište zprávu…" autocomplete="off">
+            <button type="submit" class="btn btn-primary" id="adminChatSendBtn" data-chat-send><i class="fas fa-paper-plane"></i></button>
+            <span class="chat-send-error" data-chat-error role="status"></span>
         </form>
     </div>
     <?php endif; ?>
@@ -550,12 +551,47 @@ function renderSupportWidget(string $userType = 'coach'): void {
     padding: 10px;
     background: #f0f0f0;
     border-top: 1px solid #ddd;
+    flex-wrap: wrap;
+}
+.admin-chat-panel-footer .chat-composer-wrap {
+    display: flex;
+    align-items: center;
+}
+.admin-chat-panel-footer .chat-composer-wrap > input {
+    border-radius: 20px;
+    padding: 10px 14px;
+}
+.chat-send-error {
+    flex-basis: 100%;
+    color: #b02a37;
+    font-size: 12px;
+}
+.chat-send-error:empty {
+    display: none;
+}
+.admin-chat-bubble-attachment {
+    display: block;
+    max-width: 100%;
+    max-height: 220px;
+    border-radius: 8px;
+}
+.admin-chat-bubble video.admin-chat-bubble-attachment {
+    width: 100%;
 }
 @media (max-width: 768px) {
     .admin-chat-panel {
-        right: 12px;
-        bottom: 82px;
-        width: calc(100vw - 24px);
+        inset: 0;
+        width: auto;
+        height: auto;
+        max-width: none;
+        max-height: none;
+        border-radius: 0;
+    }
+    .admin-chat-panel-header {
+        padding-top: calc(12px + env(safe-area-inset-top, 0px));
+    }
+    .admin-chat-panel-footer {
+        padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
     }
 }
 </style>
@@ -740,6 +776,7 @@ function renderSupportWidget(string $userType = 'coach'): void {
     let view = 'hub'; // 'hub' | 'thread'
     let currentThread = null; // { apiUrl, extraQuery, label }
     let lastId = 0;
+    let lastDeletionId = 0;
     let fastPollTimer = null;
     const unreadByKey = {
         admin: <?= (int)$adminChatUnreadInitial ?>,
@@ -768,24 +805,99 @@ function renderSupportWidget(string $userType = 'coach'): void {
         return m.sender === (isCoach ? 'coach' : 'athlete');
     };
 
-    const renderMessage = (m) => {
+    const renderMessage = (m, existingRow = null) => {
+        if (!existingRow) {
+            existingRow = chatBody.querySelector('[data-message-id="' + Number(m.id) + '"]');
+        }
         const row = document.createElement('div');
         const isMine = messageIsMine(m);
         row.className = 'admin-chat-bubble-row from-' + (isMine ? 'athlete' : 'admin');
+        row.dataset.messageId = String(m.id);
         let html = '<div class="admin-chat-bubble">' + escapeHtml(m.body).replace(/\n/g, '<br>');
         if (m.attachment_url) {
-            html += '<div class="mt-1"><a href="' + m.attachment_url + '" target="_blank" rel="noopener">'
-                + '<i class="fas fa-paperclip"></i> ' + escapeHtml(m.attachment_name || 'Příloha') + '</a></div>';
+            if (m.attachment_type && m.attachment_type.indexOf('image/') === 0) {
+                html += '<div class="mt-1"><a href="' + escapeHtml(m.attachment_url) + '" target="_blank" rel="noopener">'
+                    + '<img class="admin-chat-bubble-attachment" src="' + escapeHtml(m.attachment_url) + '" alt="' + escapeHtml(m.attachment_name || 'Obrázek') + '"></a></div>';
+            } else if (m.attachment_type && m.attachment_type.indexOf('video/') === 0) {
+                html += '<div class="mt-1"><div class="admin-chat-video-preview" data-chat-video-preview>'
+                    + '<video class="admin-chat-bubble-attachment" preload="metadata" playsinline><source src="' + escapeHtml(m.attachment_url) + '" type="' + escapeHtml(m.attachment_type) + '"></video>'
+                    + '<img class="admin-chat-video-poster" alt="" aria-hidden="true">'
+                    + '<button type="button" class="admin-chat-video-play" aria-label="Přehrát video"><i class="fas fa-play" aria-hidden="true"></i></button>'
+                    + '</div></div>';
+            } else {
+                html += '<div class="mt-1"><a href="' + escapeHtml(m.attachment_url) + '" target="_blank" rel="noopener">'
+                    + '<i class="fas fa-paperclip"></i> ' + escapeHtml(m.attachment_name || 'Příloha') + '</a></div>';
+            }
         }
         html += '<span class="admin-chat-bubble-time">' + escapeHtml(m.created_at)
             + (isMine ? '<span class="admin-chat-read-status' + (m.read_at ? ' is-read' : '') + '" title="' + (m.read_at ? 'Přečteno' : 'Odesláno') + '">' + (m.read_at ? '✓✓' : '✓') + '</span>' : '')
             + '</span></div>';
+        html = html.slice(0, -6);
+        html += '<button type="button" class="chat-message-more" data-chat-message-menu-toggle aria-label="Možnosti zprávy" title="Možnosti zprávy"><i class="fas fa-ellipsis-v" aria-hidden="true"></i></button>'
+            + '<div class="chat-message-menu" data-chat-message-menu hidden>'
+            + '<button type="button" data-chat-delete-scope="me">Odstranit pro mě</button>'
+            + (isMine && !m.deleted_for_everyone ? '<button type="button" data-chat-delete-scope="everyone">Odstranit pro všechny</button>' : '')
+            + '</div></div>';
         row.innerHTML = html;
-        chatBody.appendChild(row);
+        if (existingRow) existingRow.replaceWith(row);
+        else chatBody.appendChild(row);
         if (Number(m.id) > lastId) {
             lastId = Number(m.id);
         }
+        lastDeletionId = Math.max(lastDeletionId, Number(m.deleted_event_id) || 0);
     };
+
+    chatBody.addEventListener('click', async (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) return;
+        const toggle = target.closest('[data-chat-message-menu-toggle]');
+        if (toggle) {
+            const menu = toggle.parentElement.querySelector('[data-chat-message-menu]');
+            chatBody.querySelectorAll('[data-chat-message-menu]').forEach((item) => {
+                if (item !== menu) item.hidden = true;
+            });
+            menu.hidden = !menu.hidden;
+            return;
+        }
+
+        const deleteButton = target.closest('[data-chat-delete-scope]');
+        if (!deleteButton) {
+            if (!target.closest('[data-chat-message-menu]')) {
+                chatBody.querySelectorAll('[data-chat-message-menu]').forEach((item) => { item.hidden = true; });
+            }
+            return;
+        }
+        const row = deleteButton.closest('.admin-chat-bubble-row');
+        const scope = deleteButton.dataset.chatDeleteScope;
+        if (!row || !currentThread) return;
+        if (scope === 'everyone' && !window.confirm('Opravdu chcete odstranit tuto zprávu pro všechny účastníky?')) return;
+
+        const formData = new FormData();
+        formData.append('message_id', row.dataset.messageId);
+        formData.append('scope', scope);
+        formData.append('csrf_token', csrfToken);
+        try {
+            const response = await fetch(currentThread.apiUrl + '?action=delete' + currentThread.extraQuery, {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin'
+            });
+            const data = await response.json();
+            if (!response.ok || !data || !data.ok) {
+                throw new Error(data && data.error ? data.error : 'Zprávu se nepodařilo odstranit.');
+            }
+            if (scope === 'me') {
+                row.remove();
+            } else if (data.message) {
+                renderMessage(data.message, row);
+            } else {
+                row.remove();
+            }
+            if (data.warning) window.alert(data.warning);
+        } catch (error) {
+            window.alert(error && error.message ? error.message : 'Zprávu se nepodařilo odstranit.');
+        }
+    });
 
     const scrollToBottom = () => {
         chatBody.scrollTop = chatBody.scrollHeight;
@@ -807,6 +919,7 @@ function renderSupportWidget(string $userType = 'coach'): void {
         view = 'thread';
         currentThread = { key, apiUrl, extraQuery: extraQuery || '', label };
         lastId = 0;
+        lastDeletionId = 0;
         chatTitle.innerHTML = '<i class="' + (iconClass || 'fas fa-comment-dots') + ' me-2"></i>' + escapeHtml(label);
         chatBackBtn.classList.remove('d-none');
         chatHub.classList.add('d-none');
@@ -925,7 +1038,7 @@ function renderSupportWidget(string $userType = 'coach'): void {
     const pollNewMessages = async () => {
         if (!currentThread || document.hidden) { return; }
         try {
-            const res = await fetch(currentThread.apiUrl + '?action=poll&since_id=' + lastId + currentThread.extraQuery, { credentials: 'same-origin' });
+            const res = await fetch(currentThread.apiUrl + '?action=poll&since_id=' + lastId + '&since_deletion_id=' + lastDeletionId + currentThread.extraQuery, { credentials: 'same-origin' });
             const data = await res.json();
             if (data && data.ok && data.messages.length > 0) {
                 data.messages.forEach((m) => renderMessage(m));
@@ -986,7 +1099,12 @@ function renderSupportWidget(string $userType = 'coach'): void {
     chatForm.addEventListener('submit', async function (e) {
         e.preventDefault();
         const body = chatInput.value.trim();
-        if (body === '' || !currentThread) {
+        const attachment = chatForm.querySelector('input[type="file"]');
+        const cameraAttachment = chatForm.querySelector('input[name="camera_attachment"]');
+        const hasAttachment = Boolean((attachment && attachment.files.length) || (cameraAttachment && cameraAttachment.files.length));
+        const errorMessage = chatForm.querySelector('[data-chat-error]');
+        if (errorMessage) errorMessage.textContent = '';
+        if ((body === '' && !hasAttachment) || !currentThread) {
             return;
         }
 
@@ -994,9 +1112,8 @@ function renderSupportWidget(string $userType = 'coach'): void {
         sendBtn.disabled = true;
 
         try {
-            const formData = new FormData();
+            const formData = new FormData(chatForm);
             formData.append('action', 'send');
-            formData.append('body', body);
             formData.append('csrf_token', csrfToken);
             if (currentThread.key.indexOf('athlete:') === 0) {
                 formData.append('athlete_id', currentThread.key.split(':')[1]);
@@ -1006,10 +1123,19 @@ function renderSupportWidget(string $userType = 'coach'): void {
             const data = await res.json();
             if (data && data.ok) {
                 chatInput.value = '';
+                chatForm.reset();
+                const attachmentPreview = chatForm.querySelector('.chat-attachment-preview');
+                if (attachmentPreview) attachmentPreview.hidden = true;
                 await pollNewMessages();
+            } else if (errorMessage) {
+                errorMessage.textContent = data.error || 'Zprávu se nepodařilo odeslat.';
             }
-        } catch (e) { /* tichy fail, uzivatel muze zkusit odeslat znovu */ } finally {
+        } catch (e) {
+            if (errorMessage) errorMessage.textContent = 'Zprávu se nepodařilo odeslat. Zkontrolujte připojení a zkuste to znovu.';
+            console.error('Odeslání zprávy selhalo:', e);
+        } finally {
             sendBtn.disabled = false;
+            sendBtn.removeAttribute('aria-busy');
             chatInput.focus();
         }
     });
@@ -1051,5 +1177,7 @@ function renderSupportWidget(string $userType = 'coach'): void {
     });
 })();
 </script>
+<link rel="stylesheet" href="<?= BASE_URL ?>/assets/css/chat-composer.css?v=6">
+<script src="<?= BASE_URL ?>/assets/js/chat-composer.js?v=6"></script>
 <?php
 }
