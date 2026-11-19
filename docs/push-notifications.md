@@ -115,6 +115,11 @@ Immediate dispatch is attempted only when `fastcgi_finish_request` is
 available; its actual behavior still needs testing on the hosting server.
 Without that function, delivery waits for the scheduled worker.
 
+The Service Worker suppresses only coach-athlete chat toasts when the matching
+chat conversation is visible in an app window. The unread badge still updates,
+chat notifications continue when the conversation is in the background, and
+other notification categories are unaffected.
+
 Bulk messages sent by an administrator or coach to athletes enqueue a generic
 notification for each recipient after the message is committed. They use the
 messages preference and open the athlete's inbox; existing messages are not

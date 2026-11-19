@@ -4,7 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
 
-async function workerPush(payload, failBadge = false) {
+async function workerPush(payload, failBadge = false, clients = []) {
     const handlers = {};
     const counts = [];
     const notifications = [];
@@ -18,6 +18,7 @@ async function workerPush(payload, failBadge = false) {
             }
         },
         registration: { showNotification: async (title) => { notifications.push(title); } },
+        clients: { matchAll: async () => clients },
         addEventListener: (name, handler) => { handlers[name] = handler; }
     };
     vm.runInNewContext(fs.readFileSync('sw.js', 'utf8'), {
@@ -86,6 +87,72 @@ async function pageBadge() {
     result = await workerPush({ unread_count: 2 }, true);
     assert.strictEqual(result.errors, 1);
     assert.deepStrictEqual(result.notifications, ['TrainerApp']);
+    result = await workerPush(
+        {
+            type: 'coach_chat_message',
+            url: '/athlete_chat_mobile.php?target=coach',
+            unread_count: 1
+        },
+        false,
+        [{
+            url: 'https://example.com/athlete_chat_mobile.php?target=coach',
+            visibilityState: 'visible',
+            focused: true
+        }]
+    );
+    assert.deepStrictEqual(result.notifications, [], 'An incoming chat push should be silent in its visible conversation.');
+    assert.deepStrictEqual(result.counts, [1], 'A suppressed chat notification should still update the app badge.');
+    result = await workerPush(
+        {
+            type: 'athlete_chat_message',
+            url: '/coach_chat_mobile.php?athlete_id=42',
+            unread_count: 1
+        },
+        false,
+        [{
+            url: 'https://example.com/coach_chat_mobile.php?athlete_id=42',
+            visibilityState: 'visible',
+            focused: true
+        }]
+    );
+    assert.deepStrictEqual(result.notifications, [], 'A coach should not get a chat toast inside that same athlete conversation.');
+    result = await workerPush(
+        {
+            type: 'athlete_chat_message',
+            url: '/coach_chat_mobile.php?athlete_id=42',
+            unread_count: 1
+        },
+        false,
+        [{
+            url: 'https://example.com/coach_chat_mobile.php?athlete_id=7',
+            visibilityState: 'visible',
+            focused: true
+        }]
+    );
+    assert.deepStrictEqual(result.notifications, ['TrainerApp'], 'A different open coach conversation must not suppress the push.');
+    result = await workerPush(
+        {
+            type: 'coach_chat_message',
+            url: '/athlete_chat_mobile.php?target=coach'
+        },
+        false,
+        [{
+            url: 'https://example.com/athlete_chat_mobile.php?target=coach',
+            visibilityState: 'hidden',
+            focused: false
+        }]
+    );
+    assert.deepStrictEqual(result.notifications, ['TrainerApp'], 'A background chat must still receive a notification.');
+    result = await workerPush(
+        { type: 'content_admin_gallery', url: '/athlete_gallery.php?admin_file=14' },
+        false,
+        [{
+            url: 'https://example.com/athlete_chat_mobile.php?target=coach',
+            visibilityState: 'visible',
+            focused: true
+        }]
+    );
+    assert.deepStrictEqual(result.notifications, ['TrainerApp'], 'Non-chat notifications must not be suppressed by an open chat.');
     await pageBadge();
-    console.log('Push badge count, clearing and notification failure isolation passed.');
+    console.log('Push badge and visible-chat notification suppression tests passed.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

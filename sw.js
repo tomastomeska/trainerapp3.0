@@ -84,19 +84,24 @@ self.addEventListener('push', (event) => {
         ? payload.body.trim().slice(0, 240)
         : 'M\u00e1\u0161 nov\u00e9 ozn\u00e1men\u00ed v TrainerApp.';
     const targetUrl = getSafeTargetUrl(payload.url);
+    const type = typeof payload.type === 'string' ? payload.type.slice(0, 64) : '';
     const options = {
         body,
         icon: APP_ICON,
         badge: APP_ICON,
         data: {
             url: targetUrl.href,
-            type: typeof payload.type === 'string' ? payload.type.slice(0, 64) : ''
+            type
         },
         tag: typeof payload.tag === 'string' ? payload.tag.slice(0, 128) : undefined,
         renotify: false
     };
 
-    const tasks = [self.registration.showNotification(title, options)];
+    const tasks = [shouldSuppressVisibleChatNotification(type, targetUrl).then((suppress) => {
+        if (!suppress) {
+            return self.registration.showNotification(title, options);
+        }
+    })];
     if (Number.isSafeInteger(payload.unread_count) && payload.unread_count >= 0
         && self.navigator && typeof self.navigator.setAppBadge === 'function') {
         tasks.push(Promise.resolve().then(() => self.navigator.setAppBadge(payload.unread_count)).catch((error) => {
@@ -105,6 +110,42 @@ self.addEventListener('push', (event) => {
     }
     event.waitUntil(Promise.all(tasks));
 });
+
+async function shouldSuppressVisibleChatNotification(type, targetUrl) {
+    let expectedPath;
+    if (type === 'coach_chat_message' && targetUrl.pathname === '/athlete_chat_mobile.php'
+        && targetUrl.searchParams.get('target') === 'coach') {
+        expectedPath = '/athlete_chat_mobile.php';
+    } else if (type === 'athlete_chat_message' && targetUrl.pathname === '/coach_chat_mobile.php') {
+        const athleteId = targetUrl.searchParams.get('athlete_id');
+        if (!athleteId || !/^[1-9]\d*$/.test(athleteId)) {
+            return false;
+        }
+        expectedPath = '/coach_chat_mobile.php';
+    } else {
+        return false;
+    }
+
+    try {
+        const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        return clients.some((client) => {
+            if (client.visibilityState !== 'visible' || client.focused === false) {
+                return false;
+            }
+            const clientUrl = new URL(client.url);
+            if (clientUrl.origin !== self.location.origin || clientUrl.pathname !== expectedPath) {
+                return false;
+            }
+            if (type === 'coach_chat_message') {
+                return clientUrl.searchParams.get('target') === 'coach';
+            }
+            return clientUrl.searchParams.get('athlete_id') === targetUrl.searchParams.get('athlete_id');
+        });
+    } catch (error) {
+        console.error('Visible chat could not be checked before displaying a notification.', error);
+        return false;
+    }
+}
 
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
